@@ -28,5 +28,6 @@ class ElevenLabsSTT(Capability):
             files={"file": (filename, audio_bytes)},
             timeout=60,
         )
-        response.raise_for_status()
+        if not response.ok:
+            raise RuntimeError(f"ElevenLabs STT {response.status_code}: {response.text}")
         return response.json()["text"]

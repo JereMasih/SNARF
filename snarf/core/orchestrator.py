@@ -23,20 +23,33 @@ SYSTEM_PREFIX = (
     "recordar algo de otra conversación ayuda.\n\n"
     "También tenés herramientas de solo lectura sobre Google Drive, Gmail, Calendar y "
     "YouTube del fundador: drive_list_files, drive_read_file, gmail_list_messages, "
-    "gmail_read_message, calendar_list_upcoming_events, youtube_list_subscriptions, "
-    "youtube_list_liked_videos. Usalas para responder con contexto real cuando el "
-    "fundador pregunte por su correo, su agenda, sus archivos o sus videos.\n\n"
-    "Además tenés gmail_send_message y calendar_create_event, que sí actúan sobre el "
-    "mundo real (envían un correo real, crean un evento real). Son acciones de alto "
-    "impacto (Constitution, Artículo VII) y su protocolo es obligatorio, siempre, sin "
-    "excepción: (1) llamalas primero con confirmed=false (o sin ese campo) — no van a "
-    "ejecutar nada, te van a devolver una vista previa; (2) mostrale esa vista previa al "
-    "fundador tal cual, con claridad, y preguntale si confirma; (3) solo volvé a llamar "
-    "a la misma herramienta con confirmed=true, y exactamente los mismos datos, si el "
-    "fundador respondió de forma explícita e inequívoca que sí a ESA propuesta concreta, "
-    "en este mismo intercambio. Nunca asumas una confirmación implícita, nunca la des "
-    "por sentada de un mensaje anterior ambiguo, y nunca combines la propuesta y la "
-    "ejecución en el mismo turno.\n\n"
+    "gmail_read_message, calendar_list_calendars, calendar_list_upcoming_events, "
+    "gmail_list_labels, youtube_list_subscriptions, youtube_list_liked_videos. Usalas "
+    "para responder con contexto real cuando el fundador pregunte por su correo, su "
+    "agenda, sus archivos o sus videos.\n\n"
+    "Importante sobre calendar_list_upcoming_events: solo muestra eventos futuros a "
+    "partir de este momento. Si el fundador te habla de un evento y no aparece ahí "
+    "(por ejemplo porque ya pasó, o porque no sabés en qué calendario está), usá "
+    "calendar_search_events con el texto del título antes de concluir que no existe — "
+    "buscá en todos los calendarios relevantes si hace falta.\n\n"
+    "Tenés herramientas de organización que actúan sobre el mundo real pero son "
+    "reversibles y no salen de la cuenta del fundador (no requieren confirmación en dos "
+    "pasos, pero usalas solo cuando el fundador lo pida): gmail_create_label, "
+    "gmail_modify_message_labels, drive_create_folder, drive_move_file.\n\n"
+    "Además tenés herramientas de alto impacto (Constitution, Artículo VII): "
+    "gmail_send_message, calendar_create_event, calendar_create_calendar, "
+    "calendar_delete_calendar, calendar_delete_event, calendar_move_event (mover un "
+    "evento entre calendarios puede notificar a invitados si el evento tiene invitados, "
+    "por eso lleva confirmación igual que borrar), gmail_delete_label, "
+    "drive_delete_file. Su protocolo es "
+    "obligatorio, siempre, sin excepción: (1) llamalas primero con confirmed=false (o "
+    "sin ese campo) — no van a ejecutar nada, te van a devolver una vista previa; (2) "
+    "mostrale esa vista previa al fundador tal cual, con claridad, y preguntale si "
+    "confirma; (3) solo volvé a llamar a la misma herramienta con confirmed=true, y "
+    "exactamente los mismos datos, si el fundador respondió de forma explícita e "
+    "inequívoca que sí a ESA propuesta concreta, en este mismo intercambio. Nunca "
+    "asumas una confirmación implícita, y nunca combines la propuesta y la ejecución "
+    "en el mismo turno.\n\n"
 )
 
 TOOLS = [
@@ -84,6 +97,24 @@ TOOLS = [
         },
     },
     {
+        "name": "drive_create_folder",
+        "description": "Crea una carpeta en Drive, opcionalmente dentro de otra carpeta (parent_id).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}, "parent_id": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "drive_move_file",
+        "description": "Mueve un archivo o carpeta de Drive a otra carpeta.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"file_id": {"type": "string"}, "new_parent_id": {"type": "string"}},
+            "required": ["file_id", "new_parent_id"],
+        },
+    },
+    {
         "name": "gmail_list_messages",
         "description": "Lista correos recientes del Gmail del fundador (asunto, remitente, fecha, resumen), opcionalmente filtrados por una query de Gmail.",
         "input_schema": {
@@ -104,9 +135,57 @@ TOOLS = [
         },
     },
     {
+        "name": "gmail_list_labels",
+        "description": "Lista las etiquetas/carpetas de Gmail del fundador.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "gmail_create_label",
+        "description": "Crea una etiqueta/carpeta nueva en Gmail.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "gmail_modify_message_labels",
+        "description": "Organiza un correo agregando o quitando etiquetas (por ejemplo, moverlo a una carpeta o archivarlo quitando INBOX).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "message_id": {"type": "string"},
+                "add_label_ids": {"type": "array", "items": {"type": "string"}},
+                "remove_label_ids": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["message_id"],
+        },
+    },
+    {
+        "name": "calendar_list_calendars",
+        "description": "Lista todos los calendarios del fundador (no solo el principal).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "calendar_list_upcoming_events",
-        "description": "Lista los próximos eventos del calendario principal del fundador.",
-        "input_schema": {"type": "object", "properties": {"max_results": {"type": "integer"}}},
+        "description": "Lista los próximos eventos de un calendario del fundador (por defecto, el principal). Solo eventos futuros.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"max_results": {"type": "integer"}, "calendar_id": {"type": "string"}},
+        },
+    },
+    {
+        "name": "calendar_search_events",
+        "description": "Busca eventos por texto en un calendario, sin restricción de fecha (incluye eventos pasados). Usala si un evento no aparece en calendar_list_upcoming_events.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "calendar_id": {"type": "string", "description": "Por defecto, 'primary'."},
+                "max_results": {"type": "integer"},
+            },
+            "required": ["query"],
+        },
     },
     {
         "name": "youtube_list_subscriptions",
@@ -120,33 +199,21 @@ TOOLS = [
     },
     {
         "name": "gmail_send_message",
-        "description": (
-            "Envía un correo real desde el Gmail del fundador. Acción de alto impacto: primero "
-            "llamala con confirmed=false para obtener una vista previa (no envía nada), mostrala "
-            "al fundador, y solo llamala de nuevo con confirmed=true tras su confirmación "
-            "explícita a esa propuesta concreta."
-        ),
+        "description": "Envía un correo real desde el Gmail del fundador. Acción de alto impacto: protocolo de confirmed obligatorio.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "to": {"type": "string"},
                 "subject": {"type": "string"},
                 "body": {"type": "string"},
-                "confirmed": {
-                    "type": "boolean",
-                    "description": "true únicamente si el fundador ya confirmó explícitamente esta acción concreta.",
-                },
+                "confirmed": {"type": "boolean"},
             },
             "required": ["to", "subject", "body"],
         },
     },
     {
         "name": "calendar_create_event",
-        "description": (
-            "Crea un evento real en el calendario del fundador. Acción de alto impacto: mismo "
-            "protocolo que gmail_send_message — primero confirmed=false para obtener una vista "
-            "previa (no crea nada), mostrarla, y solo confirmed=true tras confirmación explícita."
-        ),
+        "description": "Crea un evento real en un calendario del fundador. Acción de alto impacto: protocolo de confirmed obligatorio.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -155,12 +222,77 @@ TOOLS = [
                 "end_iso": {"type": "string", "description": "Fin en ISO 8601 con zona horaria."},
                 "description": {"type": "string"},
                 "location": {"type": "string"},
-                "confirmed": {
-                    "type": "boolean",
-                    "description": "true únicamente si el fundador ya confirmó explícitamente esta acción concreta.",
-                },
+                "calendar_id": {"type": "string", "description": "Por defecto, 'primary'."},
+                "confirmed": {"type": "boolean"},
             },
             "required": ["summary", "start_iso", "end_iso"],
+        },
+    },
+    {
+        "name": "calendar_create_calendar",
+        "description": "Crea un calendario nuevo. Acción de alto impacto: protocolo de confirmed obligatorio.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string"},
+                "description": {"type": "string"},
+                "confirmed": {"type": "boolean"},
+            },
+            "required": ["summary"],
+        },
+    },
+    {
+        "name": "calendar_delete_calendar",
+        "description": "Elimina un calendario completo. Acción de alto impacto: protocolo de confirmed obligatorio.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"calendar_id": {"type": "string"}, "confirmed": {"type": "boolean"}},
+            "required": ["calendar_id"],
+        },
+    },
+    {
+        "name": "calendar_delete_event",
+        "description": "Elimina un evento de un calendario. Acción de alto impacto: protocolo de confirmed obligatorio.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "event_id": {"type": "string"},
+                "calendar_id": {"type": "string", "description": "Por defecto, 'primary'."},
+                "confirmed": {"type": "boolean"},
+            },
+            "required": ["event_id"],
+        },
+    },
+    {
+        "name": "calendar_move_event",
+        "description": "Mueve un evento de un calendario a otro. Acción de alto impacto: protocolo de confirmed obligatorio.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "event_id": {"type": "string"},
+                "source_calendar_id": {"type": "string"},
+                "destination_calendar_id": {"type": "string"},
+                "confirmed": {"type": "boolean"},
+            },
+            "required": ["event_id", "source_calendar_id", "destination_calendar_id"],
+        },
+    },
+    {
+        "name": "gmail_delete_label",
+        "description": "Elimina una etiqueta/carpeta de Gmail. Acción de alto impacto: protocolo de confirmed obligatorio.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"label_id": {"type": "string"}, "confirmed": {"type": "boolean"}},
+            "required": ["label_id"],
+        },
+    },
+    {
+        "name": "drive_delete_file",
+        "description": "Elimina (envía a la papelera) un archivo o carpeta de Drive. Acción de alto impacto: protocolo de confirmed obligatorio.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"file_id": {"type": "string"}, "confirmed": {"type": "boolean"}},
+            "required": ["file_id"],
         },
     },
 ]
@@ -178,6 +310,40 @@ class Orchestrator:
         self._calendar = GoogleCalendar(google_auth)
         self._youtube = GoogleYouTube(google_auth)
 
+        self._tool_handlers = {
+            "list_conversations": lambda i: self._memory.list_conversations(),
+            "get_conversation": lambda i: self._memory.get_conversation(i.get("conversation_id", "")),
+            "search_memory": lambda i: self._memory.search(i.get("query", "")),
+            "drive_list_files": lambda i: self._drive.list_files(page_size=i.get("page_size", 50), query=i.get("query")),
+            "drive_read_file": lambda i: self._drive.read_file_text(i["file_id"], i["mime_type"]),
+            "drive_create_folder": lambda i: self._drive.create_folder(i["name"], parent_id=i.get("parent_id")),
+            "drive_move_file": lambda i: self._drive.move_file(i["file_id"], i["new_parent_id"]),
+            "gmail_list_messages": lambda i: self._gmail.list_messages(max_results=i.get("max_results", 10), query=i.get("query")),
+            "gmail_read_message": lambda i: self._gmail.read_message(i["message_id"]),
+            "gmail_list_labels": lambda i: self._gmail.list_labels(),
+            "gmail_create_label": lambda i: self._gmail.create_label(i["name"]),
+            "gmail_modify_message_labels": lambda i: self._gmail.modify_message_labels(
+                i["message_id"], add_label_ids=i.get("add_label_ids"), remove_label_ids=i.get("remove_label_ids")
+            ),
+            "calendar_list_calendars": lambda i: self._calendar.list_calendars(),
+            "calendar_list_upcoming_events": lambda i: self._calendar.list_upcoming_events(
+                max_results=i.get("max_results", 10), calendar_id=i.get("calendar_id", "primary")
+            ),
+            "calendar_search_events": lambda i: self._calendar.search_events(
+                i["query"], calendar_id=i.get("calendar_id", "primary"), max_results=i.get("max_results", 10)
+            ),
+            "youtube_list_subscriptions": lambda i: self._youtube.list_subscriptions(max_results=i.get("max_results", 25)),
+            "youtube_list_liked_videos": lambda i: self._youtube.list_liked_videos(max_results=i.get("max_results", 25)),
+            "gmail_send_message": self._tool_gmail_send_message,
+            "calendar_create_event": self._tool_calendar_create_event,
+            "calendar_create_calendar": self._tool_calendar_create_calendar,
+            "calendar_delete_calendar": self._tool_calendar_delete_calendar,
+            "calendar_delete_event": self._tool_calendar_delete_event,
+            "calendar_move_event": self._tool_calendar_move_event,
+            "gmail_delete_label": self._tool_gmail_delete_label,
+            "drive_delete_file": self._tool_drive_delete_file,
+        }
+
     @property
     def llm_available(self) -> bool:
         return self._llm.available
@@ -189,77 +355,97 @@ class Orchestrator:
     def warmup(self) -> None:
         self._llm.warmup()
 
+    @staticmethod
+    def _pending(preview: dict) -> dict:
+        return {
+            "status": "pending_confirmation",
+            "preview": preview,
+            "instructions": (
+                "No se ejecutó nada todavía. Mostrale esta vista previa al fundador tal "
+                "cual y pedile confirmación explícita antes de volver a llamar a esta "
+                "herramienta con confirmed=true."
+            ),
+        }
+
+    def _tool_gmail_send_message(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending({"to": i.get("to"), "subject": i.get("subject"), "body": i.get("body")})
+        result = self._gmail.send_message(i["to"], i["subject"], i["body"])
+        return {"status": "sent", "id": result.get("id")}
+
+    def _tool_calendar_create_event(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending(
+                {
+                    "summary": i.get("summary"),
+                    "start": i.get("start_iso"),
+                    "end": i.get("end_iso"),
+                    "description": i.get("description"),
+                    "location": i.get("location"),
+                    "calendar_id": i.get("calendar_id", "primary"),
+                }
+            )
+        result = self._calendar.create_event(
+            i["summary"],
+            i["start_iso"],
+            i["end_iso"],
+            description=i.get("description"),
+            location=i.get("location"),
+            calendar_id=i.get("calendar_id", "primary"),
+        )
+        return {"status": "created", "id": result.get("id"), "link": result.get("htmlLink")}
+
+    def _tool_calendar_create_calendar(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending({"summary": i.get("summary"), "description": i.get("description")})
+        result = self._calendar.create_calendar(i["summary"], description=i.get("description"))
+        return {"status": "created", "id": result.get("id")}
+
+    def _tool_calendar_delete_calendar(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending({"calendar_id": i.get("calendar_id")})
+        self._calendar.delete_calendar(i["calendar_id"])
+        return {"status": "deleted", "calendar_id": i["calendar_id"]}
+
+    def _tool_calendar_delete_event(self, i: dict) -> dict:
+        calendar_id = i.get("calendar_id", "primary")
+        if not i.get("confirmed"):
+            return self._pending({"event_id": i.get("event_id"), "calendar_id": calendar_id})
+        self._calendar.delete_event(i["event_id"], calendar_id=calendar_id)
+        return {"status": "deleted", "event_id": i["event_id"]}
+
+    def _tool_calendar_move_event(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending(
+                {
+                    "event_id": i.get("event_id"),
+                    "source_calendar_id": i.get("source_calendar_id"),
+                    "destination_calendar_id": i.get("destination_calendar_id"),
+                }
+            )
+        result = self._calendar.move_event(i["event_id"], i["source_calendar_id"], i["destination_calendar_id"])
+        return {"status": "moved", "id": result.get("id")}
+
+    def _tool_gmail_delete_label(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending({"label_id": i.get("label_id")})
+        self._gmail.delete_label(i["label_id"])
+        return {"status": "deleted", "label_id": i["label_id"]}
+
+    def _tool_drive_delete_file(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending({"file_id": i.get("file_id")})
+        self._drive.delete_file(i["file_id"])
+        return {"status": "deleted", "file_id": i["file_id"]}
+
     def _handle_tool(self, name: str, tool_input: dict) -> object:
+        handler = self._tool_handlers.get(name)
+        if not handler:
+            return {"error": f"herramienta desconocida: {name}"}
         try:
-            if name == "list_conversations":
-                return self._memory.list_conversations()
-            if name == "get_conversation":
-                return self._memory.get_conversation(tool_input.get("conversation_id", ""))
-            if name == "search_memory":
-                return self._memory.search(tool_input.get("query", ""))
-            if name == "drive_list_files":
-                return self._drive.list_files(
-                    page_size=tool_input.get("page_size", 50), query=tool_input.get("query")
-                )
-            if name == "drive_read_file":
-                return self._drive.read_file_text(tool_input["file_id"], tool_input["mime_type"])
-            if name == "gmail_list_messages":
-                return self._gmail.list_messages(
-                    max_results=tool_input.get("max_results", 10), query=tool_input.get("query")
-                )
-            if name == "gmail_read_message":
-                return self._gmail.read_message(tool_input["message_id"])
-            if name == "calendar_list_upcoming_events":
-                return self._calendar.list_upcoming_events(max_results=tool_input.get("max_results", 10))
-            if name == "youtube_list_subscriptions":
-                return self._youtube.list_subscriptions(max_results=tool_input.get("max_results", 25))
-            if name == "youtube_list_liked_videos":
-                return self._youtube.list_liked_videos(max_results=tool_input.get("max_results", 25))
-            if name == "gmail_send_message":
-                if not tool_input.get("confirmed"):
-                    return {
-                        "status": "pending_confirmation",
-                        "preview": {
-                            "to": tool_input.get("to"),
-                            "subject": tool_input.get("subject"),
-                            "body": tool_input.get("body"),
-                        },
-                        "instructions": (
-                            "No se envió nada todavía. Mostrale esta vista previa al fundador "
-                            "tal cual y pedile confirmación explícita antes de volver a llamar "
-                            "a esta herramienta con confirmed=true."
-                        ),
-                    }
-                result = self._gmail.send_message(tool_input["to"], tool_input["subject"], tool_input["body"])
-                return {"status": "sent", "id": result.get("id")}
-            if name == "calendar_create_event":
-                if not tool_input.get("confirmed"):
-                    return {
-                        "status": "pending_confirmation",
-                        "preview": {
-                            "summary": tool_input.get("summary"),
-                            "start": tool_input.get("start_iso"),
-                            "end": tool_input.get("end_iso"),
-                            "description": tool_input.get("description"),
-                            "location": tool_input.get("location"),
-                        },
-                        "instructions": (
-                            "No se creó nada todavía. Mostrale esta vista previa al fundador "
-                            "tal cual y pedile confirmación explícita antes de volver a llamar "
-                            "a esta herramienta con confirmed=true."
-                        ),
-                    }
-                result = self._calendar.create_event(
-                    tool_input["summary"],
-                    tool_input["start_iso"],
-                    tool_input["end_iso"],
-                    description=tool_input.get("description"),
-                    location=tool_input.get("location"),
-                )
-                return {"status": "created", "id": result.get("id"), "link": result.get("htmlLink")}
+            return handler(tool_input)
         except Exception as exc:
             return {"error": str(exc)}
-        return {"error": f"herramienta desconocida: {name}"}
 
     def handle(self, channel_name: str, user_input: str, conversation_id: str | None = None) -> str:
         if not self._llm.available:

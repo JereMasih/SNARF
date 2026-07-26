@@ -43,3 +43,22 @@ class GoogleDrive(Capability):
         else:
             data = client.files().get_media(fileId=file_id).execute()
         return data.decode("utf-8", errors="ignore") if isinstance(data, bytes) else str(data)
+
+    def create_folder(self, name: str, parent_id: str | None = None) -> dict:
+        body = {"name": name, "mimeType": "application/vnd.google-apps.folder"}
+        if parent_id:
+            body["parents"] = [parent_id]
+        return self._client().files().create(body=body, fields="id, name").execute()
+
+    def move_file(self, file_id: str, new_parent_id: str) -> dict:
+        client = self._client()
+        file = client.files().get(fileId=file_id, fields="parents").execute()
+        previous_parents = ",".join(file.get("parents", []))
+        return (
+            client.files()
+            .update(fileId=file_id, addParents=new_parent_id, removeParents=previous_parents, fields="id, parents")
+            .execute()
+        )
+
+    def delete_file(self, file_id: str) -> None:
+        self._client().files().delete(fileId=file_id).execute()

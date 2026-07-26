@@ -77,3 +77,20 @@ class GoogleGmail(Capability):
         message["subject"] = subject
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
         return self._client().users().messages().send(userId="me", body={"raw": raw}).execute()
+
+    def list_labels(self) -> list[dict]:
+        result = self._client().users().labels().list(userId="me").execute()
+        return [{"id": l["id"], "name": l["name"], "type": l.get("type", "")} for l in result.get("labels", [])]
+
+    def create_label(self, name: str) -> dict:
+        body = {"name": name, "labelListVisibility": "labelShow", "messageListVisibility": "show"}
+        return self._client().users().labels().create(userId="me", body=body).execute()
+
+    def delete_label(self, label_id: str) -> None:
+        self._client().users().labels().delete(userId="me", id=label_id).execute()
+
+    def modify_message_labels(
+        self, message_id: str, add_label_ids: list[str] | None = None, remove_label_ids: list[str] | None = None
+    ) -> dict:
+        body = {"addLabelIds": add_label_ids or [], "removeLabelIds": remove_label_ids or []}
+        return self._client().users().messages().modify(userId="me", id=message_id, body=body).execute()

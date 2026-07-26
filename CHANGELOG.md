@@ -119,3 +119,22 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Velocidad de reproducción por defecto: 1.25x. Botón "escuchar" ahora siempre en su propia línea dentro del globo.
 - Corregido bug de scroll en Chrome de escritorio tras respuestas largas (layout flexbox con `justify-content: flex-end` no scrolleaba bien con overflow) — reemplazado por el patrón robusto de wrapper interno.
 - Ver ADR 0016.
+
+## [2026-07-25] Gestión de calendarios, organización de Gmail/Drive, fixes de interfaz
+
+- Corregido bug real: en modo "mantener presionado", un error dejaba el chat sin forma de recuperarse sin refrescar. Ahora cualquier interacción limpia el error y reintenta.
+- `/transcribe` degrada con gracia (transcript vacío) en vez de tirar un 500 crudo.
+- Corregido scroll horizontal: causado por links Markdown sin renderizar (URLs largas sin espacios); ahora los links se renderizan como `<a>` y se agregó `overflow-wrap` como cinturón de seguridad.
+- Selector de modo reducido a un ícono chico en la esquina (antes tres botones siempre visibles) — más espacio para el chat.
+- Nuevas Capacidades: gestión completa de calendarios (listar/crear/eliminar), organización de Gmail (etiquetas/carpetas) y Drive (crear carpetas, mover archivos, eliminar) — con el mismo protocolo de confirmación en dos pasos para lo irreversible.
+- `Orchestrator._handle_tool` refactorizado de `if/elif` a un registro de handlers.
+- Verificado en vivo, incluyendo un ciclo completo de creación y eliminación de un calendario real, confirmado independientemente en ambos sentidos.
+- Ver ADR 0017.
+
+## [2026-07-25] Gestión de eventos individuales de calendario
+
+- Encontrada y corregida la causa de una contradicción aparente: se había construido gestión de *calendarios* (ADR 0017), no de *eventos individuales* dentro de un calendario — eran cosas distintas, mal comunicadas como si fueran lo mismo.
+- Hallazgo adicional real: `calendar_list_upcoming_events` no muestra eventos pasados, por lo que un evento que ya ocurrió parecía "no existir". Se agregó `calendar_search_events` (busca sin restricción de fecha) y se instruyó a Snarf a usarla en vez de asumir que algo no existe.
+- Nuevas herramientas: `calendar_search_events` (lectura), `calendar_delete_event` y `calendar_move_event` (alto impacto, con confirmación).
+- Resuelto en vivo, a través del chat, el caso real que expuso el problema: encontrado un evento pasado, borrado un duplicado de prueba, y movido el evento correcto entre calendarios — todo confirmado explícitamente y verificado de forma independiente contra la API real.
+- Ver ADR 0018.

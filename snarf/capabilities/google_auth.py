@@ -10,7 +10,7 @@ CLIENT_SECRET_PATH = Path("credentials/google_client_secret.json")
 TOKEN_PATH = Path("credentials/google_token.json")
 
 SCOPES = [
-    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar",

@@ -60,7 +60,13 @@ async def transcribe(file: UploadFile):
     if not stt.available:
         return {"transcript": ""}
     audio_bytes = await file.read()
-    text = stt.transcribe(audio_bytes, filename=file.filename or "audio.webm")
+    if len(audio_bytes) < 2000:
+        return {"transcript": ""}
+    try:
+        text = stt.transcribe(audio_bytes, filename=file.filename or "audio.webm")
+    except Exception as exc:
+        print(f"[transcribe] fallo de STT, degradando a transcript vacío: {exc}")
+        return {"transcript": ""}
     return {"transcript": text}
 
 

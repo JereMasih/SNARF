@@ -145,7 +145,7 @@
   /* --- chat --- */
   .chat {
     position: relative; z-index: 2;
-    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
     display: flex; flex-direction: column;
     padding: calc(env(safe-area-inset-top, 0px) + 3.2rem) 1rem 1rem;
     width: 100%; max-width: 560px; margin: 0 auto;
@@ -153,11 +153,14 @@
   .chat-inner {
     margin-top: auto;
     display: flex; flex-direction: column; gap: 0.55rem;
+    min-width: 0;
   }
   .msg {
     max-width: 82%; padding: 0.6rem 0.9rem; border-radius: 14px;
     font-size: 0.85rem; line-height: 1.5; animation: fadein 0.3s ease;
+    overflow-wrap: anywhere; word-break: break-word;
   }
+  .msg.snarf a { color: var(--glow-soft); text-decoration: underline; }
   @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   .msg.user {
     align-self: flex-end; background: rgba(79,216,232,0.14);
@@ -265,31 +268,44 @@
     flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 0.7rem;
     width: 100%; padding: 0.6rem 1rem calc(env(safe-area-inset-bottom, 0px) + 1.4rem);
   }
-  .mode-switch {
-    display: flex; gap: 6px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(79,216,232,0.25);
-    border-radius: 16px;
-    padding: 5px;
-  }
-  .mode-btn {
-    flex: 1; min-width: 68px;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-    background: none; border: none;
-    color: var(--text-dim);
-    font-family: inherit;
+  .mode-fab {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    right: 16px;
+    z-index: 6;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    border: 1px solid rgba(79,216,232,0.3);
+    background: rgba(5,10,12,0.6);
+    color: var(--glow);
+    font-size: 1rem;
+    display: flex; align-items: center; justify-content: center;
     cursor: pointer;
-    padding: 0.5rem 0.6rem;
-    border-radius: 11px;
+    transition: opacity 0.2s ease;
   }
-  .mode-btn .icon { font-size: 1.15rem; line-height: 1; }
-  .mode-btn .label { font-size: 0.58rem; letter-spacing: 0.04em; text-transform: uppercase; }
-  .mode-btn.active {
-    background: rgba(79,216,232,0.18);
-    color: var(--text);
-    box-shadow: 0 0 0 1px rgba(79,216,232,0.45) inset;
+  .mode-fab.locked { opacity: 0.35; pointer-events: none; }
+  .mode-popover {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 54px);
+    right: 16px;
+    z-index: 6;
+    background: rgba(5,10,12,0.94);
+    border: 1px solid rgba(79,216,232,0.3);
+    border-radius: 14px;
+    padding: 6px;
+    display: flex; flex-direction: column; gap: 2px;
+    opacity: 0; transform: translateY(-6px); pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
   }
-  .mode-switch.locked { opacity: 0.35; pointer-events: none; }
+  .mode-popover.open { opacity: 1; transform: none; pointer-events: auto; }
+  .mode-option {
+    display: flex; align-items: center; gap: 0.55rem;
+    background: none; border: none; color: var(--text-dim);
+    font-family: inherit; font-size: 0.72rem;
+    padding: 0.5rem 0.75rem; border-radius: 9px; cursor: pointer;
+    white-space: nowrap; text-align: left;
+  }
+  .mode-option.active { background: rgba(79,216,232,0.18); color: var(--text); }
   .status {
     text-transform: uppercase; letter-spacing: 0.2em; font-size: 0.7rem;
     color: var(--text-dim); min-height: 1.2em; text-align: center; padding: 0 1rem;
@@ -419,6 +435,12 @@
   <div id="particles"></div>
 
   <button class="menu-btn" id="menuBtn">☰</button>
+  <button class="mode-fab" id="modeFab">👆</button>
+  <div class="mode-popover" id="modePopover">
+    <button class="mode-option" data-mode="hold">🎙️ Mantener presionado</button>
+    <button class="mode-option active" data-mode="click">👆 Toque</button>
+    <button class="mode-option" data-mode="text">⌨️ Texto</button>
+  </div>
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
   <div class="sidebar" id="sidebar">
     <button class="new-conv-btn" id="newConvBtn">+ nueva conversación</button>
@@ -434,11 +456,6 @@
   <div class="chat" id="chat"><div class="chat-inner" id="chatInner"></div></div>
 
   <div class="control-bar">
-    <div class="mode-switch" id="modeSwitch">
-      <button class="mode-btn" data-mode="hold"><span class="icon">🎙️</span><span class="label">Mantener</span></button>
-      <button class="mode-btn active" data-mode="click"><span class="icon">👆</span><span class="label">Toque</span></button>
-      <button class="mode-btn" data-mode="text"><span class="icon">⌨️</span><span class="label">Texto</span></button>
-    </div>
     <div class="status" id="status">click para grabar</div>
     <div class="review" id="review">
       <textarea id="reviewText"></textarea>
@@ -475,8 +492,10 @@ const chat = document.getElementById("chat");
 const chatInner = document.getElementById("chatInner");
 const review = document.getElementById("review");
 const reviewText = document.getElementById("reviewText");
-const modeSwitch = document.getElementById("modeSwitch");
-const modeButtons = document.querySelectorAll(".mode-btn");
+const modeFab = document.getElementById("modeFab");
+const modePopover = document.getElementById("modePopover");
+const modeOptions = document.querySelectorAll(".mode-option");
+const MODE_ICONS = { hold: "🎙️", click: "👆", text: "⌨️" };
 const audioPlayer = document.getElementById("audioPlayer");
 const speedBtn = document.getElementById("speedBtn");
 const closePlayerBtn = document.getElementById("closePlayerBtn");
@@ -536,6 +555,7 @@ function renderMarkdown(text) {
   html = html.replace(/^## (.*)$/gm, "<h2>$1</h2>");
   html = html.replace(/^# (.*)$/gm, "<h1>$1</h1>");
   html = html.replace(/^&gt; (.*)$/gm, "<blockquote>$1</blockquote>");
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
@@ -566,7 +586,7 @@ function setState(next, label) {
   state = next;
   orbWrap.className = "orb-wrap " + next;
   statusEl.textContent = label;
-  modeSwitch.classList.toggle("locked", next !== "idle");
+  modeFab.classList.toggle("locked", next === "listening" || next === "thinking");
 }
 function clearChat() { chatInner.innerHTML = ""; }
 async function fetchAndPlay(text, btn) {
@@ -623,16 +643,27 @@ function hideTyping() {
 }
 
 function setMode(next) {
-  if (state !== "idle") return;
+  if (state === "listening" || state === "thinking") return;
   mode = next;
-  modeButtons.forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+  modeFab.textContent = MODE_ICONS[mode];
+  modeOptions.forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
   orbWrap.style.display = mode === "text" ? "none" : "";
   review.classList.remove("visible");
   textRow.classList.toggle("visible", mode === "text");
   setState("idle", idleLabel());
   if (mode === "text") textInput.focus();
 }
-modeButtons.forEach(btn => btn.addEventListener("click", () => setMode(btn.dataset.mode)));
+modeOptions.forEach(btn => btn.addEventListener("click", () => { setMode(btn.dataset.mode); closeModePopover(); }));
+
+function openModePopover() { modePopover.classList.add("open"); }
+function closeModePopover() { modePopover.classList.remove("open"); }
+modeFab.addEventListener("click", () => {
+  if (modePopover.classList.contains("open")) closeModePopover();
+  else openModePopover();
+});
+document.addEventListener("click", (e) => {
+  if (!modePopover.contains(e.target) && e.target !== modeFab) closeModePopover();
+});
 
 /* ---------- floating audio player (on demand) ---------- */
 function playAudio(dataUrl) {
@@ -777,6 +808,7 @@ async function sendText(text) {
 
 async function handleClickMode() {
   unlockAudio();
+  if (state === "error") setState("idle", idleLabel());
   if (state === "idle") {
     try { await startRecording(); } catch (e) { setState("error", "sin micrófono: " + (e.message || e)); }
   } else if (state === "listening") {
@@ -789,13 +821,12 @@ async function handleClickMode() {
       review.classList.add("visible");
       setState("idle", "revisá y enviá");
     } catch (e) { setState("error", "error: " + (e.message || e)); }
-  } else if (state === "error") {
-    setState("idle", idleLabel());
   }
 }
 async function handleHoldStart(e) {
   e.preventDefault();
   unlockAudio();
+  if (state === "error") setState("idle", idleLabel());
   if (state !== "idle") return;
   try { await startRecording(); } catch (err) { setState("error", "sin micrófono: " + (err.message || err)); }
 }
