@@ -1,0 +1,144 @@
+# MASTER_MAP
+
+## El Plano Maestro del Ecosistema Snarf
+
+**Versión:** 0.1 (Candidate)
+
+## Propósito
+
+Este documento representa el mapa conceptual completo del proyecto Snarf. No contiene el conocimiento; contiene la estructura donde ese conocimiento vivirá.
+
+Todo nuevo documento, capacidad, agente, sistema o unidad de negocio deberá encontrar primero su lugar dentro de este mapa antes de incorporarse al proyecto.
+
+## Dominios principales
+
+- Identity
+- Governance
+- Cognition
+- Knowledge
+- Canon
+- Architecture
+- Capabilities
+- Business
+- Infrastructure
+- History
+- Roadmaps
+- Archive
+
+## Identity
+
+Define quién es Snarf.
+
+Documentos:
+
+- FOUNDATION (vigente)
+- PROJECT_CONTEXT (vigente)
+- CHARACTER (vigente, v0.1)
+- CONSTITUTION — nota: constitucionalmente pertenece a Governance (define autoridad, no identidad), pero vive en Identity por ahora al no existir todavía una carpeta propia; ver nota de Governance.
+
+Documentos previstos, sin crear todavía:
+
+- EVOLUTION
+- VISION
+- PURPOSE
+
+## Governance
+
+Define autoridad, delegación, permisos, auditoría y gestión del riesgo.
+
+Documentos:
+
+- CONSTITUTION (vigente, v1.0) — nivel constitucional: quién tiene poder, cómo se transfiere, cómo se limita.
+
+**Vacío detectado en la auditoría constitucional de Constitution Design 0001:** este dominio necesita, a futuro, dos niveles adicionales que hoy no existen como tipo de documento distinto:
+
+- **Políticas** — posturas operativas revisables (ej. qué acciones requieren aprobación explícita, delegado vigente). Cambian con más fricción que un ajuste de código, pero sin necesidad de reabrir Constitution.
+- **Procedimientos** — pasos concretos de ejecución (ej. protocolo de verificación de sucesión, mecánica de notificación). Cambian con la menor fricción de los tres niveles.
+
+No se crean todavía por no existir contenido real que los justifique (Regla de crecimiento). Se registran aquí para que la próxima Política o Procedimiento real encuentre dónde vivir sin necesidad de reabrir esta discusión.
+
+## Cognition
+
+Describe cómo piensa Snarf.
+
+Documentos:
+
+- COGNITION (vigente, v0.1) — describe la arquitectura de tres capas (Capacidades / Especialistas / Snarf) y el razonamiento realmente implementado, no uno aspiracional.
+
+Documentos previstos, sin crear todavía:
+
+- MEMORY
+- LEARNING
+- REASONING
+- DECISION_ENGINE
+- OPPORTUNITY_ENGINE
+- FOUNDER_MODEL
+- CONTEXT_ENGINE
+
+**Capacidad futura, pospuesta explícitamente por el fundador (2026-07-25):** que Snarf pueda conversar para automodificar su propio código o documentos (equivalente a operar sobre sí mismo a través de una herramienta tipo Claude Code). No implementada — se prioriza terminar interfaz y funcionamiento base primero. Ver ADR 0010.
+
+## Knowledge
+
+Todo el conocimiento operativo (negocios, trading, marketing, tecnología, filosofía, etc.).
+
+## Canon
+
+Fuentes fundacionales que orientan el razonamiento del sistema.
+
+## Architecture
+
+Describe la arquitectura lógica y técnica.
+
+Implementado:
+
+- Arquitectura de tres capas (Capacidades / Especialistas Cognitivos / Snarf) — ver ADR 0003.
+- Runtime de interacción multicanal, con contrato `Channel` único y canales concretos agregados por extensión — ver ADR 0004.
+- Tres puntos de entrada equivalentes en capacidad, sobre el mismo Orchestrator: `main.py` (texto), `main.py --voice` (voz por terminal, start/stop manual), `app.py` (voz con interfaz visual HUD en `web/index.html`, grabación del lado del navegador, accesible en red local) — ver ADR 0006 y ADR 0007.
+
+## Capabilities
+
+Todo aquello que Snarf puede hacer.
+
+Hoy, todas reales y verificadas: `AnthropicLLM` (razonamiento), `ElevenLabsTTS`/`ElevenLabsSTT` (voz, voz elegida: Antonio, es-AR), `LocalAudioIO` (reproducción y grabación local), `GoogleAuth` (OAuth compartido) + `GoogleDrive`, `GoogleGmail`, `GoogleCalendar`, `GoogleYouTube`. Todas las operaciones de lectura son herramientas autónomas; `gmail_send_message` y `calendar_create_event` también lo son, pero bajo el protocolo de confirmación en dos pasos de ADR 0015 (proponer → confirmar → ejecutar). Nuevas capacidades se agregan implementando el contrato `Capability` en `snarf/capabilities/`.
+
+Planificado: extracción de contenido por tipo de archivo (PDF, imagen, audio, video) para poder vectorizar Drive completo; interfaz genérica de "fuente de conocimiento" para que Drive, Notion y archivos subidos a mano compartan un mismo motor de vectorización; reforzar la confirmación de acciones de alto impacto con un control independiente del modelo (por ejemplo, un botón en la interfaz) si el uso escala más allá de un solo usuario.
+
+## Business
+
+Unidades económicas, productos, servicios y empresas.
+
+## Infrastructure
+
+Repositorios, Git, IA, servidores, automatizaciones y herramientas.
+
+Repositorio Git local inicializado el 2026-07-25. Estructura de código bajo `snarf/` (core, capabilities, specialists, runtime); memoria episódica en `data/`; credenciales externas (Google OAuth) en `credentials/`, fuera de git.
+
+## History
+
+Registro permanente de decisiones, cambios y aprendizaje.
+
+Hoy implementado mediante `adr/` (decisiones de arquitectura y gobernanza) y `CHANGELOG.md` (registro legible de cambios del proyecto). Ambos son el mecanismo real del Artículo VIII de Constitution mientras no exista un dominio History más amplio.
+
+## Roadmaps
+
+Planificación de la evolución del sistema.
+
+## Archive
+
+Conocimiento histórico que deja de estar vigente pero nunca se elimina.
+
+## Relaciones
+
+- Identity gobierna todo.
+- Governance protege todo.
+- Cognition utiliza Knowledge.
+- Canon orienta Cognition.
+- Capabilities consumen Knowledge.
+- Business utiliza Capabilities.
+- Infrastructure soporta todo.
+- History registra todo.
+- Roadmaps planifican todo.
+
+## Regla de crecimiento
+
+Si un nuevo elemento no encuentra lugar dentro del mapa, primero deberá evolucionar el mapa y después incorporarse el nuevo elemento.
