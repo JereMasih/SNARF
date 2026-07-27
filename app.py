@@ -1,22 +1,31 @@
 import base64
+import os
 import socket
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import Cookie, Depends, FastAPI, HTTPException, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from snarf.capabilities.elevenlabs_stt import ElevenLabsSTT
 from snarf.capabilities.elevenlabs_tts import ElevenLabsTTS
-from snarf.core.orchestrator import Orchestrator
+from snarf.core.orchestrator import DEFAULT_USER_ID, Orchestrator
+from snarf.runtime.web_auth import (
+    SESSION_COOKIE_NAME,
+    SESSION_MAX_AGE_SECONDS,
+    create_session_token,
+    is_authenticated,
+    password_matches,
+    require_user,
+)
 
 app = FastAPI()
 stt = ElevenLabsSTT()
 tts = ElevenLabsTTS()
-orchestrator = Orchestrator()
+orchestrator = Orchestrator(user_id=DEFAULT_USER_ID)
 
 
 @app.on_event("startup")
@@ -41,9 +50,41 @@ class TTSResponse(BaseModel):
     audio_base64: str | None = None
 
 
+class LoginRequest(BaseModel):
+    password: str
+
+
 @app.get("/")
-def index():
+def index(snarf_session: str | None = Cookie(default=None)):
+    if not is_authenticated(snarf_session):
+        return RedirectResponse("/login")
     return FileResponse("web/index.html")
+
+
+@app.get("/login")
+def login_page():
+    return FileResponse("web/login.html")
+
+
+@app.post("/login")
+def login(payload: LoginRequest):
+    if not os.environ.get("SESSION_SECRET"):
+        raise HTTPException(503, "SESSION_SECRET no configurada en el servidor")
+    if not password_matches(payload.password):
+        raise HTTPException(401, "contraseña incorrecta")
+    token = create_session_token(os.environ["SESSION_SECRET"], DEFAULT_USER_ID)
+    response = JSONResponse({"status": "ok"})
+    response.set_cookie(
+        SESSION_COOKIE_NAME, token, max_age=SESSION_MAX_AGE_SECONDS, httponly=True, samesite="lax"
+    )
+    return response
+
+
+@app.post("/logout")
+def logout():
+    response = JSONResponse({"status": "ok"})
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return response
 
 
 @app.get("/status")
@@ -56,7 +97,7 @@ def status():
 
 
 @app.post("/transcribe")
-async def transcribe(file: UploadFile):
+async def transcribe(file: UploadFile, user_id: str = Depends(require_user)):
     if not stt.available:
         return {"transcript": ""}
     audio_bytes = await file.read()
@@ -71,13 +112,13 @@ async def transcribe(file: UploadFile):
 
 
 @app.post("/send", response_model=SendResponse)
-def send(payload: SendRequest):
+def send(payload: SendRequest, user_id: str = Depends(require_user)):
     response_text = orchestrator.handle("visual", payload.text, conversation_id=payload.conversation_id)
     return SendResponse(response=response_text)
 
 
 @app.post("/tts", response_model=TTSResponse)
-def synthesize_speech(payload: TTSRequest):
+def synthesize_speech(payload: TTSRequest, user_id: str = Depends(require_user)):
     if not tts.available:
         return TTSResponse(audio_base64=None)
     audio_bytes = tts.synthesize(payload.text)
@@ -85,12 +126,12 @@ def synthesize_speech(payload: TTSRequest):
 
 
 @app.get("/conversations")
-def list_conversations():
+def list_conversations(user_id: str = Depends(require_user)):
     return orchestrator.memory.list_conversations()
 
 
 @app.get("/conversations/{conversation_id}")
-def get_conversation(conversation_id: str):
+def get_conversation(conversation_id: str, user_id: str = Depends(require_user)):
     return orchestrator.memory.get_conversation(conversation_id)
 
 

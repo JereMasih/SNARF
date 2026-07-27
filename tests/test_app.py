@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 import app as app_module
 from snarf.memory.episodic import EpisodicMemory
 
+TEST_PASSWORD = "test-password-for-pytest"
+
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
@@ -14,7 +16,14 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
     monkeypatch.setattr(app_module.stt, "_api_key", None)
     monkeypatch.setattr(app_module.tts, "_api_key", None)
+    monkeypatch.setenv("SNARF_ACCESS_PASSWORD", TEST_PASSWORD)
+    monkeypatch.setenv("SESSION_SECRET", "test-session-secret")
     with TestClient(app_module.app) as c:
+        # Estos tests no son sobre auth (eso está en test_web_auth.py); se
+        # loguea de una vez con el flujo real para que el resto del archivo
+        # pruebe el comportamiento normal de la app ya autenticada.
+        login_res = c.post("/login", json={"password": TEST_PASSWORD})
+        assert login_res.status_code == 200
         yield c
 
 

@@ -4,13 +4,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from snarf.core.orchestrator import Orchestrator
+from snarf.core.orchestrator import DEFAULT_USER_ID, Orchestrator
 from snarf.runtime.text_channel import TextChannel
 from snarf.runtime.voice_channel import VoiceChannel
 
 
 def main():
-    orchestrator = Orchestrator()
+    orchestrator = Orchestrator(user_id=DEFAULT_USER_ID)
     if "--voice" in sys.argv:
         channel = VoiceChannel()
         print("Snarf - walking skeleton (canal de voz). Ctrl+C para salir.\n")

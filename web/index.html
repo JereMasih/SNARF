@@ -140,6 +140,12 @@
   .conv-item:hover, .conv-item.active { background: rgba(79,216,232,0.1); color: var(--text); }
   .conv-item .conv-date { display: block; font-size: 0.6rem; opacity: 0.7; margin-top: 2px; }
   .conv-empty { padding: 1rem 0.7rem; font-size: 0.7rem; color: var(--text-dim); opacity: 0.6; }
+  .logout-btn {
+    margin: 10px 14px 0; padding: 0.55rem 0.8rem; border-radius: 10px;
+    border: 1px solid rgba(232,90,90,0.3); background: rgba(232,90,90,0.08);
+    color: var(--text-dim); font-family: inherit; font-size: 0.7rem;
+    letter-spacing: 0.04em; cursor: pointer; text-align: left;
+  }
 
   /* --- chat --- */
   .chat {
@@ -445,6 +451,7 @@
   <div class="sidebar" id="sidebar">
     <button class="new-conv-btn" id="newConvBtn">+ nueva conversación</button>
     <div class="conv-list" id="convList"></div>
+    <button class="logout-btn" id="logoutBtn">cerrar sesión</button>
   </div>
 
   <div class="audio-player" id="audioPlayer">
@@ -505,6 +512,7 @@ const sidebar = document.getElementById("sidebar");
 const sidebarOverlay = document.getElementById("sidebarOverlay");
 const newConvBtn = document.getElementById("newConvBtn");
 const convList = document.getElementById("convList");
+const logoutBtn = document.getElementById("logoutBtn");
 const textRow = document.getElementById("textRow");
 const textInput = document.getElementById("textInput");
 const textSendBtn = document.getElementById("textSendBtn");
@@ -530,6 +538,15 @@ let stream = null;
 let recordedMimeType = "audio/webm";
 let conversationId = crypto.randomUUID();
 let typingBubble = null;
+
+async function apiFetch(url, opts) {
+  const res = await fetch(url, opts);
+  if (res.status === 401) {
+    window.location.href = "/login";
+    throw new Error("no autenticado");
+  }
+  return res;
+}
 
 const sharedAudio = new Audio();
 let audioUnlocked = false;
@@ -594,7 +611,7 @@ async function fetchAndPlay(text, btn) {
   btn.disabled = true;
   btn.textContent = "generando audio...";
   try {
-    const res = await fetch("/tts", {
+    const res = await apiFetch("/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
@@ -699,7 +716,7 @@ sidebarOverlay.addEventListener("click", closeSidebar);
 
 async function refreshConvList() {
   try {
-    const res = await fetch("/conversations");
+    const res = await apiFetch("/conversations");
     const convs = await res.json();
     convList.innerHTML = "";
     if (!convs.length) {
@@ -723,7 +740,7 @@ async function loadConversation(id) {
   closeSidebar();
   clearChat();
   try {
-    const res = await fetch("/conversations/" + id);
+    const res = await apiFetch("/conversations/" + id);
     const entries = await res.json();
     entries.forEach(e => {
       addMessage(e.input, "user");
@@ -740,6 +757,11 @@ newConvBtn.addEventListener("click", () => {
   clearChat();
   closeSidebar();
   setState("idle", idleLabel());
+});
+
+logoutBtn.addEventListener("click", async () => {
+  try { await fetch("/logout", { method: "POST" }); } catch (e) {}
+  window.location.href = "/login";
 });
 
 /* ---------- audio recording ---------- */
@@ -782,7 +804,7 @@ function stopRecording() {
 async function transcribeBlob(blob) {
   const form = new FormData();
   form.append("file", blob, "audio." + extFor(blob.type || recordedMimeType));
-  const res = await fetch("/transcribe", { method: "POST", body: form });
+  const res = await apiFetch("/transcribe", { method: "POST", body: form });
   if (!res.ok) throw new Error("transcribe HTTP " + res.status);
   const data = await res.json();
   return data.transcript || "";
@@ -794,7 +816,7 @@ async function sendText(text) {
   setState("thinking", "pensando...");
   showTyping();
   try {
-    const res = await fetch("/send", {
+    const res = await apiFetch("/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, conversation_id: conversationId }),

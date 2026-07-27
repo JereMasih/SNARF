@@ -155,3 +155,13 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Botón de enviar cortado en mobile: dos hipótesis iniciales (conflicto `min-height:100vh`/`height:100dvh`; falta de `min-width:0` en el input de texto) resultaron necesarias pero no suficientes, descartadas con evidencia real de capturas de pantalla del fundador. La causa real: la página completa renderizaba más ancha que el viewport del iPhone en todos los modos (no solo en modo texto), y Safari permitía pellizcar para hacer zoom en vez de ajustarla — solo haciendo zoom-out manual se veía todo encuadrado. Corregido agregando `overflow-x: hidden` a `html` y deshabilitando el zoom táctil (`user-scalable=no`), coherente con que esta es una interfaz tipo HUD fija.
 - **Los tres bugs confirmados como resueltos por el fundador en su iPhone real.**
 - Ver ADR 0020.
+
+## [2026-07-27] Login por contraseña y credenciales de Google por usuario
+
+- Verificado y descartado un temor real del fundador: sus credenciales de Google nunca estuvieron públicas en GitHub (chequeado contra la historia completa de git y el remoto real), pero la arquitectura sí asumía un único usuario implícito, sin forma de que un segundo usuario conectara su propio Google sin pisar el token del fundador.
+- `GoogleAuth` ahora recibe `user_id` y guarda el token en `credentials/tokens/<user_id>.json` (antes un único archivo global); `Orchestrator` recibe `user_id` explícitamente (`DEFAULT_USER_ID = "fundador"` por ahora).
+- Nuevo login real: página `web/login.html`, cookie de sesión firmada con `itsdangerous`, contraseña en `SNARF_ACCESS_PASSWORD`, falla cerrado (no abierto) si falta configuración. `/send`, `/transcribe`, `/tts` y `/conversations*` ahora exigen sesión válida — antes la única barrera era la red (Tailscale/LAN).
+- Evaluado y pospuesto a propósito: login con Google (el camino correcto para cuando haya multi-usuario real, ya que Snarf ya pide ese mismo consentimiento) y con Apple (no es simple como se asumió, y no destraba nada hoy).
+- 11 tests nuevos de autenticación; en el camino se encontró y corrigió un bug real en dos tests existentes que disparaban una llamada real a la API de Anthropic vía el hook de arranque, detectado por duración anómala de la suite.
+- Confirmado por el fundador en su navegador real, contra el servidor de producción reiniciado.
+- Ver ADR 0021.

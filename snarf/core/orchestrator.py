@@ -7,6 +7,11 @@ from snarf.capabilities.google_youtube import GoogleYouTube
 from snarf.core.identity import load_identity
 from snarf.memory.episodic import EpisodicMemory
 
+# Único usuario real hoy. El Orchestrator ya recibe un user_id explícito (en
+# vez de asumirlo implícitamente) para que agregar un segundo usuario en el
+# futuro sea pasar otro user_id, no rediseñar esta clase.
+DEFAULT_USER_ID = "fundador"
+
 SYSTEM_PREFIX = (
     "Sos Snarf. A continuación se incluyen, en orden de jerarquía, los documentos "
     "que definen tu identidad, tu gobernanza y tu personalidad. Actuá en todo momento "
@@ -299,12 +304,13 @@ TOOLS = [
 
 
 class Orchestrator:
-    def __init__(self):
+    def __init__(self, user_id: str = DEFAULT_USER_ID):
+        self._user_id = user_id
         self._llm = AnthropicLLM()
         self._memory = EpisodicMemory()
         self._identity = load_identity()
 
-        google_auth = GoogleAuth()
+        google_auth = GoogleAuth(user_id)
         self._drive = GoogleDrive(google_auth)
         self._gmail = GoogleGmail(google_auth)
         self._calendar = GoogleCalendar(google_auth)

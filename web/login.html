@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Snarf — acceso</title>
+<style>
+  :root {
+    --glow: #4fd8e8;
+    --glow-soft: #b6f5fb;
+    --text-dim: #6f8891;
+    --text: #d7eef2;
+    --error: #e85a5a;
+  }
+  * { box-sizing: border-box; }
+  html { background: #000; height: 100%; overflow-x: hidden; }
+  body {
+    margin: 0; min-height: 100dvh; background: #000; color: var(--text);
+    font-family: "SF Mono", "Menlo", monospace;
+    display: flex; align-items: center; justify-content: center;
+    padding: 1.5rem;
+  }
+  .bg-glow {
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse 65% 55% at 50% 40%, #0c1c22 0%, #050a0c 45%, #000000 82%);
+    z-index: 0;
+  }
+  .card {
+    position: relative; z-index: 1;
+    width: 100%; max-width: 340px;
+    background: rgba(5,10,12,0.7);
+    border: 1px solid rgba(79,216,232,0.3);
+    border-radius: 16px;
+    padding: 2rem 1.6rem;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 0 30px rgba(79,216,232,0.12);
+  }
+  .card h1 {
+    margin: 0 0 0.3rem; font-size: 1.1rem; letter-spacing: 0.08em;
+    color: var(--glow-soft); text-transform: uppercase; text-align: center;
+  }
+  .card p { margin: 0 0 1.4rem; font-size: 0.72rem; color: var(--text-dim); text-align: center; }
+  input {
+    width: 100%; background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(79,216,232,0.3); border-radius: 10px;
+    color: var(--text); font-family: inherit; font-size: 0.95rem;
+    padding: 0.75rem 1rem; outline: none; margin-bottom: 0.9rem;
+  }
+  input:focus { border-color: var(--glow); }
+  button {
+    width: 100%; background: rgba(79,216,232,0.2);
+    border: 1px solid var(--glow); color: var(--text);
+    font-family: inherit; font-size: 0.75rem; text-transform: uppercase;
+    letter-spacing: 0.06em; padding: 0.75rem; border-radius: 10px; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .error {
+    min-height: 1.1em; font-size: 0.72rem; color: var(--error);
+    text-align: center; margin-top: 0.8rem;
+  }
+</style>
+</head>
+<body>
+  <div class="bg-glow"></div>
+  <form class="card" id="loginForm">
+    <h1>Snarf</h1>
+    <p>acceso restringido</p>
+    <input type="password" id="passwordInput" placeholder="contraseña" autocomplete="current-password" autofocus>
+    <button type="submit" id="submitBtn">entrar</button>
+    <div class="error" id="errorMsg"></div>
+  </form>
+
+<script>
+const form = document.getElementById("loginForm");
+const passwordInput = document.getElementById("passwordInput");
+const submitBtn = document.getElementById("submitBtn");
+const errorMsg = document.getElementById("errorMsg");
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const password = passwordInput.value;
+  if (!password) return;
+  submitBtn.disabled = true;
+  errorMsg.textContent = "";
+  try {
+    const res = await fetch("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    if (res.ok) {
+      window.location.href = "/";
+      return;
+    }
+    errorMsg.textContent = res.status === 401 ? "contraseña incorrecta" : "error del servidor, probá de nuevo";
+  } catch (err) {
+    errorMsg.textContent = "no se pudo conectar";
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
