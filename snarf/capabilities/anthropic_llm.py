@@ -6,6 +6,7 @@ from snarf.capabilities.base import Capability
 
 DEFAULT_MODEL = "claude-sonnet-5"
 MAX_TOOL_ROUNDS = 5
+MAX_OUTPUT_TOKENS = 4096
 
 
 class AnthropicLLM(Capability):
@@ -48,7 +49,7 @@ class AnthropicLLM(Capability):
 
         conversation = list(messages)
         for _ in range(MAX_TOOL_ROUNDS):
-            kwargs = dict(model=self.model, max_tokens=1024, system=system, messages=conversation)
+            kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=system, messages=conversation)
             if tools:
                 kwargs["tools"] = tools
             response = self._client.messages.create(**kwargs)
@@ -69,6 +70,9 @@ class AnthropicLLM(Capability):
                 conversation.append({"role": "user", "content": tool_results})
                 continue
 
-            return "".join(block.text for block in response.content if block.type == "text")
+            text = "".join(block.text for block in response.content if block.type == "text")
+            if response.stop_reason == "max_tokens":
+                text += "\n\n*(respuesta truncada: llegó al límite de longitud de una respuesta)*"
+            return text
 
         return "[demasiadas consultas a herramientas, no llegué a una respuesta final]"

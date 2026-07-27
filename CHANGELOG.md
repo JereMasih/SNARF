@@ -147,3 +147,11 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Primera suite de tests automatizados del proyecto (27 tests, `pytest`): memoria episódica, dispatch de herramientas del Orchestrator, y — el más importante — que las 8 herramientas de alto impacto (Artículo VII de Constitution) nunca ejecutan la acción real sin `confirmed=true`, para las ocho, una por una.
 - Primer pipeline de CI (`GitHub Actions`): corre la suite completa en cada push y pull request.
 - Ver ADR 0019.
+
+## [2026-07-27] Corrección de los tres bugs reportados
+
+- Respuestas largas cortadas: `max_tokens` fijo en 1024 sin chequear `stop_reason`, subido a 4096, y ahora se agrega una nota visible cuando una respuesta se trunca en vez de devolverla en silencio como si estuviera completa. Verificado con test unitario (cliente falso) y con una llamada real a la API de Anthropic.
+- Push-to-talk muerto en iPhone tras el primer uso: el `MediaStream` del micrófono se cacheaba para siempre; en iOS, backgrounding/bloqueo de pantalla suele matar esos tracks sin avisar, produciendo grabaciones vacías. Ahora se pide un stream nuevo en cada grabación y se libera al terminar. **Confirmado por el fundador en su iPhone real**, tanto en modo "mantener presionado" como en modo "toque".
+- Botón de enviar cortado en mobile: dos hipótesis iniciales (conflicto `min-height:100vh`/`height:100dvh`; falta de `min-width:0` en el input de texto) resultaron necesarias pero no suficientes, descartadas con evidencia real de capturas de pantalla del fundador. La causa real: la página completa renderizaba más ancha que el viewport del iPhone en todos los modos (no solo en modo texto), y Safari permitía pellizcar para hacer zoom en vez de ajustarla — solo haciendo zoom-out manual se veía todo encuadrado. Corregido agregando `overflow-x: hidden` a `html` y deshabilitando el zoom táctil (`user-scalable=no`), coherente con que esta es una interfaz tipo HUD fija.
+- **Los tres bugs confirmados como resueltos por el fundador en su iPhone real.**
+- Ver ADR 0020.

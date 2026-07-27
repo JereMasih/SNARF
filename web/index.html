@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Snarf</title>
 <style>
   :root {
@@ -14,11 +14,10 @@
     --error: #e85a5a;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html { background: #000; height: 100%; overscroll-behavior: none; }
+  html { background: #000; height: 100%; overflow-x: hidden; overscroll-behavior: none; }
   body {
     margin: 0;
     height: 100dvh;
-    min-height: 100vh;
     background: #000;
     color: var(--text);
     font-family: "SF Mono", "Menlo", monospace;
@@ -397,6 +396,7 @@
   .text-row.visible { display: flex; }
   .text-row input {
     flex: 1 1 auto;
+    min-width: 0;
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(79,216,232,0.3);
     border-radius: 999px;
@@ -755,12 +755,13 @@ function extFor(mime) {
   if (mime.includes("ogg")) return "ogg";
   return "webm";
 }
-async function ensureStream() {
-  if (!stream) stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  return stream;
-}
 async function startRecording() {
-  await ensureStream();
+  // Se pide un stream nuevo en cada grabación (en vez de cachear uno para
+  // siempre): en iOS Safari, backgrounding o bloqueo de pantalla suele matar
+  // los tracks de un stream viejo sin avisar, y reusarlo produce grabaciones
+  // vacías indistinguibles de "no funciona". El navegador no vuelve a pedir
+  // permiso si ya fue otorgado para este origen.
+  stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   chunks = [];
   const mimeType = pickMimeType();
   mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
@@ -771,7 +772,10 @@ async function startRecording() {
 }
 function stopRecording() {
   return new Promise((resolve) => {
-    mediaRecorder.onstop = () => resolve(new Blob(chunks, { type: recordedMimeType }));
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      resolve(new Blob(chunks, { type: recordedMimeType }));
+    };
     mediaRecorder.stop();
   });
 }

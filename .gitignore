@@ -4,4 +4,5 @@ __pycache__/
 .venv/
 venv/
 data/episodic_memory.jsonl
+data/manual_verification_log.jsonl
 credentials/
