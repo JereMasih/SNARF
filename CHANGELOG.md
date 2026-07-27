@@ -138,3 +138,12 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Nuevas herramientas: `calendar_search_events` (lectura), `calendar_delete_event` y `calendar_move_event` (alto impacto, con confirmación).
 - Resuelto en vivo, a través del chat, el caso real que expuso el problema: encontrado un evento pasado, borrado un duplicado de prueba, y movido el evento correcto entre calendarios — todo confirmado explícitamente y verificado de forma independiente contra la API real.
 - Ver ADR 0018.
+
+## [2026-07-27] Auditoría técnica completa y base de calidad (tests, CI, dependencias fijadas)
+
+- Primera auditoría técnica de arquitectura del repositorio completo (no de gobernanza/identidad, esa fue Architecture Review 0001): documento `ARCHITECTURE_AUDIT.md`, 22 secciones, cada hallazgo anclado a archivo y línea. Confirmó que el código es limpio (sin dependencias circulares, sin imports sueltos) pero con cero madurez operacional: sin tests, sin CI, sin versiones fijadas, sin logging estructurado.
+- Identificados con evidencia de código, sin haber tocado nada todavía: causa más probable de que las respuestas largas se corten (`max_tokens=1024` fijo en `AnthropicLLM.generate`, sin chequear `stop_reason`), causa más probable de que el push-to-talk deje de andar en iPhone tras el primer uso (el `MediaStream` del navegador se cachea para siempre y nunca se revalida), y causa más probable del botón de enviar cortado en mobile (`min-height: 100vh` conviviendo con `height: 100dvh` en el mismo `body`). Ninguno corregido todavía — quedan para la siguiente fase de trabajo.
+- Se fijaron las versiones exactas de todas las dependencias en `requirements.txt` (antes sin pinear); nuevo `requirements-dev.txt` para dependencias de test.
+- Primera suite de tests automatizados del proyecto (27 tests, `pytest`): memoria episódica, dispatch de herramientas del Orchestrator, y — el más importante — que las 8 herramientas de alto impacto (Artículo VII de Constitution) nunca ejecutan la acción real sin `confirmed=true`, para las ocho, una por una.
+- Primer pipeline de CI (`GitHub Actions`): corre la suite completa en cada push y pull request.
+- Ver ADR 0019.

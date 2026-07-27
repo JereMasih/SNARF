@@ -111,7 +111,9 @@ Unidades económicas, productos, servicios y empresas.
 
 Repositorios, Git, IA, servidores, automatizaciones y herramientas.
 
-Repositorio Git local inicializado el 2026-07-25. Estructura de código bajo `snarf/` (core, capabilities, specialists, runtime); memoria episódica en `data/`; credenciales externas (Google OAuth) en `credentials/`, fuera de git.
+Repositorio Git local inicializado el 2026-07-25, publicado el 2026-07-27 en `https://github.com/JereMasih/SNARF` (público; secretos excluidos por `.gitignore`). Estructura de código bajo `snarf/` (core, capabilities, specialists, runtime); memoria episódica en `data/`; credenciales externas (Google OAuth) en `credentials/`, fuera de git.
+
+Desde el 2026-07-27: dependencias fijadas a versión exacta en `requirements.txt` (antes sin pinear); `requirements-dev.txt` para dependencias de test; primera suite de tests automatizados en `tests/` (27 tests, `pytest`) cubriendo memoria episódica, dispatch de herramientas y — el más importante — que ninguna de las 8 herramientas de alto impacto ejecuta su acción real sin `confirmed=true`; CI en `.github/workflows/tests.yml` que corre la suite en cada push/PR. Ver ADR 0019 y `ARCHITECTURE_AUDIT.md` (auditoría técnica completa del repositorio, distinta de la auditoría de gobernanza de Architecture Review 0001).
 
 ## History
 
