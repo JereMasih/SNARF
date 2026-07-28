@@ -223,3 +223,20 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Paneles y burbujas de chat pasan de un tinte plano a un degradé radial (centro más visible, bordes más oscuros) con vidrio esmerilado, coherente con el resto de la estética Jarvis — confirmado que la línea de escaneo de fondo sigue pasando por detrás.
 - Verificado con Playwright (arrastre de mouse real, promoviendo un widget a la franja superior) y con captura de pantalla.
 - Ver ADR 0027.
+
+## [2026-07-27] Textura de paneles, tipografía y modos de entrada simplificados a dos
+
+- Degradé más marcado (centro claro, bordes oscuros) con resplandor cian interior en paneles y burbujas de chat; títulos de widget menos pesados visualmente (peso 400 en vez de 500, tamaño levemente mayor).
+- Selector de modo de entrada simplificado de tres modos a dos: **toque** (orbe, ahora más chico, ~133px en vez de 180px) y **teclado** (ahora el modo por defecto en desktop y en mobile). Se eliminó "mantener presionado".
+- El modo teclado tiene un botón de micrófono embebido junto al campo de texto: graba, transcribe y coloca el texto para revisar antes de enviar, sin una vista previa separada. Botón de enviar rediseñado como flecha hacia arriba.
+- Pospuesto explícitamente a una ronda dedicada: ancho variable por widget, zona izquierda flexible, y posición reubicable del módulo de chat — es, en los hechos, un editor de layout tipo grilla genérico, no un ajuste de CSS.
+- Verificado con Playwright, incluyendo el flujo completo de grabar-transcribir-completar el campo con un dispositivo de audio falso y una llamada real a la API de transcripción.
+- Ver adenda de ADR 0027.
+
+## [2026-07-27] Vidrio esmerilado real en paneles y burbujas (aún sin commitear, a pedido del fundador)
+
+- El primer ajuste de degradé subía la opacidad en vez de bajarla — corregido: menos opacidad en todo el degradé, `backdrop-filter` de 15px + saturación, para que la línea de escaneo y las partículas de fondo se vean difuminadas *a través* de paneles y burbujas, en vez de tapadas.
+- Verificado con capturas de pantalla reales.
+- Ajuste posterior, misma jornada: el fundador pidió aún más transparencia y *menos* difuminado (para disfrutar la línea con nitidez, no perderla en el blur) — `backdrop-filter` bajado de 15px a 4px y opacidad del degradé reducida más todavía en `.dash-widget`, `.msg.user` y `.msg.snarf`. Verificado con Playwright contra el servidor real.
+- Suite completa: 93/93 sin cambios (CSS puro).
+- Sin ADR de cierre todavía: el fundador pidió frenar el commit/push hasta terminar de ajustar el look visual.

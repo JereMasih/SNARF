@@ -323,16 +323,18 @@
   }
   .dash-widget {
     position: relative;
-    border: 1px solid rgba(79,216,232,0.22);
+    border: 1px solid rgba(79,216,232,0.36);
     background:
-      radial-gradient(ellipse at center, rgba(79,216,232,0.09) 0%, rgba(8,14,16,0.55) 68%, rgba(4,8,9,0.78) 100%);
-    backdrop-filter: blur(6px);
+      radial-gradient(ellipse at center, rgba(79,216,232,0.07) 0%, rgba(10,18,20,0.16) 60%, rgba(4,10,12,0.24) 100%);
+    box-shadow: inset 0 0 26px rgba(79,216,232,0.06), inset 0 0 0 1px rgba(79,216,232,0.08);
+    backdrop-filter: blur(4px) saturate(1.2);
+    -webkit-backdrop-filter: blur(4px) saturate(1.2);
     border-radius: 14px;
     padding: 1rem 1.1rem;
   }
   .dash-widget h3 {
-    margin: 0 0 0.7rem; font-size: 0.78rem; letter-spacing: 0.06em;
-    text-transform: uppercase; color: var(--glow-soft); font-weight: 500;
+    margin: 0 0 0.7rem; font-size: 0.82rem; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--glow-soft); font-weight: 400;
   }
   .dash-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text); padding: 0.25rem 0; }
   .dash-row.dash-dim { color: var(--text-dim); font-size: 0.72rem; }
@@ -379,15 +381,19 @@
   @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   .msg.user {
     align-self: flex-end;
-    background: radial-gradient(ellipse at center, rgba(79,216,232,0.22) 0%, rgba(8,16,18,0.5) 70%, rgba(4,9,10,0.7) 100%);
-    backdrop-filter: blur(6px);
-    border: 1px solid rgba(79,216,232,0.3); border-bottom-right-radius: 4px;
+    background: radial-gradient(ellipse at center, rgba(79,216,232,0.14) 0%, rgba(10,18,20,0.14) 55%, rgba(4,10,12,0.2) 100%);
+    box-shadow: inset 0 0 18px rgba(79,216,232,0.08), inset 0 0 0 1px rgba(79,216,232,0.1);
+    backdrop-filter: blur(4px) saturate(1.2);
+    -webkit-backdrop-filter: blur(4px) saturate(1.2);
+    border: 1px solid rgba(79,216,232,0.4); border-bottom-right-radius: 4px;
   }
   .msg.snarf {
     align-self: flex-start;
-    background: radial-gradient(ellipse at center, rgba(255,255,255,0.08) 0%, rgba(8,12,13,0.5) 70%, rgba(4,7,8,0.7) 100%);
-    backdrop-filter: blur(6px);
-    border: 1px solid rgba(255,255,255,0.1); border-bottom-left-radius: 4px;
+    background: radial-gradient(ellipse at center, rgba(200,235,240,0.06) 0%, rgba(10,14,15,0.12) 55%, rgba(4,7,8,0.18) 100%);
+    box-shadow: inset 0 0 18px rgba(79,216,232,0.04), inset 0 0 0 1px rgba(255,255,255,0.06);
+    backdrop-filter: blur(4px) saturate(1.15);
+    -webkit-backdrop-filter: blur(4px) saturate(1.15);
+    border: 1px solid rgba(255,255,255,0.16); border-bottom-left-radius: 4px;
   }
   .msg.snarf h1, .msg.snarf h2, .msg.snarf h3 {
     margin: 0.2rem 0 0.4rem; line-height: 1.3; color: var(--glow-soft);
@@ -547,6 +553,7 @@
   .orb-wrap {
     position: relative; width: 180px; height: 180px; cursor: pointer;
     user-select: none; -webkit-user-select: none; touch-action: none; flex-shrink: 0;
+    transform: scale(0.74); transform-origin: center;
   }
   .rays, .rays2 {
     position: absolute; inset: -42px; border-radius: 50%;
@@ -627,18 +634,20 @@
     outline: none;
   }
   .text-row input::placeholder { color: var(--text-dim); }
-  .text-row button {
+  .text-row .icon-btn {
     flex: 0 0 auto;
-    background: rgba(79,216,232,0.2);
+    width: 42px; height: 42px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(79,216,232,0.14);
     border: 1px solid var(--glow);
     color: var(--text);
-    font-family: inherit;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.7rem 1.1rem;
-    border-radius: 999px;
+    border-radius: 50%;
     cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .text-row #micBtn.recording {
+    background: rgba(232,90,90,0.16); border-color: var(--error); color: var(--error);
+    animation: pulse-fast 1s ease-in-out infinite;
   }
 </style>
 </head>
@@ -656,11 +665,10 @@
 
   <button class="menu-btn" id="menuBtn"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
   <button class="dash-btn" id="dashBtn" title="Dashboard"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg></button>
-  <button class="mode-fab" id="modeFab"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="1.6" fill="currentColor" stroke="none"/></svg></button>
+  <button class="mode-fab" id="modeFab"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="5" width="15" height="10" rx="1.5"/><line x1="5.5" y1="8.5" x2="5.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="8.5" y1="8.5" x2="8.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="11.5" y1="8.5" x2="11.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="14.5" y1="8.5" x2="14.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="6" y1="12" x2="14" y2="12" stroke-linecap="round"/></svg></button>
   <div class="mode-popover" id="modePopover">
-    <button class="mode-option" data-mode="hold"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg> Mantener presionado</button>
-    <button class="mode-option active" data-mode="click"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="1.6" fill="currentColor" stroke="none"/></svg> Toque</button>
-    <button class="mode-option" data-mode="text"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="5" width="15" height="10" rx="1.5"/><line x1="5.5" y1="8.5" x2="5.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="8.5" y1="8.5" x2="8.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="11.5" y1="8.5" x2="11.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="14.5" y1="8.5" x2="14.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="6" y1="12" x2="14" y2="12" stroke-linecap="round"/></svg> Texto</button>
+    <button class="mode-option" data-mode="click"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="1.6" fill="currentColor" stroke="none"/></svg> Toque</button>
+    <button class="mode-option active" data-mode="text"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="5" width="15" height="10" rx="1.5"/><line x1="5.5" y1="8.5" x2="5.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="8.5" y1="8.5" x2="8.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="11.5" y1="8.5" x2="11.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="14.5" y1="8.5" x2="14.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="6" y1="12" x2="14" y2="12" stroke-linecap="round"/></svg> Teclado</button>
   </div>
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
   <div class="sidebar" id="sidebar">
@@ -709,7 +717,8 @@
       </div>
       <div class="text-row" id="textRow">
         <input type="text" id="textInput" placeholder="Escribile a Snarf..." autocomplete="off">
-        <button id="textSendBtn">enviar</button>
+        <button class="icon-btn" id="micBtn" title="Grabar"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg></button>
+        <button class="icon-btn" id="textSendBtn" title="Enviar"><svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="16" x2="10" y2="4"/><path d="M5 9l5-5 5 5"/></svg></button>
       </div>
       <div class="orb-wrap" id="orbWrap">
         <div class="rays"></div>
@@ -764,7 +773,7 @@ const reviewText = document.getElementById("reviewText");
 const modeFab = document.getElementById("modeFab");
 const modePopover = document.getElementById("modePopover");
 const modeOptions = document.querySelectorAll(".mode-option");
-const MODE_ICONS = { hold: ICONS.mic, click: ICONS.tap, text: ICONS.keyboard };
+const MODE_ICONS = { click: ICONS.tap, text: ICONS.keyboard };
 const audioPlayer = document.getElementById("audioPlayer");
 const speedBtn = document.getElementById("speedBtn");
 const closePlayerBtn = document.getElementById("closePlayerBtn");
@@ -778,6 +787,7 @@ const logoutBtn = document.getElementById("logoutBtn");
 const textRow = document.getElementById("textRow");
 const textInput = document.getElementById("textInput");
 const textSendBtn = document.getElementById("textSendBtn");
+const micBtn = document.getElementById("micBtn");
 const dashBtn = document.getElementById("dashBtn");
 const viewChat = document.getElementById("viewChat");
 const viewDashboard = document.getElementById("viewDashboard");
@@ -807,7 +817,7 @@ for (let i = 0; i < 14; i++) {
   particlesEl.appendChild(p);
 }
 
-let mode = "click"; // "click" | "hold" | "text"
+let mode = "text"; // "click" | "text"
 let ttsAvailable = true;
 let currentSpeed = 1.25;
 const SPEEDS = [1.25, 1.5, 1.75, 2, 0.75, 1];
@@ -876,7 +886,6 @@ function renderMarkdown(text) {
 /* ---------- chat helpers ---------- */
 function idleLabel() {
   if (mode === "click") return "click para grabar";
-  if (mode === "hold") return "mantené presionado para hablar";
   return "escribí tu mensaje";
 }
 function setState(next, label) {
@@ -1668,30 +1677,7 @@ async function handleClickMode() {
     } catch (e) { setState("error", "error: " + (e.message || e)); }
   }
 }
-async function handleHoldStart(e) {
-  e.preventDefault();
-  unlockAudio();
-  if (state === "error") setState("idle", idleLabel());
-  if (state !== "idle") return;
-  try { await startRecording(); } catch (err) { setState("error", "sin micrófono: " + (err.message || err)); }
-}
-async function handleHoldEnd(e) {
-  e.preventDefault();
-  if (state !== "listening") return;
-  setState("thinking", "transcribiendo...");
-  try {
-    const blob = await stopRecording();
-    const transcript = await transcribeBlob(blob);
-    await sendText(transcript);
-  } catch (err) { setState("error", "error: " + (err.message || err)); }
-}
-
 orbWrap.addEventListener("click", () => { if (mode === "click") handleClickMode(); });
-orbWrap.addEventListener("mousedown", (e) => { if (mode === "hold") handleHoldStart(e); });
-orbWrap.addEventListener("mouseup", (e) => { if (mode === "hold") handleHoldEnd(e); });
-orbWrap.addEventListener("mouseleave", (e) => { if (mode === "hold" && state === "listening") handleHoldEnd(e); });
-orbWrap.addEventListener("touchstart", (e) => { if (mode === "hold") handleHoldStart(e); });
-orbWrap.addEventListener("touchend", (e) => { if (mode === "hold") handleHoldEnd(e); });
 
 document.getElementById("sendBtn").addEventListener("click", () => {
   review.classList.remove("visible");
@@ -1712,6 +1698,34 @@ textSendBtn.addEventListener("click", sendFromTextInput);
 textInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); sendFromTextInput(); }
 });
+
+async function handleMicClick() {
+  unlockAudio();
+  if (state === "error") setState("idle", idleLabel());
+  if (state === "idle") {
+    try {
+      await startRecording();
+      micBtn.classList.add("recording");
+    } catch (err) {
+      setState("error", "sin micrófono: " + (err.message || err));
+    }
+  } else if (state === "listening") {
+    micBtn.classList.remove("recording");
+    setState("thinking", "transcribiendo...");
+    try {
+      const blob = await stopRecording();
+      const transcript = await transcribeBlob(blob);
+      textInput.value = transcript;
+      setState("idle", idleLabel());
+      textInput.focus();
+    } catch (err) {
+      setState("error", "error: " + (err.message || err));
+    }
+  }
+}
+micBtn.addEventListener("click", handleMicClick);
+
+setMode(mode);
 
 fetch("/status").then(r => r.json()).then(s => {
   ttsAvailable = !!s.tts_available;
