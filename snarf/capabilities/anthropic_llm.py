@@ -47,9 +47,17 @@ class AnthropicLLM(Capability):
                 "ANTHROPIC_API_KEY no configurada. Definila en .env (ver .env.example)."
             )
 
+        # El system prompt de Snarf (FOUNDATION+CONSTITUTION+CHARACTER) es
+        # idéntico en cada llamada, en todas las conversaciones — un caso de
+        # cacheo casi perfecto. cache_control en el bloque de system cachea
+        # también las tools que lo preceden (mismo orden de renderizado:
+        # tools -> system -> messages), y no cuesta nada si el prompt es
+        # demasiado corto para cachear (simplemente no cachea, sin error).
+        cached_system = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+
         conversation = list(messages)
         for _ in range(MAX_TOOL_ROUNDS):
-            kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=system, messages=conversation)
+            kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=conversation)
             if tools:
                 kwargs["tools"] = tools
             response = self._client.messages.create(**kwargs)

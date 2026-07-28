@@ -20,7 +20,7 @@
     height: 100dvh;
     background: #000;
     color: var(--text);
-    font-family: "SF Mono", "Menlo", monospace;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
     overflow: hidden;
     overscroll-behavior: none;
     position: relative;
@@ -140,12 +140,222 @@
   .conv-item:hover, .conv-item.active { background: rgba(79,216,232,0.1); color: var(--text); }
   .conv-item .conv-date { display: block; font-size: 0.6rem; opacity: 0.7; margin-top: 2px; }
   .conv-empty { padding: 1rem 0.7rem; font-size: 0.7rem; color: var(--text-dim); opacity: 0.6; }
-  .logout-btn {
-    margin: 10px 14px 0; padding: 0.55rem 0.8rem; border-radius: 10px;
-    border: 1px solid rgba(232,90,90,0.3); background: rgba(232,90,90,0.08);
-    color: var(--text-dim); font-family: inherit; font-size: 0.7rem;
-    letter-spacing: 0.04em; cursor: pointer; text-align: left;
+  /* --- user menu (sidebar) --- */
+  .user-menu { margin: 10px 14px 0; position: relative; }
+  .user-menu-btn {
+    width: 100%; display: flex; align-items: center; gap: 0.55rem;
+    padding: 0.55rem 0.7rem; border-radius: 10px;
+    border: 1px solid rgba(79,216,232,0.25); background: rgba(79,216,232,0.06);
+    color: var(--text); font-family: inherit; font-size: 0.72rem; cursor: pointer; text-align: left;
   }
+  .user-avatar {
+    width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+    background: rgba(79,216,232,0.2); border: 1px solid rgba(79,216,232,0.4);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; color: var(--glow-soft); text-transform: uppercase;
+  }
+  .user-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .user-caret { color: var(--text-dim); font-size: 0.6rem; transition: transform 0.2s ease; }
+  .user-menu.open .user-caret { transform: rotate(180deg); }
+  .user-menu-popover {
+    position: absolute; left: 0; right: 0; bottom: calc(100% + 6px);
+    background: rgba(5,10,12,0.96); border: 1px solid rgba(79,216,232,0.3);
+    border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 2px;
+    opacity: 0; transform: translateY(6px); pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .user-menu.open .user-menu-popover { opacity: 1; transform: none; pointer-events: auto; }
+  .user-menu-item {
+    display: flex; align-items: center; gap: 0.5rem; background: none; border: none;
+    color: var(--text-dim); font-family: inherit; font-size: 0.72rem;
+    padding: 0.5rem 0.6rem; border-radius: 8px; cursor: pointer; text-align: left;
+  }
+  .user-menu-item:hover:not(:disabled) { background: rgba(79,216,232,0.1); color: var(--text); }
+  .user-menu-item:disabled { opacity: 0.45; cursor: default; }
+  .user-menu-item.danger { color: #e88a8a; }
+  .user-menu-item.danger:hover { background: rgba(232,90,90,0.12); color: #fff; }
+
+  /* --- view switching (chat / dashboard) --- */
+  #appRoot { position: relative; z-index: 2; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .view-chat, .view-dashboard {
+    flex: 1 1 auto; min-height: 0; display: none; flex-direction: column;
+  }
+  .view-chat.active, .view-dashboard.active { display: flex; }
+  .dash-zone-top, .dash-zone-left, .dash-zone-right { display: none; }
+
+  /* --- modo Jarvis: chat centrado, paneles alrededor (desktop ancho) --- */
+  @media (min-width: 900px) {
+    body.jarvis-mode .menu-btn { display: none; }
+    body.jarvis-mode #appRoot {
+      display: grid;
+      grid-template-columns: 280px minmax(380px, 620px) 1fr;
+      grid-template-rows: auto 1fr;
+      grid-template-areas: "top top top" "left center right";
+      gap: 0.9rem;
+      padding: calc(env(safe-area-inset-top, 0px) + 3.8rem) 1.2rem 1rem;
+      height: 100%;
+    }
+    body.jarvis-mode .view-chat {
+      display: flex; grid-area: center; min-height: 0;
+    }
+    body.jarvis-mode .view-dashboard { display: contents; }
+    body.jarvis-mode .dash-zone-top {
+      display: block; grid-area: top; min-height: 0; overflow-y: auto;
+    }
+    body.jarvis-mode .dash-zone-left {
+      display: flex; flex-direction: column; grid-area: left; min-height: 0; overflow-y: auto; gap: 0.8rem;
+    }
+    body.jarvis-mode .dash-zone-right {
+      display: flex; flex-direction: column; grid-area: right; min-height: 0; overflow-y: auto; gap: 0.8rem;
+    }
+    body.jarvis-mode .dash-mobile-stack { display: none; }
+  }
+  .dash-left-convs {
+    border: 1px solid rgba(79,216,232,0.22); border-radius: 14px;
+    background: rgba(255,255,255,0.03); padding: 0.8rem; display: flex; flex-direction: column;
+    min-height: 160px; max-height: 40vh;
+  }
+  .dash-left-convs .conv-list { overflow-y: auto; }
+
+  /* --- panel drag handle / reordering --- */
+  .dash-widget-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.15rem; }
+  .dash-widget-head h3 { margin: 0; }
+  .dash-widget-sub { font-size: 0.66rem; color: var(--text-dim); margin-bottom: 0.6rem; opacity: 0.85; }
+  .dash-row a, .dash-row-title a {
+    color: inherit; text-decoration: none; border-bottom: 1px dotted rgba(79,216,232,0.4);
+  }
+  .dash-row a:hover, .dash-row-title a:hover { color: var(--glow-soft); border-bottom-color: var(--glow-soft); }
+  .dash-widget-config {
+    display: flex; align-items: center; gap: 0.4rem; font-size: 0.66rem; color: var(--text-dim);
+    margin-bottom: 0.5rem;
+  }
+  .dash-widget-config select {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(79,216,232,0.3); border-radius: 6px;
+    color: var(--text); font-family: inherit; font-size: 0.68rem; padding: 0.15rem 0.4rem;
+  }
+  .dash-gmail-digest { margin-top: 0.7rem; padding-top: 0.6rem; border-top: 1px solid rgba(255,255,255,0.06); }
+  .dash-mini-btn {
+    background: rgba(79,216,232,0.12); border: 1px solid rgba(79,216,232,0.35); color: var(--glow-soft);
+    font-family: inherit; font-size: 0.66rem; letter-spacing: 0.02em; padding: 0.3rem 0.6rem;
+    border-radius: 999px; cursor: pointer;
+  }
+  .dash-mini-btn:disabled { opacity: 0.5; cursor: default; }
+  #gmailDigestContent {
+    font-size: 0.76rem; line-height: 1.5; margin-top: 0.5rem;
+    max-height: 260px; overflow-y: auto;
+  }
+  #gmailDigestContent p { margin: 0 0 0.4rem; }
+  #gmailDigestContent ul, #gmailDigestContent ol { margin: 0 0 0.4rem; padding-left: 1.1rem; }
+  #gmailDigestContent strong { color: var(--glow-soft); }
+  .dash-drag-handle {
+    color: var(--text-dim); cursor: grab; touch-action: none; opacity: 0.55;
+    display: flex; align-items: center; justify-content: center;
+    min-width: 32px; min-height: 32px; margin: -8px -6px -8px 0;
+    user-select: none; -webkit-user-select: none;
+  }
+  .dash-drag-handle:hover { opacity: 1; color: var(--glow); }
+  .dash-widget.dragging, .dash-widget.dragging * { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+  .dash-widget.dragging { opacity: 0.4; border-color: var(--glow); }
+
+  /* --- panel de configuración --- */
+  .settings-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 10;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+  }
+  .settings-overlay.open { opacity: 1; pointer-events: auto; }
+  .settings-panel {
+    position: fixed; z-index: 11;
+    left: 50%; top: 50%; transform: translate(-50%, -46%);
+    width: min(360px, 88vw); max-height: 70vh; overflow-y: auto;
+    background: rgba(5,10,12,0.97); border: 1px solid rgba(79,216,232,0.35);
+    border-radius: 16px; padding: 1rem;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .settings-panel.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); }
+  .settings-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.7rem; }
+  .settings-head h3 { margin: 0; font-size: 0.85rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--glow-soft); }
+  .settings-close {
+    background: none; border: 1px solid rgba(79,216,232,0.3); color: var(--text-dim);
+    border-radius: 50%; width: 26px; height: 26px; cursor: pointer; font-size: 0.75rem;
+  }
+  .settings-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.55rem 0.2rem; font-size: 0.78rem; color: var(--text);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-toggle {
+    width: 34px; height: 19px; border-radius: 999px; border: 1px solid rgba(79,216,232,0.35);
+    background: rgba(255,255,255,0.06); position: relative; cursor: pointer; flex-shrink: 0;
+  }
+  .settings-toggle::after {
+    content: ""; position: absolute; top: 1px; left: 1px; width: 15px; height: 15px;
+    border-radius: 50%; background: var(--text-dim); transition: transform 0.18s ease, background 0.18s ease;
+  }
+  .settings-toggle.on { background: rgba(79,216,232,0.25); border-color: var(--glow); }
+  .settings-toggle.on::after { transform: translateX(15px); background: var(--glow); }
+
+  .dash-btn {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    right: 58px;
+    z-index: 6;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    border: 1px solid rgba(79,216,232,0.3);
+    background: rgba(5,10,12,0.6);
+    color: var(--glow);
+    font-size: 0.95rem;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+
+  /* --- dashboard --- */
+  .dash-mobile-stack {
+    position: relative; z-index: 2;
+    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    padding: calc(env(safe-area-inset-top, 0px) + 3.6rem) 1rem calc(env(safe-area-inset-bottom, 0px) + 1.5rem);
+    width: 100%; max-width: 1100px; margin: 0 auto;
+  }
+  .dash-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 0.9rem;
+  }
+  .dash-widget {
+    position: relative;
+    border: 1px solid rgba(79,216,232,0.22);
+    background:
+      radial-gradient(ellipse at center, rgba(79,216,232,0.09) 0%, rgba(8,14,16,0.55) 68%, rgba(4,8,9,0.78) 100%);
+    backdrop-filter: blur(6px);
+    border-radius: 14px;
+    padding: 1rem 1.1rem;
+  }
+  .dash-widget h3 {
+    margin: 0 0 0.7rem; font-size: 0.78rem; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--glow-soft); font-weight: 500;
+  }
+  .dash-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text); padding: 0.25rem 0; }
+  .dash-row.dash-dim { color: var(--text-dim); font-size: 0.72rem; }
+  .dash-row, .dash-row-stacked { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dash-row-stacked {
+    display: flex; flex-direction: column; gap: 0.1rem; padding: 0.3rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.78rem; color: var(--text);
+  }
+  .dash-row-stacked:last-child { border-bottom: none; }
+  .dash-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dash-row-sub { font-size: 0.68rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dash-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--text-dim); }
+  .dash-dot.ok { background: var(--glow); box-shadow: 0 0 6px 2px rgba(79,216,232,0.6); }
+  .dash-dot.off { background: var(--error); box-shadow: 0 0 6px 2px rgba(232,90,90,0.4); }
+  .dash-stat { font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.35rem; }
+  .dash-stat-num { font-size: 1.3rem; color: var(--text); font-weight: 600; margin-right: 0.35rem; }
+  .dash-chart { display: flex; align-items: flex-end; gap: 3px; height: 60px; margin-top: 0.6rem; }
+  .dash-bar { flex: 1 1 auto; height: 100%; display: flex; align-items: flex-end; }
+  .dash-bar-fill {
+    width: 100%; background: var(--glow); opacity: 0.85; border-radius: 4px 4px 0 0; min-height: 2px;
+  }
+  .dash-chart-label { font-size: 0.65rem; color: var(--text-dim); margin-top: 0.4rem; text-align: right; }
+  .dash-loading { color: var(--text-dim); font-size: 0.8rem; padding: 2rem 0; text-align: center; }
 
   /* --- chat --- */
   .chat {
@@ -168,11 +378,15 @@
   .msg.snarf a { color: var(--glow-soft); text-decoration: underline; }
   @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   .msg.user {
-    align-self: flex-end; background: rgba(79,216,232,0.14);
+    align-self: flex-end;
+    background: radial-gradient(ellipse at center, rgba(79,216,232,0.22) 0%, rgba(8,16,18,0.5) 70%, rgba(4,9,10,0.7) 100%);
+    backdrop-filter: blur(6px);
     border: 1px solid rgba(79,216,232,0.3); border-bottom-right-radius: 4px;
   }
   .msg.snarf {
-    align-self: flex-start; background: rgba(255,255,255,0.05);
+    align-self: flex-start;
+    background: radial-gradient(ellipse at center, rgba(255,255,255,0.08) 0%, rgba(8,12,13,0.5) 70%, rgba(4,7,8,0.7) 100%);
+    backdrop-filter: blur(6px);
     border: 1px solid rgba(255,255,255,0.1); border-bottom-left-radius: 4px;
   }
   .msg.snarf h1, .msg.snarf h2, .msg.snarf h3 {
@@ -440,18 +654,29 @@
   <div class="corner br"></div>
   <div id="particles"></div>
 
-  <button class="menu-btn" id="menuBtn">☰</button>
-  <button class="mode-fab" id="modeFab">👆</button>
+  <button class="menu-btn" id="menuBtn"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
+  <button class="dash-btn" id="dashBtn" title="Dashboard"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg></button>
+  <button class="mode-fab" id="modeFab"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="1.6" fill="currentColor" stroke="none"/></svg></button>
   <div class="mode-popover" id="modePopover">
-    <button class="mode-option" data-mode="hold">🎙️ Mantener presionado</button>
-    <button class="mode-option active" data-mode="click">👆 Toque</button>
-    <button class="mode-option" data-mode="text">⌨️ Texto</button>
+    <button class="mode-option" data-mode="hold"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg> Mantener presionado</button>
+    <button class="mode-option active" data-mode="click"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="1.6" fill="currentColor" stroke="none"/></svg> Toque</button>
+    <button class="mode-option" data-mode="text"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="5" width="15" height="10" rx="1.5"/><line x1="5.5" y1="8.5" x2="5.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="8.5" y1="8.5" x2="8.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="11.5" y1="8.5" x2="11.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="14.5" y1="8.5" x2="14.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="6" y1="12" x2="14" y2="12" stroke-linecap="round"/></svg> Texto</button>
   </div>
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
   <div class="sidebar" id="sidebar">
     <button class="new-conv-btn" id="newConvBtn">+ nueva conversación</button>
     <div class="conv-list" id="convList"></div>
-    <button class="logout-btn" id="logoutBtn">cerrar sesión</button>
+    <div class="user-menu" id="userMenu">
+      <button class="user-menu-btn" id="userMenuBtn">
+        <span class="user-avatar" id="userAvatar">?</span>
+        <span class="user-name" id="userNameLabel">usuario</span>
+        <span class="user-caret">▾</span>
+      </button>
+      <div class="user-menu-popover" id="userMenuPopover">
+        <button class="user-menu-item" id="settingsBtn"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.8v2M10 15.2v2M17.2 10h-2M4.8 10h-2M15.1 4.9l-1.4 1.4M6.3 13.7l-1.4 1.4M15.1 15.1l-1.4-1.4M6.3 6.3 4.9 4.9" stroke-linecap="round"/></svg> configuración del dashboard</button>
+        <button class="user-menu-item danger" id="logoutBtn"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 3H5.5A1.5 1.5 0 0 0 4 4.5v11A1.5 1.5 0 0 0 5.5 17h3"/><path d="M13 6.5 16.5 10 13 13.5"/><line x1="16.2" y1="10" x2="8" y2="10"/></svg> cerrar sesión</button>
+      </div>
+    </div>
   </div>
 
   <div class="audio-player" id="audioPlayer">
@@ -460,39 +685,76 @@
     <button id="closePlayerBtn" class="close-btn">✕</button>
   </div>
 
-  <div class="chat" id="chat"><div class="chat-inner" id="chatInner"></div></div>
+  <div class="settings-overlay" id="settingsOverlay"></div>
+  <div class="settings-panel" id="settingsPanel">
+    <div class="settings-head">
+      <h3>Widgets del dashboard</h3>
+      <button class="settings-close" id="settingsCloseBtn">✕</button>
+    </div>
+    <div class="settings-list" id="settingsList"></div>
+  </div>
 
-  <div class="control-bar">
-    <div class="status" id="status">click para grabar</div>
-    <div class="review" id="review">
-      <textarea id="reviewText"></textarea>
-      <div class="actions">
-        <button id="cancelBtn">cancelar</button>
-        <button id="sendBtn" class="primary">enviar</button>
+  <div id="appRoot">
+  <div class="view-chat active" id="viewChat">
+    <div class="chat" id="chat"><div class="chat-inner" id="chatInner"></div></div>
+
+    <div class="control-bar">
+      <div class="status" id="status">click para grabar</div>
+      <div class="review" id="review">
+        <textarea id="reviewText"></textarea>
+        <div class="actions">
+          <button id="cancelBtn">cancelar</button>
+          <button id="sendBtn" class="primary">enviar</button>
+        </div>
       </div>
-    </div>
-    <div class="text-row" id="textRow">
-      <input type="text" id="textInput" placeholder="Escribile a Snarf..." autocomplete="off">
-      <button id="textSendBtn">enviar</button>
-    </div>
-    <div class="orb-wrap" id="orbWrap">
-      <div class="rays"></div>
-      <div class="rays2"></div>
-      <div class="ring-outer"></div>
-      <div class="ring-inner"></div>
-      <div class="orb-sphere">
-        <div class="wire w1"></div>
-        <div class="wire w2"></div>
-        <div class="wire w3"></div>
-        <div class="wire w4"></div>
-        <div class="wire w5"></div>
-        <div class="wire w6"></div>
-        <div class="orb"></div>
+      <div class="text-row" id="textRow">
+        <input type="text" id="textInput" placeholder="Escribile a Snarf..." autocomplete="off">
+        <button id="textSendBtn">enviar</button>
+      </div>
+      <div class="orb-wrap" id="orbWrap">
+        <div class="rays"></div>
+        <div class="rays2"></div>
+        <div class="ring-outer"></div>
+        <div class="ring-inner"></div>
+        <div class="orb-sphere">
+          <div class="wire w1"></div>
+          <div class="wire w2"></div>
+          <div class="wire w3"></div>
+          <div class="wire w4"></div>
+          <div class="wire w5"></div>
+          <div class="wire w6"></div>
+          <div class="orb"></div>
+        </div>
       </div>
     </div>
   </div>
 
+  <div class="view-dashboard" id="viewDashboard">
+    <div class="dash-zone dash-zone-top" id="dashZoneTop"></div>
+    <div class="dash-zone dash-zone-left" id="dashZoneLeft">
+      <div class="dash-left-convs">
+        <button class="new-conv-btn" id="dashNewConvBtn">+ nueva conversación</button>
+        <div class="conv-list" id="dashConvList"></div>
+      </div>
+    </div>
+    <div class="dash-zone dash-zone-right" id="dashZoneRight"></div>
+    <div class="dash-mobile-stack" id="dashboardInner"></div>
+  </div>
+  </div>
+
 <script>
+const ICONS = {
+  menu: '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>',
+  dashboard: '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg>',
+  chat: '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 5.5a1.5 1.5 0 0 1 1.5-1.5h11A1.5 1.5 0 0 1 17 5.5v6A1.5 1.5 0 0 1 15.5 13H8l-3.5 3v-3H4.5A1.5 1.5 0 0 1 3 11.5v-6Z"/></svg>',
+  mic: '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg>',
+  tap: '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="1.6" fill="currentColor" stroke="none"/></svg>',
+  keyboard: '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="5" width="15" height="10" rx="1.5"/><line x1="5.5" y1="8.5" x2="5.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="8.5" y1="8.5" x2="8.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="11.5" y1="8.5" x2="11.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="14.5" y1="8.5" x2="14.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="6" y1="12" x2="14" y2="12" stroke-linecap="round"/></svg>',
+  gear: '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.8v2M10 15.2v2M17.2 10h-2M4.8 10h-2M15.1 4.9l-1.4 1.4M6.3 13.7l-1.4 1.4M15.1 15.1l-1.4-1.4M6.3 6.3 4.9 4.9" stroke-linecap="round"/></svg>',
+  logout: '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 3H5.5A1.5 1.5 0 0 0 4 4.5v11A1.5 1.5 0 0 0 5.5 17h3"/><path d="M13 6.5 16.5 10 13 13.5"/><line x1="16.2" y1="10" x2="8" y2="10"/></svg>',
+  drag: '<svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor" stroke="none"><circle cx="7" cy="5" r="1.1"/><circle cx="13" cy="5" r="1.1"/><circle cx="7" cy="10" r="1.1"/><circle cx="13" cy="10" r="1.1"/><circle cx="7" cy="15" r="1.1"/><circle cx="13" cy="15" r="1.1"/></svg>',
+};
+
 const orbWrap = document.getElementById("orbWrap");
 const statusEl = document.getElementById("status");
 const chat = document.getElementById("chat");
@@ -502,7 +764,7 @@ const reviewText = document.getElementById("reviewText");
 const modeFab = document.getElementById("modeFab");
 const modePopover = document.getElementById("modePopover");
 const modeOptions = document.querySelectorAll(".mode-option");
-const MODE_ICONS = { hold: "🎙️", click: "👆", text: "⌨️" };
+const MODE_ICONS = { hold: ICONS.mic, click: ICONS.tap, text: ICONS.keyboard };
 const audioPlayer = document.getElementById("audioPlayer");
 const speedBtn = document.getElementById("speedBtn");
 const closePlayerBtn = document.getElementById("closePlayerBtn");
@@ -516,6 +778,24 @@ const logoutBtn = document.getElementById("logoutBtn");
 const textRow = document.getElementById("textRow");
 const textInput = document.getElementById("textInput");
 const textSendBtn = document.getElementById("textSendBtn");
+const dashBtn = document.getElementById("dashBtn");
+const viewChat = document.getElementById("viewChat");
+const viewDashboard = document.getElementById("viewDashboard");
+const dashboardInner = document.getElementById("dashboardInner");
+const dashZoneTop = document.getElementById("dashZoneTop");
+const dashZoneLeft = document.getElementById("dashZoneLeft");
+const dashZoneRight = document.getElementById("dashZoneRight");
+const dashConvList = document.getElementById("dashConvList");
+const dashNewConvBtn = document.getElementById("dashNewConvBtn");
+const userMenu = document.getElementById("userMenu");
+const userMenuBtn = document.getElementById("userMenuBtn");
+const userAvatar = document.getElementById("userAvatar");
+const userNameLabel = document.getElementById("userNameLabel");
+const settingsBtn = document.getElementById("settingsBtn");
+const settingsOverlay = document.getElementById("settingsOverlay");
+const settingsPanel = document.getElementById("settingsPanel");
+const settingsCloseBtn = document.getElementById("settingsCloseBtn");
+const settingsList = document.getElementById("settingsList");
 
 for (let i = 0; i < 14; i++) {
   const p = document.createElement("div");
@@ -662,7 +942,7 @@ function hideTyping() {
 function setMode(next) {
   if (state === "listening" || state === "thinking") return;
   mode = next;
-  modeFab.textContent = MODE_ICONS[mode];
+  modeFab.innerHTML = MODE_ICONS[mode];
   modeOptions.forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
   orbWrap.style.display = mode === "text" ? "none" : "";
   review.classList.remove("visible");
@@ -679,7 +959,7 @@ modeFab.addEventListener("click", () => {
   else openModePopover();
 });
 document.addEventListener("click", (e) => {
-  if (!modePopover.contains(e.target) && e.target !== modeFab) closeModePopover();
+  if (!modePopover.contains(e.target) && !modeFab.contains(e.target)) closeModePopover();
 });
 
 /* ---------- floating audio player (on demand) ---------- */
@@ -709,29 +989,34 @@ function relativeTime(ts) {
   if (diff < 86400) return Math.floor(diff / 3600) + " h";
   return Math.floor(diff / 86400) + " d";
 }
-function openSidebar() { sidebar.classList.add("open"); sidebarOverlay.classList.add("open"); refreshConvList(); }
+function openSidebar() { sidebar.classList.add("open"); sidebarOverlay.classList.add("open"); refreshConvLists(); }
 function closeSidebar() { sidebar.classList.remove("open"); sidebarOverlay.classList.remove("open"); }
 menuBtn.addEventListener("click", openSidebar);
 sidebarOverlay.addEventListener("click", closeSidebar);
 
-async function refreshConvList() {
+function renderConvListInto(container, convs) {
+  container.innerHTML = "";
+  if (!convs.length) {
+    container.innerHTML = '<div class="conv-empty">sin conversaciones todavía</div>';
+    return;
+  }
+  convs.forEach(c => {
+    const div = document.createElement("div");
+    div.className = "conv-item" + (c.conversation_id === conversationId ? " active" : "");
+    div.innerHTML = `${escapeHtml(c.title || "(sin título)")}<span class="conv-date">${relativeTime(c.last_activity)}</span>`;
+    div.addEventListener("click", () => loadConversation(c.conversation_id));
+    container.appendChild(div);
+  });
+}
+async function refreshConvLists() {
+  const targets = [convList, dashConvList].filter((el) => el && el.isConnected);
+  if (!targets.length) return;
   try {
     const res = await apiFetch("/conversations");
     const convs = await res.json();
-    convList.innerHTML = "";
-    if (!convs.length) {
-      convList.innerHTML = '<div class="conv-empty">sin conversaciones todavía</div>';
-      return;
-    }
-    convs.forEach(c => {
-      const div = document.createElement("div");
-      div.className = "conv-item" + (c.conversation_id === conversationId ? " active" : "");
-      div.innerHTML = `${c.title || "(sin título)"}<span class="conv-date">${relativeTime(c.last_activity)}</span>`;
-      div.addEventListener("click", () => loadConversation(c.conversation_id));
-      convList.appendChild(div);
-    });
+    targets.forEach((t) => renderConvListInto(t, convs));
   } catch (e) {
-    convList.innerHTML = '<div class="conv-empty">error cargando conversaciones</div>';
+    targets.forEach((t) => { t.innerHTML = '<div class="conv-empty">error cargando conversaciones</div>'; });
   }
 }
 
@@ -752,17 +1037,551 @@ async function loadConversation(id) {
   setState("idle", idleLabel());
 }
 
-newConvBtn.addEventListener("click", () => {
+function startNewConversation() {
   conversationId = crypto.randomUUID();
   clearChat();
   closeSidebar();
   setState("idle", idleLabel());
-});
+  refreshConvLists();
+}
+newConvBtn.addEventListener("click", startNewConversation);
+dashNewConvBtn.addEventListener("click", startNewConversation);
 
 logoutBtn.addEventListener("click", async () => {
   try { await fetch("/logout", { method: "POST" }); } catch (e) {}
   window.location.href = "/login";
 });
+
+/* ---------- user menu ---------- */
+function setUserLabel(userId) {
+  if (!userId) return;
+  userNameLabel.textContent = userId;
+  userAvatar.textContent = userId.slice(0, 1);
+}
+userMenuBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  userMenu.classList.toggle("open");
+});
+document.addEventListener("click", (e) => {
+  if (!userMenu.contains(e.target)) userMenu.classList.remove("open");
+});
+
+/* ---------- dashboard ---------- */
+const WIDGET_IDS = ["system", "conversations", "memory", "drive", "gmail", "calendar", "youtube"];
+const WIDGET_LABELS = {
+  system: "Estado del sistema",
+  conversations: "Conversaciones",
+  memory: "Memoria episódica",
+  drive: "Google Drive",
+  gmail: "Gmail",
+  calendar: "Calendar",
+  youtube: "YouTube",
+};
+const LEFT_ZONE = ["system"];
+// El resto de los widgets (menos "system", que siempre queda a la izquierda
+// del chat) forman un solo grupo reordenable: el primero en el orden ocupa
+// la franja de arriba (ancho completo), el resto cae en la columna derecha.
+// Ningún widget está fijo ahí — arrastrar cualquiera al frente lo promueve.
+const TOP_AND_RIGHT_ZONE = ["conversations", "memory", "drive", "gmail", "calendar", "youtube"];
+const GOOGLE_WIDGETS = ["drive", "gmail", "calendar", "youtube"];
+const GMAIL_MAX_RESULTS_CHOICES = [5, 10, 20];
+
+let currentView = "chat";
+let dashboardPrefs = null;
+let lastSummary = null;
+let isDraggingPanel = false;
+const desktopMedia = window.matchMedia("(min-width: 900px)");
+
+function isDesktopDashboard() { return desktopMedia.matches; }
+function applyJarvisMode() {
+  document.body.classList.toggle("jarvis-mode", isDesktopDashboard() && currentView === "dashboard");
+}
+
+function showChat() {
+  currentView = "chat";
+  viewChat.classList.add("active");
+  viewDashboard.classList.remove("active");
+  dashBtn.innerHTML = ICONS.dashboard;
+  applyJarvisMode();
+  stopGmailDigestPolling();
+}
+function showDashboard() {
+  currentView = "dashboard";
+  viewDashboard.classList.add("active");
+  viewChat.classList.remove("active");
+  closeModePopover();
+  dashBtn.innerHTML = ICONS.chat;
+  applyJarvisMode();
+  refreshDashboard();
+}
+dashBtn.addEventListener("click", () => (currentView === "chat" ? showDashboard() : showChat()));
+desktopMedia.addEventListener("change", () => { applyJarvisMode(); if (currentView === "dashboard") refreshDashboard(); });
+
+function escapeHtml(text) {
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function statusDot(ok) { return `<span class="dash-dot ${ok ? "ok" : "off"}"></span>`; }
+function formatDate(ts) {
+  return ts ? new Date(ts * 1000).toLocaleDateString("es-AR") : "sin datos todavía";
+}
+const WIDGET_SUBTITLES = {
+  system: "disponibilidad de las capacidades de Snarf",
+  conversations: "actividad de mensajes en los últimos 14 días",
+  memory: "todo lo que Snarf recuerda de tus conversaciones pasadas",
+  drive: "últimos archivos modificados en tu Google Drive",
+  gmail: "últimos mensajes recibidos en tu Gmail",
+  calendar: "tus próximos eventos de Google Calendar",
+  youtube: "canales de YouTube a los que estás suscripto",
+};
+function widgetShell(id, bodyHTML, draggable) {
+  const handle = draggable ? `<span class="dash-drag-handle" data-drag-handle>${ICONS.drag}</span>` : "";
+  return `<div class="dash-widget" data-widget-id="${id}">
+    <div class="dash-widget-head"><h3>${WIDGET_LABELS[id]}</h3>${handle}</div>
+    <div class="dash-widget-sub">${WIDGET_SUBTITLES[id] || ""}</div>
+    <div class="dash-widget-body">${bodyHTML}</div>
+  </div>`;
+}
+function loadingBody() { return '<div class="dash-loading">cargando...</div>'; }
+
+function systemBodyHTML(summary) {
+  const cap = summary.capabilities;
+  return `
+    <div class="dash-row">${statusDot(cap.llm)} Razonamiento (LLM)</div>
+    <div class="dash-row">${statusDot(cap.stt)} Transcripción de voz</div>
+    <div class="dash-row">${statusDot(cap.tts)} Síntesis de voz</div>
+    <div class="dash-row">${statusDot(cap.google_connected)} Google conectado</div>
+    <div class="dash-row dash-dim">usuario: ${summary.user_id}</div>`;
+}
+function conversationsBodyHTML(summary) {
+  const mem = summary.memory;
+  const maxCount = Math.max(1, ...mem.activity_by_day.map((d) => d.count));
+  const bars = mem.activity_by_day
+    .map((d) => {
+      const pct = d.count ? Math.max(Math.round((d.count / maxCount) * 100), 8) : 2;
+      const label = new Date(d.date + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
+      return `<div class="dash-bar" title="${label}: ${d.count} mensaje(s)"><div class="dash-bar-fill" style="height:${pct}%"></div></div>`;
+    })
+    .join("");
+  return `
+    <div class="dash-stat"><span class="dash-stat-num">${mem.total_conversations}</span>conversaciones</div>
+    <div class="dash-stat"><span class="dash-stat-num">${mem.total_messages}</span>mensajes</div>
+    <div class="dash-chart">${bars}</div>
+    <div class="dash-chart-label">actividad, últimos 14 días</div>`;
+}
+function memoryBodyHTML(summary) {
+  const mem = summary.memory;
+  return `
+    <div class="dash-stat"><span class="dash-stat-num">${mem.total_messages}</span>entradas guardadas</div>
+    <div class="dash-row dash-dim">desde ${formatDate(mem.oldest_timestamp)}</div>`;
+}
+function notConnectedBody() {
+  return '<div class="dash-row dash-dim">Google no conectado todavía</div>';
+}
+function errorBody(message) {
+  return `<div class="dash-row dash-dim">no se pudo cargar (${escapeHtml(message || "error")})</div>`;
+}
+function formatBytes(bytes) {
+  const n = Number(bytes);
+  if (!n) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+function driveBodyHTML(data) {
+  if (!data.connected) return notConnectedBody();
+  if (data.error) return errorBody(data.error);
+  if (!data.files.length) return '<div class="dash-row dash-dim">sin archivos recientes</div>';
+  return data.files
+    .map((f) => {
+      const meta = [formatDate(f.modifiedTime ? Date.parse(f.modifiedTime) / 1000 : null), formatBytes(f.size)].filter(Boolean).join(" · ");
+      const label = f.webViewLink
+        ? `<a href="${escapeHtml(f.webViewLink)}" target="_blank" rel="noopener">${escapeHtml(f.name)}</a>`
+        : escapeHtml(f.name);
+      return `<div class="dash-row-stacked"><span class="dash-row-title">${label}</span><span class="dash-row-sub">${escapeHtml(meta)}</span></div>`;
+    })
+    .join("");
+}
+function gmailBodyHTML(data, gmailMaxResults) {
+  if (!data.connected) return notConnectedBody();
+  const selector = `
+    <div class="dash-widget-config">
+      mostrar
+      <select id="gmailMaxResults">
+        ${GMAIL_MAX_RESULTS_CHOICES.map((n) => `<option value="${n}" ${n === gmailMaxResults ? "selected" : ""}>${n}</option>`).join("")}
+      </select>
+      mensajes
+    </div>`;
+  const digestSection = `
+    <div class="dash-gmail-digest">
+      <div class="dash-widget-config">
+        <button class="dash-mini-btn" id="gmailDigestBtn">interpretar bandeja</button>
+        <span class="dash-row-sub" id="gmailDigestMeta">sin interpretar todavía</span>
+      </div>
+      <div id="gmailDigestContent"></div>
+    </div>`;
+  if (data.error) return selector + errorBody(data.error) + digestSection;
+  if (!data.messages.length) return selector + '<div class="dash-row dash-dim">sin mensajes recientes</div>' + digestSection;
+  const rows = data.messages
+    .map((m) => {
+      const url = `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(m.id)}`;
+      return `<div class="dash-row-stacked"><span class="dash-row-title"><a href="${url}" target="_blank" rel="noopener">${escapeHtml(m.subject || "(sin asunto)")}</a></span><span class="dash-row-sub">${escapeHtml(m.from || "")}</span></div>`;
+    })
+    .join("");
+  return selector + rows + digestSection;
+}
+function calendarBodyHTML(data) {
+  if (!data.connected) return notConnectedBody();
+  if (data.error) return errorBody(data.error);
+  if (!data.events.length) return '<div class="dash-row dash-dim">sin próximos eventos</div>';
+  return data.events
+    .map((ev) => {
+      const label = ev.htmlLink
+        ? `<a href="${escapeHtml(ev.htmlLink)}" target="_blank" rel="noopener">${escapeHtml(ev.summary)}</a>`
+        : escapeHtml(ev.summary);
+      return `<div class="dash-row-stacked"><span class="dash-row-title">${label}</span><span class="dash-row-sub">${escapeHtml(ev.start || "")}</span></div>`;
+    })
+    .join("");
+}
+function youtubeBodyHTML(data) {
+  if (!data.connected) return notConnectedBody();
+  if (data.error) return errorBody(data.error);
+  if (!data.subscriptions.length) return '<div class="dash-row dash-dim">sin suscripciones</div>';
+  return data.subscriptions
+    .map((s) => {
+      const url = `https://www.youtube.com/channel/${encodeURIComponent(s.channel_id || "")}`;
+      return s.channel_id
+        ? `<div class="dash-row"><a href="${url}" target="_blank" rel="noopener">${escapeHtml(s.channel)}</a></div>`
+        : `<div class="dash-row">${escapeHtml(s.channel)}</div>`;
+    })
+    .join("");
+}
+const GOOGLE_WIDGET_FETCH = { drive: driveBodyHTML, gmail: gmailBodyHTML, calendar: calendarBodyHTML, youtube: youtubeBodyHTML };
+
+function widgetBodyHTML(id, summary) {
+  if (id === "system") return systemBodyHTML(summary);
+  if (id === "conversations") return conversationsBodyHTML(summary);
+  if (id === "memory") return memoryBodyHTML(summary);
+  if (GOOGLE_WIDGETS.includes(id)) return summary.capabilities.google_connected ? loadingBody() : notConnectedBody();
+  return "";
+}
+
+// El refresco de la interpretación de Gmail es 100% impulsado por el
+// navegador, nunca por el servidor: solo pasa mientras el dashboard está
+// abierto y visible. La parte cara (llamar al LLM) solo se paga cuando la
+// parte barata (comparar el id del último mensaje) detecta correo nuevo.
+const GMAIL_DIGEST_POLL_MS = 5 * 60 * 1000;
+let gmailPollTimer = null;
+
+function stopGmailDigestPolling() {
+  if (gmailPollTimer) { clearInterval(gmailPollTimer); gmailPollTimer = null; }
+}
+function startGmailDigestPolling() {
+  stopGmailDigestPolling();
+  gmailPollTimer = setInterval(() => checkGmailForNewMail(), GMAIL_DIGEST_POLL_MS);
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { stopGmailDigestPolling(); return; }
+  if (currentView === "dashboard") {
+    checkGmailForNewMail();
+    startGmailDigestPolling();
+  }
+});
+
+async function checkGmailForNewMail() {
+  // El widget de Gmail puede estar en cualquier zona (arriba, derecha, o la
+  // columna única de mobile) según cómo el fundador haya reordenado los
+  // paneles — se busca por id, no por contenedor fijo.
+  const body = document.querySelector('[data-widget-id="gmail"] .dash-widget-body');
+  if (!body) return;
+  try {
+    const [listRes, digestRes] = await Promise.all([
+      apiFetch("/dashboard/widgets/gmail?max_results=1"),
+      apiFetch("/dashboard/widgets/gmail/digest"),
+    ]);
+    const listData = await listRes.json();
+    const digestData = await digestRes.json();
+    if (!listData.connected || !digestData.connected) return;
+    const currentTopId = listData.messages && listData.messages[0] ? listData.messages[0].id : null;
+    const cached = digestData.digest;
+    const isNew = currentTopId && (!cached || cached.latest_message_id !== currentTopId);
+    if (isNew || !cached) {
+      await refreshGmailDigest(body);
+    }
+  } catch (e) {
+    // chequeo silencioso: si falla, se reintenta en el próximo ciclo o al abrir de nuevo.
+  }
+}
+
+async function loadGmailWidgetInto(root) {
+  const body = root.querySelector('[data-widget-id="gmail"] .dash-widget-body');
+  if (!body) return;
+  const maxResults = dashboardPrefs.widget_options.gmail.max_results;
+  try {
+    const res = await apiFetch(`/dashboard/widgets/gmail?max_results=${maxResults}`);
+    const data = await res.json();
+    body.innerHTML = gmailBodyHTML(data, maxResults);
+  } catch (e) {
+    body.innerHTML = gmailBodyHTML({ connected: true, error: e.message || String(e) }, maxResults);
+  }
+  const select = body.querySelector("#gmailMaxResults");
+  if (select) {
+    select.addEventListener("change", () => {
+      dashboardPrefs.widget_options.gmail.max_results = Number(select.value);
+      persistPrefs();
+      loadGmailWidgetInto(root);
+    });
+  }
+  await wireGmailDigest(body);
+  checkGmailForNewMail();
+  startGmailDigestPolling();
+}
+
+function applyGmailDigest(body, digest) {
+  const meta = body.querySelector("#gmailDigestMeta");
+  const content = body.querySelector("#gmailDigestContent");
+  if (!meta || !content) return;
+  if (!digest) {
+    meta.textContent = "sin interpretar todavía";
+    content.innerHTML = "";
+    return;
+  }
+  meta.textContent = "actualizado " + relativeTime(digest.generated_at);
+  content.innerHTML = renderMarkdown(digest.digest_text || "");
+}
+async function refreshGmailDigest(body) {
+  const btn = body.querySelector("#gmailDigestBtn");
+  const meta = body.querySelector("#gmailDigestMeta");
+  if (btn) { btn.disabled = true; btn.textContent = "interpretando..."; }
+  else if (meta) meta.textContent = "interpretando...";
+  try {
+    const res = await apiFetch("/dashboard/widgets/gmail/digest/refresh", { method: "POST" });
+    const data = await res.json();
+    if (data.error) body.querySelector("#gmailDigestContent").innerHTML = errorBody(data.error);
+    else applyGmailDigest(body, data.digest);
+  } catch (e) {
+    body.querySelector("#gmailDigestContent").innerHTML = errorBody(e.message || e);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "interpretar bandeja"; }
+  }
+}
+async function wireGmailDigest(body) {
+  const btn = body.querySelector("#gmailDigestBtn");
+  if (!btn) return;
+  try {
+    const res = await apiFetch("/dashboard/widgets/gmail/digest");
+    const data = await res.json();
+    if (data.connected) applyGmailDigest(body, data.digest);
+  } catch (e) {}
+  btn.addEventListener("click", () => refreshGmailDigest(body));
+}
+
+async function loadGoogleWidgetsInto(root, visibleIds) {
+  const targets = GOOGLE_WIDGETS.filter((id) => visibleIds.includes(id));
+  targets.forEach(async (id) => {
+    if (id === "gmail") { loadGmailWidgetInto(root); return; }
+    try {
+      const res = await apiFetch(`/dashboard/widgets/${id}`);
+      const data = await res.json();
+      const body = root.querySelector(`[data-widget-id="${id}"] .dash-widget-body`);
+      if (body) body.innerHTML = GOOGLE_WIDGET_FETCH[id](data);
+    } catch (e) {
+      const body = root.querySelector(`[data-widget-id="${id}"] .dash-widget-body`);
+      if (body) body.innerHTML = errorBody(e.message || e);
+    }
+  });
+}
+
+function makeReorderable(containerOrContainers, onReorder) {
+  const containers = Array.isArray(containerOrContainers) ? containerOrContainers : [containerOrContainers];
+  const allCards = () => containers.flatMap((c) => [...c.querySelectorAll("[data-widget-id]")]);
+
+  containers.forEach((container) => {
+    container.querySelectorAll("[data-drag-handle]").forEach((handle) => {
+      handle.addEventListener("pointerdown", (e) => {
+        // Sin esto, el mousedown inicial dispara la selección de texto nativa
+        // del navegador (arrastra sobre todo el contenido de la columna en vez
+        // de mover el panel) antes de que el drag llegue a engancharse.
+        e.preventDefault();
+        const card = handle.closest("[data-widget-id]");
+        const isTouch = e.pointerType === "touch";
+        let dragging = false;
+        let holdTimer = null;
+
+        // Los listeners de mover/soltar van en document, no en el asa: en
+        // cuanto el cursor/dedo se despega del asa (que es chica), un listener
+        // puesto ahí deja de recibir eventos. setPointerCapture debería evitar
+        // esto pero no siempre se comporta igual entre navegadores; document
+        // siempre recibe el evento sin importar qué haya debajo del puntero.
+        const begin = () => {
+          dragging = true;
+          isDraggingPanel = true;
+          card.classList.add("dragging");
+        };
+        if (isTouch) holdTimer = setTimeout(begin, 350);
+        else begin();
+
+        const onMove = (ev) => {
+          // No cancelamos el hold por jitter del dedo: el asa ya tiene
+          // touch-action:none, así que el navegador no le va a robar el gesto
+          // para hacer scroll aunque el dedo tiemble durante la espera.
+          if (!dragging) return;
+          ev.preventDefault();
+          const siblings = allCards().filter((c) => c !== card);
+          let inserted = false;
+          for (const sib of siblings) {
+            const rect = sib.getBoundingClientRect();
+            if (ev.clientY < rect.top + rect.height / 2) {
+              sib.parentElement.insertBefore(card, sib);
+              inserted = true;
+              break;
+            }
+          }
+          if (!inserted) containers[containers.length - 1].appendChild(card);
+        };
+        const onUp = () => {
+          if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+          document.removeEventListener("pointermove", onMove);
+          document.removeEventListener("pointerup", onUp);
+          document.removeEventListener("pointercancel", onUp);
+          if (dragging) {
+            card.classList.remove("dragging");
+            isDraggingPanel = false;
+            const newIds = allCards().map((c) => c.dataset.widgetId);
+            onReorder(newIds);
+          }
+        };
+        document.addEventListener("pointermove", onMove);
+        document.addEventListener("pointerup", onUp);
+        document.addEventListener("pointercancel", onUp);
+      });
+    });
+  });
+}
+
+function reorderWithinSubset(order, subsetIds, newSubsetOrder) {
+  let idx = 0;
+  return order.map((id) => (subsetIds.includes(id) ? newSubsetOrder[idx++] : id));
+}
+
+async function persistPrefs() {
+  try {
+    await apiFetch("/dashboard/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dashboardPrefs),
+    });
+  } catch (e) {}
+}
+
+function visibleOrdered(ids) {
+  return dashboardPrefs.panel_order.filter((id) => ids.includes(id) && dashboardPrefs.visible_widgets[id]);
+}
+
+function renderMobileDashboard(summary) {
+  dashZoneTop.innerHTML = "";
+  dashZoneRight.innerHTML = "";
+  const ids = visibleOrdered(WIDGET_IDS);
+  if (!ids.length) {
+    dashboardInner.innerHTML = '<div class="dash-loading">no hay widgets activos — activá alguno en configuración</div>';
+    return;
+  }
+  dashboardInner.innerHTML = `<div class="dash-grid">${ids.map((id) => widgetShell(id, widgetBodyHTML(id, summary), true)).join("")}</div>`;
+  const grid = dashboardInner.querySelector(".dash-grid");
+  makeReorderable(grid, (newIds) => {
+    dashboardPrefs.panel_order = newIds;
+    persistPrefs();
+  });
+  loadGoogleWidgetsInto(dashboardInner, ids);
+}
+
+function renderDesktopDashboard(summary) {
+  dashboardInner.innerHTML = "";
+  const combinedIds = visibleOrdered(TOP_AND_RIGHT_ZONE);
+  const topIds = combinedIds.slice(0, 1);
+  const rightIds = combinedIds.slice(1);
+  const leftIds = visibleOrdered(LEFT_ZONE);
+
+  dashZoneTop.innerHTML = topIds.map((id) => widgetShell(id, widgetBodyHTML(id, summary), true)).join("");
+  dashZoneRight.innerHTML = rightIds.map((id) => widgetShell(id, widgetBodyHTML(id, summary), true)).join("");
+  const existingLeftWidgets = dashZoneLeft.querySelectorAll(".dash-widget");
+  existingLeftWidgets.forEach((el) => el.remove());
+  dashZoneLeft.insertAdjacentHTML("beforeend", leftIds.map((id) => widgetShell(id, widgetBodyHTML(id, summary), false)).join(""));
+
+  makeReorderable([dashZoneTop, dashZoneRight], (newIds) => {
+    dashboardPrefs.panel_order = reorderWithinSubset(dashboardPrefs.panel_order, TOP_AND_RIGHT_ZONE, newIds);
+    persistPrefs();
+    renderDesktopDashboard(summary);
+  });
+
+  loadGoogleWidgetsInto(dashZoneTop, topIds);
+  loadGoogleWidgetsInto(dashZoneRight, rightIds);
+  refreshConvLists();
+}
+
+async function refreshDashboard() {
+  try {
+    if (!dashboardPrefs) dashboardPrefs = await (await apiFetch("/dashboard/preferences")).json();
+    const summary = await (await apiFetch("/dashboard/summary")).json();
+    lastSummary = summary;
+    setUserLabel(summary.user_id);
+    if (isDesktopDashboard()) renderDesktopDashboard(summary);
+    else renderMobileDashboard(summary);
+  } catch (e) {
+    dashboardInner.innerHTML = '<div class="dash-loading">error cargando el dashboard</div>';
+  }
+}
+apiFetch("/dashboard/summary").then((r) => r.json()).then((d) => setUserLabel(d.user_id)).catch(() => {});
+
+/* ---------- panel de configuración ---------- */
+function openSettings() {
+  settingsOverlay.classList.add("open");
+  settingsPanel.classList.add("open");
+  renderSettingsList();
+}
+function closeSettings() {
+  settingsOverlay.classList.remove("open");
+  settingsPanel.classList.remove("open");
+}
+async function renderSettingsList() {
+  if (!dashboardPrefs) dashboardPrefs = await (await apiFetch("/dashboard/preferences")).json();
+  settingsList.innerHTML = WIDGET_IDS.map((id) => `
+    <div class="settings-row">
+      <span>${WIDGET_LABELS[id]}</span>
+      <button class="settings-toggle ${dashboardPrefs.visible_widgets[id] ? "on" : ""}" data-widget-id="${id}"></button>
+    </div>
+  `).join("");
+  settingsList.querySelectorAll(".settings-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.widgetId;
+      dashboardPrefs.visible_widgets[id] = !dashboardPrefs.visible_widgets[id];
+      btn.classList.toggle("on", dashboardPrefs.visible_widgets[id]);
+      persistPrefs();
+      if (currentView === "dashboard") refreshDashboard();
+    });
+  });
+}
+settingsBtn.addEventListener("click", () => { userMenu.classList.remove("open"); openSettings(); });
+settingsCloseBtn.addEventListener("click", closeSettings);
+settingsOverlay.addEventListener("click", closeSettings);
+
+/* ---------- swipe entre chat y dashboard ---------- */
+let touchStartX = null;
+let touchStartY = null;
+document.addEventListener("touchstart", (e) => {
+  if (state === "listening" || isDraggingPanel) return;
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}, { passive: true });
+document.addEventListener("touchend", (e) => {
+  if (touchStartX === null || isDraggingPanel) { touchStartX = null; return; }
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  touchStartX = null;
+  if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.6) {
+    if (dx < 0 && currentView === "chat") showDashboard();
+    else if (dx > 0 && currentView === "dashboard") showChat();
+  }
+}, { passive: true });
 
 /* ---------- audio recording ---------- */
 function pickMimeType() {

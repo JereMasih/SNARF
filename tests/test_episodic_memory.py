@@ -79,3 +79,34 @@ def test_search_empty_query_returns_nothing(tmp_path, monkeypatch):
     memory = make_memory(tmp_path, monkeypatch)
     memory.append("text", "algo", "algo", conversation_id="c1")
     assert memory.search("   ") == []
+
+
+def test_stats_on_empty_memory(tmp_path):
+    memory = EpisodicMemory(path=tmp_path / "memory.jsonl")
+    stats = memory.stats()
+    assert stats["total_messages"] == 0
+    assert stats["total_conversations"] == 0
+    assert stats["oldest_timestamp"] is None
+    assert stats["newest_timestamp"] is None
+    assert len(stats["activity_by_day"]) == 14
+    assert all(day["count"] == 0 for day in stats["activity_by_day"])
+
+
+def test_stats_counts_messages_and_conversations(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "a", "1", conversation_id="c1")
+    memory.append("text", "b", "2", conversation_id="c1")
+    memory.append("text", "c", "3", conversation_id="c2")
+    stats = memory.stats()
+    assert stats["total_messages"] == 3
+    assert stats["total_conversations"] == 2
+    assert stats["oldest_timestamp"] == 0
+    assert stats["newest_timestamp"] == 2
+
+
+def test_stats_activity_by_day_counts_todays_messages(tmp_path):
+    memory = EpisodicMemory(path=tmp_path / "memory.jsonl")
+    memory.append("text", "hoy", "respuesta", conversation_id="c1")
+    stats = memory.stats()
+    today_bucket = stats["activity_by_day"][-1]
+    assert today_bucket["count"] == 1

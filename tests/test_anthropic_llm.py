@@ -59,3 +59,14 @@ def test_generate_requests_a_higher_output_limit_than_the_original_1024():
     llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
     assert llm._client.messages.calls[0]["max_tokens"] == MAX_OUTPUT_TOKENS
     assert MAX_OUTPUT_TOKENS > 1024
+
+
+def test_generate_sends_system_prompt_with_cache_control():
+    """El system prompt de Snarf (identidad) es idéntico en cada llamada;
+    marcarlo como cacheable ahorra costo real en cada mensaje del chat."""
+    llm = make_llm([fake_response("end_turn", "ok")])
+    llm.generate(system="el prompt de identidad", messages=[{"role": "user", "content": "hola"}])
+    sent_system = llm._client.messages.calls[0]["system"]
+    assert sent_system == [
+        {"type": "text", "text": "el prompt de identidad", "cache_control": {"type": "ephemeral"}}
+    ]

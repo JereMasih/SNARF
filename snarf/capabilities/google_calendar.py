@@ -61,6 +61,7 @@ class GoogleCalendar(Capability):
                     "summary": e.get("summary", "(sin título)"),
                     "start": start,
                     "location": e.get("location", ""),
+                    "htmlLink": e.get("htmlLink", ""),
                 }
             )
         return events

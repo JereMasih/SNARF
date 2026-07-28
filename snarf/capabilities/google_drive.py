@@ -29,7 +29,7 @@ class GoogleDrive(Capability):
     def list_files(self, page_size: int = 50, query: str | None = None) -> list[dict]:
         params = {
             "pageSize": page_size,
-            "fields": "files(id, name, mimeType, modifiedTime, size)",
+            "fields": "files(id, name, mimeType, modifiedTime, size, webViewLink)",
         }
         if query:
             params["q"] = query

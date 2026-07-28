@@ -12,7 +12,9 @@ from pydantic import BaseModel
 
 from snarf.capabilities.elevenlabs_stt import ElevenLabsSTT
 from snarf.capabilities.elevenlabs_tts import ElevenLabsTTS
+from snarf.capabilities.google_auth import TOKENS_DIR as GOOGLE_TOKENS_DIR
 from snarf.core.orchestrator import DEFAULT_USER_ID, Orchestrator
+from snarf.runtime.dashboard_prefs import load_prefs, save_prefs
 from snarf.runtime.web_auth import (
     SESSION_COOKIE_NAME,
     SESSION_MAX_AGE_SECONDS,
@@ -26,6 +28,9 @@ app = FastAPI()
 stt = ElevenLabsSTT()
 tts = ElevenLabsTTS()
 orchestrator = Orchestrator(user_id=DEFAULT_USER_ID)
+
+def _google_connected(user_id: str) -> bool:
+    return (GOOGLE_TOKENS_DIR / f"{user_id}.json").exists()
 
 
 @app.on_event("startup")
@@ -52,6 +57,12 @@ class TTSResponse(BaseModel):
 
 class LoginRequest(BaseModel):
     password: str
+
+
+class DashboardPreferences(BaseModel):
+    visible_widgets: dict[str, bool] = {}
+    panel_order: list[str] = []
+    widget_options: dict[str, dict] = {}
 
 
 @app.get("/")
@@ -123,6 +134,93 @@ def synthesize_speech(payload: TTSRequest, user_id: str = Depends(require_user))
         return TTSResponse(audio_base64=None)
     audio_bytes = tts.synthesize(payload.text)
     return TTSResponse(audio_base64=base64.b64encode(audio_bytes).decode("ascii"))
+
+
+@app.get("/dashboard/summary")
+def dashboard_summary(user_id: str = Depends(require_user)):
+    return {
+        "user_id": user_id,
+        "capabilities": {
+            "llm": orchestrator.llm_available,
+            "stt": stt.available,
+            "tts": tts.available,
+            "google_connected": _google_connected(user_id),
+        },
+        "memory": orchestrator.memory.stats(),
+    }
+
+
+@app.get("/dashboard/preferences")
+def get_dashboard_preferences(user_id: str = Depends(require_user)):
+    return load_prefs(user_id)
+
+
+@app.put("/dashboard/preferences")
+def put_dashboard_preferences(payload: DashboardPreferences, user_id: str = Depends(require_user)):
+    return save_prefs(user_id, payload.model_dump())
+
+
+@app.get("/dashboard/widgets/drive")
+def dashboard_widget_drive(user_id: str = Depends(require_user)):
+    if not _google_connected(user_id):
+        return {"connected": False}
+    try:
+        files = orchestrator.drive.list_files(page_size=10)
+        files.sort(key=lambda f: f.get("modifiedTime", ""), reverse=True)
+        return {"connected": True, "files": files[:5]}
+    except Exception as exc:
+        return {"connected": True, "error": str(exc)}
+
+
+@app.get("/dashboard/widgets/gmail")
+def dashboard_widget_gmail(max_results: int = 5, user_id: str = Depends(require_user)):
+    if not _google_connected(user_id):
+        return {"connected": False}
+    max_results = min(max(max_results, 1), 20)
+    try:
+        messages = orchestrator.gmail.list_messages(max_results=max_results)
+        return {"connected": True, "messages": messages}
+    except Exception as exc:
+        return {"connected": True, "error": str(exc)}
+
+
+@app.get("/dashboard/widgets/gmail/digest")
+def dashboard_gmail_digest(user_id: str = Depends(require_user)):
+    if not _google_connected(user_id):
+        return {"connected": False}
+    return {"connected": True, "digest": orchestrator.gmail_digest.cached_digest()}
+
+
+@app.post("/dashboard/widgets/gmail/digest/refresh")
+def dashboard_gmail_digest_refresh(user_id: str = Depends(require_user)):
+    if not _google_connected(user_id):
+        return {"connected": False}
+    try:
+        return {"connected": True, "digest": orchestrator.gmail_digest.refresh()}
+    except Exception as exc:
+        return {"connected": True, "error": str(exc)}
+
+
+@app.get("/dashboard/widgets/calendar")
+def dashboard_widget_calendar(user_id: str = Depends(require_user)):
+    if not _google_connected(user_id):
+        return {"connected": False}
+    try:
+        events = orchestrator.calendar.list_upcoming_events(max_results=5)
+        return {"connected": True, "events": events}
+    except Exception as exc:
+        return {"connected": True, "error": str(exc)}
+
+
+@app.get("/dashboard/widgets/youtube")
+def dashboard_widget_youtube(user_id: str = Depends(require_user)):
+    if not _google_connected(user_id):
+        return {"connected": False}
+    try:
+        subscriptions = orchestrator.youtube.list_subscriptions(max_results=5)
+        return {"connected": True, "subscriptions": subscriptions}
+    except Exception as exc:
+        return {"connected": True, "error": str(exc)}
 
 
 @app.get("/conversations")

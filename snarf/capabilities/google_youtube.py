@@ -22,7 +22,13 @@ class GoogleYouTube(Capability):
 
     def list_subscriptions(self, max_results: int = 25) -> list[dict]:
         result = self._client().subscriptions().list(part="snippet", mine=True, maxResults=max_results).execute()
-        return [{"channel": item["snippet"]["title"]} for item in result.get("items", [])]
+        return [
+            {
+                "channel": item["snippet"]["title"],
+                "channel_id": item["snippet"]["resourceId"]["channelId"],
+            }
+            for item in result.get("items", [])
+        ]
 
     def list_liked_videos(self, max_results: int = 25) -> list[dict]:
         result = self._client().videos().list(part="snippet", myRating="like", maxResults=max_results).execute()

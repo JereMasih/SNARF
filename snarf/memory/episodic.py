@@ -1,5 +1,6 @@
 import json
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 DEFAULT_PATH = Path("data/episodic_memory.jsonl")
@@ -69,3 +70,26 @@ class EpisodicMemory:
             if query_lower in e.get("input", "").lower() or query_lower in e.get("response", "").lower()
         ]
         return matches[-limit:]
+
+    def stats(self, activity_days: int = 14) -> dict:
+        entries = self._read_all()
+        timestamps = [e["timestamp"] for e in entries]
+        conversation_ids = {e["conversation_id"] for e in entries if e.get("conversation_id")}
+
+        today = datetime.now().date()
+        buckets = {
+            (today - timedelta(days=offset)).isoformat(): 0
+            for offset in range(activity_days - 1, -1, -1)
+        }
+        for e in entries:
+            day = datetime.fromtimestamp(e["timestamp"]).date().isoformat()
+            if day in buckets:
+                buckets[day] += 1
+
+        return {
+            "total_messages": len(entries),
+            "total_conversations": len(conversation_ids),
+            "oldest_timestamp": min(timestamps) if timestamps else None,
+            "newest_timestamp": max(timestamps) if timestamps else None,
+            "activity_by_day": [{"date": day, "count": count} for day, count in buckets.items()],
+        }

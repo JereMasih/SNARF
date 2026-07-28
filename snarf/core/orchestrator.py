@@ -6,11 +6,16 @@ from snarf.capabilities.google_gmail import GoogleGmail
 from snarf.capabilities.google_youtube import GoogleYouTube
 from snarf.core.identity import load_identity
 from snarf.memory.episodic import EpisodicMemory
+from snarf.specialists.gmail_digest import GmailDigestSpecialist
 
 # Único usuario real hoy. El Orchestrator ya recibe un user_id explícito (en
 # vez de asumirlo implícitamente) para que agregar un segundo usuario en el
 # futuro sea pasar otro user_id, no rediseñar esta clase.
 DEFAULT_USER_ID = "fundador"
+
+# Modelo para la interpretación de Gmail (Especialista, no Snarf): tarea de
+# categorización acotada, no necesita el modelo principal de Snarf.
+GMAIL_DIGEST_MODEL = "claude-haiku-4-5"
 
 SYSTEM_PREFIX = (
     "Sos Snarf. A continuación se incluyen, en orden de jerarquía, los documentos "
@@ -203,6 +208,20 @@ TOOLS = [
         "input_schema": {"type": "object", "properties": {"max_results": {"type": "integer"}}},
     },
     {
+        "name": "gmail_summarize_inbox",
+        "description": (
+            "Interpreta los correos recientes de Gmail: los agrupa por categoría y señala cuáles "
+            "conviene revisar y por qué. Usala cuando el fundador pregunte algo como '¿qué tenemos "
+            "para hoy?', 'resumime el correo' o similar. Por defecto devuelve la última "
+            "interpretación disponible (no hace una llamada nueva cada vez); usá force_refresh=true "
+            "solo si el fundador pide explícitamente una versión actualizada ahora mismo."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"force_refresh": {"type": "boolean"}},
+        },
+    },
+    {
         "name": "gmail_send_message",
         "description": "Envía un correo real desde el Gmail del fundador. Acción de alto impacto: protocolo de confirmed obligatorio.",
         "input_schema": {
@@ -315,6 +334,11 @@ class Orchestrator:
         self._gmail = GoogleGmail(google_auth)
         self._calendar = GoogleCalendar(google_auth)
         self._youtube = GoogleYouTube(google_auth)
+        # Categorizar correos es una tarea acotada y mecánica, no necesita el
+        # mismo modelo (más caro) que usa Snarf para conversar — un modelo
+        # más chico y barato alcanza, y este Especialista puede elegir su
+        # propia Capacidad de LLM sin afectar la de Snarf.
+        self._gmail_digest = GmailDigestSpecialist(self._gmail, AnthropicLLM(model=GMAIL_DIGEST_MODEL), user_id)
 
         self._tool_handlers = {
             "list_conversations": lambda i: self._memory.list_conversations(),
@@ -348,6 +372,7 @@ class Orchestrator:
             "calendar_move_event": self._tool_calendar_move_event,
             "gmail_delete_label": self._tool_gmail_delete_label,
             "drive_delete_file": self._tool_drive_delete_file,
+            "gmail_summarize_inbox": self._tool_gmail_summarize_inbox,
         }
 
     @property
@@ -357,6 +382,26 @@ class Orchestrator:
     @property
     def memory(self) -> EpisodicMemory:
         return self._memory
+
+    @property
+    def drive(self) -> GoogleDrive:
+        return self._drive
+
+    @property
+    def gmail(self) -> GoogleGmail:
+        return self._gmail
+
+    @property
+    def calendar(self) -> GoogleCalendar:
+        return self._calendar
+
+    @property
+    def youtube(self) -> GoogleYouTube:
+        return self._youtube
+
+    @property
+    def gmail_digest(self) -> GmailDigestSpecialist:
+        return self._gmail_digest
 
     def warmup(self) -> None:
         self._llm.warmup()
@@ -437,6 +482,11 @@ class Orchestrator:
             return self._pending({"label_id": i.get("label_id")})
         self._gmail.delete_label(i["label_id"])
         return {"status": "deleted", "label_id": i["label_id"]}
+
+    def _tool_gmail_summarize_inbox(self, i: dict) -> dict:
+        if i.get("force_refresh"):
+            return self._gmail_digest.refresh()
+        return self._gmail_digest.cached_digest() or self._gmail_digest.refresh()
 
     def _tool_drive_delete_file(self, i: dict) -> dict:
         if not i.get("confirmed"):

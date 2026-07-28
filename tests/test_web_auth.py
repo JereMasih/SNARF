@@ -35,6 +35,27 @@ def test_protected_endpoint_rejects_without_session_cookie(raw_client):
     assert res.status_code == 401
 
 
+def test_dashboard_summary_rejects_without_session_cookie(raw_client):
+    res = raw_client.get("/dashboard/summary")
+    assert res.status_code == 401
+
+
+def test_dashboard_preferences_rejects_without_session_cookie(raw_client):
+    assert raw_client.get("/dashboard/preferences").status_code == 401
+    assert raw_client.put("/dashboard/preferences", json={}).status_code == 401
+
+
+@pytest.mark.parametrize("widget", ["drive", "gmail", "calendar", "youtube"])
+def test_dashboard_widget_rejects_without_session_cookie(raw_client, widget):
+    res = raw_client.get(f"/dashboard/widgets/{widget}")
+    assert res.status_code == 401
+
+
+def test_gmail_digest_rejects_without_session_cookie(raw_client):
+    assert raw_client.get("/dashboard/widgets/gmail/digest").status_code == 401
+    assert raw_client.post("/dashboard/widgets/gmail/digest/refresh").status_code == 401
+
+
 def test_login_with_wrong_password_is_rejected(raw_client):
     res = raw_client.post("/login", json={"password": "incorrecta"})
     assert res.status_code == 401

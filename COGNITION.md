@@ -26,6 +26,16 @@ Hoy no existe ningún Especialista Cognitivo implementado todavía. El Core Cogn
 
 No existe todavía selección de Especialistas ni de Capacidades más allá del modelo de lenguaje: el punto de extensión existe en el código (`snarf/specialists/`, `snarf/capabilities/`) pero el registro está vacío. Agregar el primer Especialista real es la siguiente extensión natural de este documento, no un cambio de arquitectura.
 
+# Primer Especialista Cognitivo real (2026-07-27, ver ADR 0025)
+
+`GmailDigestSpecialist` (`snarf/specialists/gmail_digest.py`, dominio: `email`) es el primer Especialista implementado. Razona sobre un dominio acotado (la bandeja de entrada de Gmail): recibe los correos recientes de la Capacidad `GoogleGmail`, y con su propia metodología (un system prompt propio, distinto al de Snarf) le pide a la Capacidad `AnthropicLLM` que los agrupe por categoría y señale cuáles conviene revisar y por qué. No tiene identidad propia ni le habla directamente al fundador en el chat — su salida vuelve a Snarf como resultado de herramienta (`gmail_summarize_inbox`), y es Snarf quien decide cómo y cuándo presentarla, en su propia voz.
+
+**Excepción explícita, y por qué está bien:** en el dashboard (no en el chat), el widget de Gmail muestra el texto del Especialista de forma directa, sin pasar por la voz de Snarf. Esto es consistente con el resto del dashboard (ADR 0022), que ya muestra datos crudos de Capacidades — asuntos de mail, nombres de archivo — sin filtrarlos por la identidad de Snarf; el dashboard es una superficie de datos, el chat es la conversación con Snarf.
+
+**Corrección (2026-07-27, ver ADR 0026):** el refresco en segundo plano del servidor descrito originalmente aquí se eliminó a pedido del fundador — no quería que la interpretación se generara sola sin que el dashboard estuviera abierto. El refresco es ahora 100% impulsado por el navegador: se dispara al abrir el dashboard (comparando barato el id del último mensaje contra la última interpretación cacheada) y se repite cada 5 minutos solo mientras el dashboard sigue abierto y visible. Snarf puede además generarla bajo demanda si el fundador se lo pide explícitamente en el chat (`force_refresh=true` en la herramienta, o simplemente preguntando "¿qué tenemos para hoy?"). El resultado se guarda en `data/gmail_digest/<user_id>.json`.
+
+Usa además su propia Capacidad de LLM, distinta a la de Snarf (`claude-haiku-4-5`, más barato) — categorizar correos es una tarea acotada, no necesita el modelo principal de Snarf. Un Especialista puede elegir la Capacidad de LLM que le convenga; no está atado a la de Snarf.
+
 # Memoria
 
 La memoria episódica es un registro append-only (`data/episodic_memory.jsonl`). Nunca se edita ni se borra una entrada existente; solo se agregan nuevas. Esto implementa directamente el Principio VIII de Foundation (Continuidad: preservar evidencia y evolución, no versiones idealizadas) y el Artículo VIII de Constitution (trazabilidad e irreversibilidad).

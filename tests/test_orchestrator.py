@@ -74,3 +74,25 @@ def test_high_impact_tool_requires_explicit_confirmation(
 
     orchestrator._handle_tool(tool_name, {**base_input, "confirmed": True})
     assert len(calls) == 1
+
+
+def test_gmail_summarize_inbox_returns_cached_digest_when_present(orchestrator, monkeypatch):
+    cached = {"generated_at": 1.0, "message_count": 2, "digest_text": "ya interpretado"}
+    monkeypatch.setattr(orchestrator.gmail_digest, "cached_digest", lambda: cached)
+    monkeypatch.setattr(orchestrator.gmail_digest, "refresh", lambda **kw: (_ for _ in ()).throw(AssertionError("no debería refrescar")))
+    assert orchestrator._handle_tool("gmail_summarize_inbox", {}) == cached
+
+
+def test_gmail_summarize_inbox_refreshes_when_nothing_cached(orchestrator, monkeypatch):
+    fresh = {"generated_at": 2.0, "message_count": 1, "digest_text": "recién generado"}
+    monkeypatch.setattr(orchestrator.gmail_digest, "cached_digest", lambda: None)
+    monkeypatch.setattr(orchestrator.gmail_digest, "refresh", lambda **kw: fresh)
+    assert orchestrator._handle_tool("gmail_summarize_inbox", {}) == fresh
+
+
+def test_gmail_summarize_inbox_force_refresh_ignores_cache(orchestrator, monkeypatch):
+    cached = {"generated_at": 1.0, "message_count": 2, "digest_text": "viejo"}
+    fresh = {"generated_at": 2.0, "message_count": 3, "digest_text": "nuevo"}
+    monkeypatch.setattr(orchestrator.gmail_digest, "cached_digest", lambda: cached)
+    monkeypatch.setattr(orchestrator.gmail_digest, "refresh", lambda **kw: fresh)
+    assert orchestrator._handle_tool("gmail_summarize_inbox", {"force_refresh": True}) == fresh

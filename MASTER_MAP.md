@@ -63,7 +63,7 @@ Describe cómo piensa Snarf.
 
 Documentos:
 
-- COGNITION (vigente, v0.1) — describe la arquitectura de tres capas (Capacidades / Especialistas / Snarf) y el razonamiento realmente implementado, no uno aspiracional.
+- COGNITION (vigente, v0.1) — describe la arquitectura de tres capas (Capacidades / Especialistas / Snarf) y el razonamiento realmente implementado, no uno aspiracional. Desde el 2026-07-27 (ver ADR 0025), registra el primer Especialista Cognitivo real: `GmailDigestSpecialist`, que interpreta la bandeja de Gmail (categoriza, señala qué revisar) y es también el primer componente de Snarf que actúa de forma autónoma, con un refresco propio en segundo plano.
 
 Documentos previstos, sin crear todavía:
 
@@ -103,6 +103,16 @@ Hoy, todas reales y verificadas: `AnthropicLLM` (razonamiento), `ElevenLabsTTS`/
 
 Desde el 2026-07-27: la interfaz web exige login (`web/login.html`, cookie de sesión firmada, `SNARF_ACCESS_PASSWORD`) y las credenciales de Google se guardan por usuario (`credentials/tokens/<user_id>.json`, no un único archivo global) — `GoogleAuth` y `Orchestrator` ya reciben `user_id` explícito, aunque hoy solo exista uno (`"fundador"`). Ver ADR 0021.
 
+Desde el 2026-07-27: dashboard v1 dentro de `web/index.html` (endpoint `GET /dashboard/summary`), con tres widgets sobre datos 100% reales — estado del sistema (LLM/STT/TTS/Google conectado), conversaciones (totales + actividad de los últimos 14 días vía `EpisodicMemory.stats()`) y memoria episódica (entradas guardadas, fecha de la más antigua). Navegación Chat/Dashboard por botón y por swipe táctil; nuevo menú de usuario en el sidebar (reemplaza al botón de cerrar sesión suelto) con desplegable para cerrar sesión y un placeholder de configuración futura. Ver ADR 0022 y Roadmaps para el plan de fases siguientes.
+
+Desde el 2026-07-27 (misma jornada, ver ADR 0023): íconos de la interfaz reemplazados por SVG propios (sin emojis, sin librería externa). Cuatro widgets nuevos sobre Capacidades reales ya existentes (`GET /dashboard/widgets/{drive,gmail,calendar,youtube}`) — corrigiendo a ADR 0022, que había clasificado por error estos widgets como "Fase 2" cuando esas Capacidades ya existían. Preferencias de dashboard persistidas por usuario (`snarf/runtime/dashboard_prefs.py`, `data/dashboard_prefs/<user_id>.json`): qué widgets mostrar y en qué orden, editable desde un panel de configuración nuevo y reordenable arrastrando (mouse en desktop, mantener presionado en mobile). En desktop ancho (`min-width: 900px`) con el Dashboard activado, layout "Jarvis": el chat queda centrado y los widgets rodean alrededor (arriba, izquierda con la lista de conversaciones, derecha) en vez de reemplazar la vista de chat como en mobile.
+
+Desde el 2026-07-27 (ADR 0024): corregido un bug real de stacking CSS que rompía por completo el layout Jarvis (invisible aunque bien ubicado), un bug preexistente en CI (pytest sin `pythonpath`, roto desde antes de hoy) y el arrastre para reordenar en celular (umbral de jitter irreal para un dedo real). Widgets de Drive/Gmail/Calendar/YouTube ahora con más contexto (subtítulo, fecha/tamaño) y cliqueables (abren el recurso real de Google). Primera verificación de este proyecto con navegador real (Playwright/Chromium headless, instalado en el entorno de desarrollo, no es dependencia del proyecto).
+
+Desde el 2026-07-27 (ADR 0025, corregido por ADR 0026): primer Especialista Cognitivo real, `GmailDigestSpecialist` — interpreta la bandeja de Gmail (categoriza, señala qué revisar), invocable por Snarf en el chat (`gmail_summarize_inbox`) o preguntando "¿qué tenemos para hoy?". El refresco automático en segundo plano de ADR 0025 se corrigió en ADR 0026: es 100% impulsado por el navegador (al abrir el dashboard y cada 5 min mientras sigue abierto y visible), nunca del lado del servidor sin uso real. Usa su propia Capacidad de LLM más barata (`claude-haiku-4-5`), distinta a la de Snarf.
+
+Desde el 2026-07-27 (ADR 0026): `snarf/capabilities/` y `snarf/specialists/` quedan garantizados reusables desde un futuro agente/proyecto — nunca importan `snarf.core` ni `snarf.runtime` ni `app.py`, reciben todo por inyección en el constructor. Garantía fijada con un test (`tests/test_architecture_boundaries.py`), no con una extracción a paquete separado (prematura sin un segundo consumidor real). Primera optimización real de costo de tokens: el system prompt de Snarf (idéntico en cada llamada) usa prompt caching de Anthropic.
+
 Planificado: extracción de contenido por tipo de archivo (PDF, imagen, audio, video) para poder vectorizar Drive completo; interfaz genérica de "fuente de conocimiento" para que Drive, Notion y archivos subidos a mano compartan un mismo motor de vectorización; reforzar la confirmación de acciones de alto impacto con un control independiente del modelo (por ejemplo, un botón en la interfaz) si el uso escala más allá de un solo usuario; login con Google (reemplazando o complementando la contraseña) y flujo real de un segundo usuario conectando su propia cuenta, cuando exista multi-usuario real.
 
 ## Business
@@ -126,6 +136,12 @@ Hoy implementado mediante `adr/` (decisiones de arquitectura y gobernanza) y `CH
 ## Roadmaps
 
 Planificación de la evolución del sistema.
+
+**Dashboard, plan por fases (2026-07-27, ver ADR 0022 y ADR 0023):**
+
+- Fase 1 (construida): dashboard con widgets sobre datos 100% reales — estado del sistema, conversaciones, memoria episódica, y (corrección de ADR 0023 a la Fase 2 original) Drive, Gmail, Calendar y YouTube, porque esas Capacidades ya existían y no eran hipotéticas. Menú de usuario, panel de configuración (qué widgets mostrar), reordenamiento persistido por usuario, navegación Chat/Dashboard por swipe o botón en mobile, y layout "Jarvis" (chat centrado + paneles alrededor) en desktop ancho. Ver Capabilities y Architecture para el detalle.
+- Fase 2 (futura, sin fecha): cada Capacidad genuinamente nueva que se agregue (Trading, GitHub, MCP, lo que se decida — subsistemas que hoy no existen) suma su propio widget al dashboard, opt-in por el usuario.
+- Fase 3 (futura, sin fecha): aplicación de escritorio nativa multi-ventana (múltiples monitores) y visualización tipo "Jarvis brain" de los flujos del sistema — requiere antes un registro real de eventos/actividad del `Orchestrator` que hoy no existe (`episodic_memory.jsonl` solo guarda input/response, no qué herramienta se ejecutó).
 
 ## Archive
 
