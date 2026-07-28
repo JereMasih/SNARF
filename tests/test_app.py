@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 import app as app_module
 from snarf.memory.episodic import EpisodicMemory
+from snarf.telemetry import activity_log, usage_tracker
 
 TEST_PASSWORD = "test-password-for-pytest"
 
@@ -16,6 +17,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
     monkeypatch.setattr(app_module.stt, "_api_key", None)
     monkeypatch.setattr(app_module.tts, "_api_key", None)
+    monkeypatch.setattr(usage_tracker, "DEFAULT_PATH", tmp_path / "usage_log.jsonl")
+    monkeypatch.setattr(activity_log, "DEFAULT_PATH", tmp_path / "activity_log.jsonl")
     monkeypatch.setenv("SNARF_ACCESS_PASSWORD", TEST_PASSWORD)
     monkeypatch.setenv("SESSION_SECRET", "test-session-secret")
     with TestClient(app_module.app) as c:
@@ -102,6 +105,8 @@ def test_dashboard_summary_reports_capabilities_and_memory_stats(client, tmp_pat
     assert data["memory"]["total_messages"] == 2
     assert data["memory"]["total_conversations"] == 2
     assert len(data["memory"]["activity_by_day"]) == 14
+    assert data["cost"]["total_usd"] == 0
+    assert data["cost"]["total_calls"] == 0
 
 
 def test_dashboard_summary_reports_google_connected_when_token_exists(client, tmp_path, monkeypatch):
@@ -122,7 +127,7 @@ def test_dashboard_preferences_defaults_before_any_save(client, tmp_path, monkey
     res = client.get("/dashboard/preferences")
     assert res.status_code == 200
     data = res.json()
-    assert data["panel_order"] == ["system", "conversations", "memory", "drive", "gmail", "calendar", "youtube"]
+    assert data["panel_order"] == ["system", "conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube"]
     assert all(data["visible_widgets"].values())
 
 

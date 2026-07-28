@@ -1,12 +1,26 @@
+import time
+from pathlib import Path
+
 from snarf.capabilities.anthropic_llm import AnthropicLLM
+from snarf.capabilities.docx_extractor import DocxExtractor
+from snarf.capabilities.ffmpeg_audio import FfmpegAudioExtractor
+from snarf.capabilities.elevenlabs_stt import ElevenLabsSTT
 from snarf.capabilities.google_auth import GoogleAuth
 from snarf.capabilities.google_calendar import GoogleCalendar
 from snarf.capabilities.google_drive import GoogleDrive
 from snarf.capabilities.google_gmail import GoogleGmail
 from snarf.capabilities.google_youtube import GoogleYouTube
+from snarf.capabilities.pdf_extractor import PdfExtractor
+from snarf.capabilities.pptx_extractor import PptxExtractor
+from snarf.capabilities.voyage_embeddings import VoyageEmbeddings
+from snarf.capabilities.xlsx_extractor import XlsxExtractor
 from snarf.core.identity import load_identity
+from snarf.knowledge.drive_indexer import DriveIndexer
+from snarf.knowledge.extraction import ContentExtractor
+from snarf.knowledge.vector_store import VectorStore
 from snarf.memory.episodic import EpisodicMemory
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
+from snarf.telemetry import activity_log
 
 # Único usuario real hoy. El Orchestrator ya recibe un user_id explícito (en
 # vez de asumirlo implícitamente) para que agregar un segundo usuario en el
@@ -16,6 +30,13 @@ DEFAULT_USER_ID = "fundador"
 # Modelo para la interpretación de Gmail (Especialista, no Snarf): tarea de
 # categorización acotada, no necesita el modelo principal de Snarf.
 GMAIL_DIGEST_MODEL = "claude-haiku-4-5"
+
+# Modelo para describir/transcribir imágenes al vectorizar Drive: tarea
+# acotada y mecánica, mismo criterio que GMAIL_DIGEST_MODEL — no necesita el
+# modelo principal de Snarf (ver ADR 0028).
+DRIVE_VISION_MODEL = "claude-haiku-4-5"
+
+DRIVE_INDEX_DATA_DIR = Path("data/drive_index")
 
 SYSTEM_PREFIX = (
     "Sos Snarf. A continuación se incluyen, en orden de jerarquía, los documentos "
@@ -60,6 +81,21 @@ SYSTEM_PREFIX = (
     "inequívoca que sí a ESA propuesta concreta, en este mismo intercambio. Nunca "
     "asumas una confirmación implícita, y nunca combines la propuesta y la ejecución "
     "en el mismo turno.\n\n"
+    "También tenés herramientas para vectorizar el Google Drive del fundador y "
+    "buscar semánticamente sobre ese contenido ya indexado: drive_index_scan (solo "
+    "lectura, sin costo, cuenta archivos y tamaño real), drive_index_catalog_unsupported "
+    "(solo lectura, sin costo, registra el mimeType real de archivos que hoy no se "
+    "pueden indexar — categoría 'other'), drive_index_start (arranca la indexación "
+    "en segundo plano, tiene costo real de APIs salvo que uses query='free_tier'), "
+    "drive_index_status, drive_index_stop y drive_search_knowledge. query='free_tier' "
+    "acota a lo que hoy sale gratis o casi gratis (Google Docs/Sheets/Slides, PDF, "
+    "texto plano) — nunca imagen, audio ni video, que sí cuestan. drive_index_start "
+    "no es una acción destructiva y no lleva el protocolo de confirmed en dos pasos, "
+    "pero igual requiere criterio: nunca la llames por tu cuenta, solo cuando el "
+    "fundador pida explícitamente indexar o vectorizar Drive. Si todavía no le "
+    "mostraste un drive_index_scan en esta conversación, mostraselo primero "
+    "(cantidad de archivos, tamaño, desglose por tipo) y dejá que decida el alcance "
+    "antes de arrancar.\n\n"
 )
 
 TOOLS = [
@@ -319,6 +355,67 @@ TOOLS = [
             "required": ["file_id"],
         },
     },
+    {
+        "name": "drive_index_scan",
+        "description": (
+            "Recorre (pagina) el Drive del fundador, opcionalmente filtrado por una query de Drive, y "
+            "devuelve cantidad de archivos, tamaño total y desglose por tipo — SIN indexar nada ni gastar "
+            "nada. Es de solo lectura: usala siempre antes de proponer drive_index_start, para que el "
+            "fundador vea el alcance real antes de decidir. Aceptá query='free_tier' para acotar a lo que "
+            "hoy sale gratis o casi gratis (Google Docs/Sheets/Slides, PDF, texto plano) — sin imagen, "
+            "audio ni video."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string", "description": "Query de Drive para acotar el alcance (por ejemplo, una carpeta), o 'free_tier' para lo que sale gratis."}},
+        },
+    },
+    {
+        "name": "drive_index_catalog_unsupported",
+        "description": (
+            "Recorre el Drive y registra (sin extraer contenido, sin costo) el mimeType y nombre real de "
+            "cada archivo que hoy no tiene extractor (categoría 'other' de drive_index_scan). Sirve para "
+            "que el fundador identifique qué son esos archivos antes de decidir si vale construirles "
+            "soporte. Guarda un catálogo completo en disco y devuelve un resumen agrupado por mimeType "
+            "con ejemplos de nombres."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+        },
+    },
+    {
+        "name": "drive_index_start",
+        "description": (
+            "Arranca (o reanuda) en segundo plano la vectorización del Drive del fundador, opcionalmente "
+            "acotada por una query (incluido query='free_tier'). Tiene costo real (Voyage, ElevenLabs, "
+            "Claude) salvo que se use 'free_tier'. Usala solo cuando el fundador lo pida explícitamente, y "
+            "solo después de haberle mostrado drive_index_scan en esta conversación."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+        },
+    },
+    {
+        "name": "drive_index_status",
+        "description": "Progreso de la indexación de Drive en curso (o de la última corrida): procesados, indexados, saltados, errores.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "drive_index_stop",
+        "description": "Corta la indexación de Drive en curso, si hay una corriendo.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "drive_search_knowledge",
+        "description": "Búsqueda semántica sobre el contenido de Drive ya vectorizado. Devuelve los fragmentos más relevantes con su archivo de origen.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}, "top_k": {"type": "integer"}},
+            "required": ["query"],
+        },
+    },
 ]
 
 
@@ -339,6 +436,29 @@ class Orchestrator:
         # más chico y barato alcanza, y este Especialista puede elegir su
         # propia Capacidad de LLM sin afectar la de Snarf.
         self._gmail_digest = GmailDigestSpecialist(self._gmail, AnthropicLLM(model=GMAIL_DIGEST_MODEL), user_id)
+
+        # Pipeline de vectorización de Drive (ver ADR 0028): mismo criterio de
+        # "modelo barato para tarea acotada" que el digest de Gmail, esta vez
+        # para describir imágenes. Cada pieza es una Capacidad chica e
+        # inyectada, nunca buscada por el propio pipeline.
+        content_extractor = ContentExtractor(
+            drive=self._drive,
+            pdf_extractor=PdfExtractor(),
+            vision_llm=AnthropicLLM(model=DRIVE_VISION_MODEL),
+            stt=ElevenLabsSTT(),
+            ffmpeg_audio=FfmpegAudioExtractor(),
+            docx_extractor=DocxExtractor(),
+            pptx_extractor=PptxExtractor(),
+            xlsx_extractor=XlsxExtractor(),
+        )
+        user_index_dir = DRIVE_INDEX_DATA_DIR / user_id
+        self._drive_indexer = DriveIndexer(
+            drive=self._drive,
+            extractor=content_extractor,
+            embeddings=VoyageEmbeddings(),
+            vector_store=VectorStore(persist_directory=str(user_index_dir / "chroma")),
+            manifest_path=user_index_dir / "manifest.json",
+        )
 
         self._tool_handlers = {
             "list_conversations": lambda i: self._memory.list_conversations(),
@@ -373,6 +493,12 @@ class Orchestrator:
             "gmail_delete_label": self._tool_gmail_delete_label,
             "drive_delete_file": self._tool_drive_delete_file,
             "gmail_summarize_inbox": self._tool_gmail_summarize_inbox,
+            "drive_index_scan": lambda i: self._drive_indexer.scan(query=i.get("query")),
+            "drive_index_catalog_unsupported": lambda i: self._drive_indexer.catalog_unsupported(query=i.get("query")),
+            "drive_index_start": lambda i: self._drive_indexer.start(query=i.get("query")),
+            "drive_index_status": lambda i: self._drive_indexer.status(),
+            "drive_index_stop": lambda i: self._drive_indexer.stop(),
+            "drive_search_knowledge": lambda i: self._drive_indexer.search(i["query"], top_k=i.get("top_k", 5)),
         }
 
     @property
@@ -402,6 +528,10 @@ class Orchestrator:
     @property
     def gmail_digest(self) -> GmailDigestSpecialist:
         return self._gmail_digest
+
+    @property
+    def drive_indexer(self) -> DriveIndexer:
+        return self._drive_indexer
 
     def warmup(self) -> None:
         self._llm.warmup()
@@ -497,10 +627,15 @@ class Orchestrator:
     def _handle_tool(self, name: str, tool_input: dict) -> object:
         handler = self._tool_handlers.get(name)
         if not handler:
+            activity_log.record(name, "unknown_tool")
             return {"error": f"herramienta desconocida: {name}"}
+        started = time.monotonic()
         try:
-            return handler(tool_input)
+            result = handler(tool_input)
+            activity_log.record(name, "ok", duration_ms=(time.monotonic() - started) * 1000)
+            return result
         except Exception as exc:
+            activity_log.record(name, "error", duration_ms=(time.monotonic() - started) * 1000, error=str(exc))
             return {"error": str(exc)}
 
     def handle(self, channel_name: str, user_input: str, conversation_id: str | None = None) -> str:

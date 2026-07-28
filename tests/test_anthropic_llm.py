@@ -10,8 +10,8 @@ class FakeTextBlock:
         self.text = text
 
 
-def fake_response(stop_reason, text):
-    return SimpleNamespace(stop_reason=stop_reason, content=[FakeTextBlock(text)])
+def fake_response(stop_reason, text, usage=None):
+    return SimpleNamespace(stop_reason=stop_reason, content=[FakeTextBlock(text)], usage=usage)
 
 
 class FakeMessages:
@@ -70,3 +70,32 @@ def test_generate_sends_system_prompt_with_cache_control():
     assert sent_system == [
         {"type": "text", "text": "el prompt de identidad", "cache_control": {"type": "ephemeral"}}
     ]
+
+
+def test_generate_records_token_usage_for_cost_tracking(monkeypatch):
+    from snarf.capabilities import anthropic_llm as module
+
+    recorded = []
+    monkeypatch.setattr(module.usage_tracker, "record_anthropic_call", lambda *a, **k: recorded.append((a, k)))
+
+    usage = SimpleNamespace(input_tokens=100, output_tokens=50, cache_creation_input_tokens=0, cache_read_input_tokens=0)
+    llm = make_llm([fake_response("end_turn", "ok", usage=usage)])
+    llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+
+    assert len(recorded) == 1
+    args, _ = recorded[0]
+    assert args[0] == "claude-sonnet-5"
+    assert args[1] == 100
+    assert args[2] == 50
+
+
+def test_generate_does_not_record_usage_when_response_has_no_usage_info(monkeypatch):
+    from snarf.capabilities import anthropic_llm as module
+
+    recorded = []
+    monkeypatch.setattr(module.usage_tracker, "record_anthropic_call", lambda *a, **k: recorded.append((a, k)))
+
+    llm = make_llm([fake_response("end_turn", "ok")])
+    llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+
+    assert recorded == []

@@ -1076,11 +1076,12 @@ document.addEventListener("click", (e) => {
 });
 
 /* ---------- dashboard ---------- */
-const WIDGET_IDS = ["system", "conversations", "memory", "drive", "gmail", "calendar", "youtube"];
+const WIDGET_IDS = ["system", "conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube"];
 const WIDGET_LABELS = {
   system: "Estado del sistema",
   conversations: "Conversaciones",
   memory: "Memoria episódica",
+  cost: "Costo de API",
   drive: "Google Drive",
   gmail: "Gmail",
   calendar: "Calendar",
@@ -1091,7 +1092,7 @@ const LEFT_ZONE = ["system"];
 // del chat) forman un solo grupo reordenable: el primero en el orden ocupa
 // la franja de arriba (ancho completo), el resto cae en la columna derecha.
 // Ningún widget está fijo ahí — arrastrar cualquiera al frente lo promueve.
-const TOP_AND_RIGHT_ZONE = ["conversations", "memory", "drive", "gmail", "calendar", "youtube"];
+const TOP_AND_RIGHT_ZONE = ["conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube"];
 const GOOGLE_WIDGETS = ["drive", "gmail", "calendar", "youtube"];
 const GMAIL_MAX_RESULTS_CHOICES = [5, 10, 20];
 
@@ -1137,6 +1138,7 @@ const WIDGET_SUBTITLES = {
   system: "disponibilidad de las capacidades de Snarf",
   conversations: "actividad de mensajes en los últimos 14 días",
   memory: "todo lo que Snarf recuerda de tus conversaciones pasadas",
+  cost: "gasto estimado en las APIs que usa Snarf (no es tu saldo real de cada cuenta)",
   drive: "últimos archivos modificados en tu Google Drive",
   gmail: "últimos mensajes recibidos en tu Gmail",
   calendar: "tus próximos eventos de Google Calendar",
@@ -1182,6 +1184,28 @@ function memoryBodyHTML(summary) {
   return `
     <div class="dash-stat"><span class="dash-stat-num">${mem.total_messages}</span>entradas guardadas</div>
     <div class="dash-row dash-dim">desde ${formatDate(mem.oldest_timestamp)}</div>`;
+}
+function formatUsd(n) {
+  const value = Number(n) || 0;
+  if (value === 0) return "$0.00";
+  if (value < 0.01) return "<$0.01";
+  return "$" + value.toFixed(2);
+}
+function costBodyHTML(summary) {
+  const cost = summary.cost;
+  const vendorLabels = { anthropic: "Anthropic", elevenlabs: "ElevenLabs", voyage: "Voyage AI" };
+  const vendorRows = Object.entries(cost.by_vendor_usd)
+    .map(([vendor, usd]) => `<div class="dash-row"><span>${vendorLabels[vendor] || vendor}</span><span class="dash-dim" style="margin-left:auto">${formatUsd(usd)}</span></div>`)
+    .join("");
+  const unknownNote = cost.calls_without_cost_estimate
+    ? `<div class="dash-row dash-dim">+ ${cost.calls_without_cost_estimate} llamada(s) sin estimar (ej. TTS, según tu plan)</div>`
+    : "";
+  return `
+    <div class="dash-stat"><span class="dash-stat-num">${formatUsd(cost.total_usd)}</span>estimado, todo el tiempo</div>
+    <div class="dash-row">${formatUsd(cost.today_usd)} hoy · ${formatUsd(cost.last_7_days_usd)} últimos 7 días</div>
+    ${vendorRows}
+    ${unknownNote}
+    <div class="dash-row dash-dim">estimado según tarifas públicas, no tu saldo real de cada cuenta</div>`;
 }
 function notConnectedBody() {
   return '<div class="dash-row dash-dim">Google no conectado todavía</div>';
@@ -1270,6 +1294,7 @@ function widgetBodyHTML(id, summary) {
   if (id === "system") return systemBodyHTML(summary);
   if (id === "conversations") return conversationsBodyHTML(summary);
   if (id === "memory") return memoryBodyHTML(summary);
+  if (id === "cost") return costBodyHTML(summary);
   if (GOOGLE_WIDGETS.includes(id)) return summary.capabilities.google_connected ? loadingBody() : notConnectedBody();
   return "";
 }

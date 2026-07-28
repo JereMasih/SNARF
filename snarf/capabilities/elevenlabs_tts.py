@@ -3,6 +3,7 @@ import os
 import requests
 
 from snarf.capabilities.base import Capability
+from snarf.telemetry import usage_tracker
 
 API_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 DEFAULT_MODEL = "eleven_multilingual_v2"
@@ -31,4 +32,5 @@ class ElevenLabsTTS(Capability):
             timeout=30,
         )
         response.raise_for_status()
+        usage_tracker.record_elevenlabs_tts_call(len(text))
         return response.content

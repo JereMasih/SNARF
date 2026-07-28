@@ -15,6 +15,7 @@ from snarf.capabilities.elevenlabs_tts import ElevenLabsTTS
 from snarf.capabilities.google_auth import TOKENS_DIR as GOOGLE_TOKENS_DIR
 from snarf.core.orchestrator import DEFAULT_USER_ID, Orchestrator
 from snarf.runtime.dashboard_prefs import load_prefs, save_prefs
+from snarf.telemetry import activity_log, usage_tracker
 from snarf.runtime.web_auth import (
     SESSION_COOKIE_NAME,
     SESSION_MAX_AGE_SECONDS,
@@ -147,7 +148,16 @@ def dashboard_summary(user_id: str = Depends(require_user)):
             "google_connected": _google_connected(user_id),
         },
         "memory": orchestrator.memory.stats(),
+        "cost": usage_tracker.summarize(),
     }
+
+
+@app.get("/dashboard/activity")
+def dashboard_activity(user_id: str = Depends(require_user)):
+    # Registro real de qué herramienta ejecuta el Orchestrator y cuándo —
+    # base para una futura visualización tipo "cerebro" de Snarf (ver
+    # Roadmaps en MASTER_MAP.md). Todavía sin widget visual, solo el dato.
+    return {"stats": activity_log.stats(), "recent": activity_log.recent(50)}
 
 
 @app.get("/dashboard/preferences")

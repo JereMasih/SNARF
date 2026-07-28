@@ -7,5 +7,8 @@ data/episodic_memory.jsonl
 data/manual_verification_log.jsonl
 data/dashboard_prefs/
 data/gmail_digest/
+data/drive_index/
+data/usage_log.jsonl
+data/activity_log.jsonl
 credentials/
 server.log

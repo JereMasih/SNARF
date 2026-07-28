@@ -32,6 +32,37 @@ def test_handle_tool_catches_handler_exceptions(orchestrator, monkeypatch):
     assert result == {"error": "fallo simulado"}
 
 
+def test_handle_tool_records_successful_calls_in_the_activity_log(orchestrator):
+    from snarf.telemetry import activity_log
+
+    orchestrator._handle_tool("list_conversations", {})
+    entries = activity_log.recent()
+    assert entries[-1]["tool_name"] == "list_conversations"
+    assert entries[-1]["status"] == "ok"
+    assert entries[-1]["duration_ms"] >= 0
+
+
+def test_handle_tool_records_failed_calls_in_the_activity_log(orchestrator, monkeypatch):
+    from snarf.telemetry import activity_log
+
+    def boom(_input):
+        raise RuntimeError("fallo simulado")
+
+    monkeypatch.setitem(orchestrator._tool_handlers, "list_conversations", boom)
+    orchestrator._handle_tool("list_conversations", {})
+    entries = activity_log.recent()
+    assert entries[-1]["status"] == "error"
+    assert entries[-1]["error"] == "fallo simulado"
+
+
+def test_handle_tool_records_unknown_tool_calls_in_the_activity_log(orchestrator):
+    from snarf.telemetry import activity_log
+
+    orchestrator._handle_tool("herramienta_inexistente", {})
+    entries = activity_log.recent()
+    assert entries[-1]["status"] == "unknown_tool"
+
+
 # (nombre de la tool, atributo de capacidad en Orchestrator, método real, input base)
 HIGH_IMPACT_TOOLS = [
     ("gmail_send_message", "_gmail", "send_message", {"to": "a@b.com", "subject": "s", "body": "b"}),
@@ -96,3 +127,44 @@ def test_gmail_summarize_inbox_force_refresh_ignores_cache(orchestrator, monkeyp
     monkeypatch.setattr(orchestrator.gmail_digest, "cached_digest", lambda: cached)
     monkeypatch.setattr(orchestrator.gmail_digest, "refresh", lambda **kw: fresh)
     assert orchestrator._handle_tool("gmail_summarize_inbox", {"force_refresh": True}) == fresh
+
+
+def test_drive_index_scan_delegates_to_the_indexer_with_the_given_query(orchestrator, monkeypatch):
+    received = {}
+    monkeypatch.setattr(orchestrator.drive_indexer, "scan", lambda query=None: received.update(query=query) or {"total_files": 3})
+    result = orchestrator._handle_tool("drive_index_scan", {"query": "carpeta X"})
+    assert result == {"total_files": 3}
+    assert received == {"query": "carpeta X"}
+
+
+def test_drive_index_catalog_unsupported_delegates_to_the_indexer(orchestrator, monkeypatch):
+    received = {}
+    monkeypatch.setattr(
+        orchestrator.drive_indexer,
+        "catalog_unsupported",
+        lambda query=None: received.update(query=query) or {"total_files": 5},
+    )
+    result = orchestrator._handle_tool("drive_index_catalog_unsupported", {"query": "free_tier"})
+    assert result == {"total_files": 5}
+    assert received == {"query": "free_tier"}
+
+
+def test_drive_index_start_delegates_to_the_indexer(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator.drive_indexer, "start", lambda query=None: {"status": "started"})
+    assert orchestrator._handle_tool("drive_index_start", {}) == {"status": "started"}
+
+
+def test_drive_index_status_delegates_to_the_indexer(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator.drive_indexer, "status", lambda: {"running": True})
+    assert orchestrator._handle_tool("drive_index_status", {}) == {"running": True}
+
+
+def test_drive_index_stop_delegates_to_the_indexer(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator.drive_indexer, "stop", lambda: {"status": "stopping"})
+    assert orchestrator._handle_tool("drive_index_stop", {}) == {"status": "stopping"}
+
+
+def test_drive_search_knowledge_delegates_to_the_indexer(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator.drive_indexer, "search", lambda query, top_k=5: [{"text": query, "top_k": top_k}])
+    result = orchestrator._handle_tool("drive_search_knowledge", {"query": "algo", "top_k": 3})
+    assert result == [{"text": "algo", "top_k": 3}]

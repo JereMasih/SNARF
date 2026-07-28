@@ -3,6 +3,7 @@ import os
 from typing import Callable
 
 from snarf.capabilities.base import Capability
+from snarf.telemetry import usage_tracker
 
 DEFAULT_MODEL = "claude-sonnet-5"
 MAX_TOOL_ROUNDS = 5
@@ -61,6 +62,7 @@ class AnthropicLLM(Capability):
             if tools:
                 kwargs["tools"] = tools
             response = self._client.messages.create(**kwargs)
+            self._record_usage(response)
 
             if response.stop_reason == "tool_use" and tool_handler:
                 conversation.append({"role": "assistant", "content": response.content})
@@ -84,3 +86,15 @@ class AnthropicLLM(Capability):
             return text
 
         return "[demasiadas consultas a herramientas, no llegué a una respuesta final]"
+
+    def _record_usage(self, response) -> None:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return
+        usage_tracker.record_anthropic_call(
+            self.model,
+            getattr(usage, "input_tokens", 0) or 0,
+            getattr(usage, "output_tokens", 0) or 0,
+            getattr(usage, "cache_creation_input_tokens", 0) or 0,
+            getattr(usage, "cache_read_input_tokens", 0) or 0,
+        )

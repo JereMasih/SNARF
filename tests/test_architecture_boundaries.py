@@ -22,7 +22,7 @@ def _imports_in(path: Path) -> set[str]:
 
 
 def _reusable_layer_files():
-    for directory in ("snarf/capabilities", "snarf/specialists"):
+    for directory in ("snarf/capabilities", "snarf/specialists", "snarf/knowledge"):
         yield from (ROOT / directory).glob("*.py")
 
 

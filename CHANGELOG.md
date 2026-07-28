@@ -240,3 +240,23 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Ajuste posterior, misma jornada: el fundador pidió aún más transparencia y *menos* difuminado (para disfrutar la línea con nitidez, no perderla en el blur) — `backdrop-filter` bajado de 15px a 4px y opacidad del degradé reducida más todavía en `.dash-widget`, `.msg.user` y `.msg.snarf`. Verificado con Playwright contra el servidor real.
 - Suite completa: 93/93 sin cambios (CSS puro).
 - Sin ADR de cierre todavía: el fundador pidió frenar el commit/push hasta terminar de ajustar el look visual.
+
+## [2026-07-28] Vectorización de Google Drive y panel de costo de API en tiempo real
+
+- Nuevo panel "Costo de API" en el dashboard (`snarf/telemetry/`): estima en tiempo real el gasto de Anthropic, ElevenLabs y Voyage a partir de cada llamada real (nunca inventado), con desglose por proveedor y aclaración explícita de que es una estimación según tarifa pública, no el saldo real de cada cuenta.
+- Construida la extracción de contenido por tipo de archivo que faltaba desde ADR 0013/0014 (PDF, imagen, audio, video) y el pipeline completo de vectorización de Google Drive (`snarf/knowledge/`): extracción → chunking → embeddings (Voyage AI, `voyage-4-lite`) → `chromadb` local, con progreso reanudable por archivo.
+- Cinco herramientas nuevas para Snarf: `drive_index_scan` (solo lectura, cuenta archivos/tamaño por tipo sin gastar nada), `drive_index_start`/`drive_index_status`/`drive_index_stop` (indexación en segundo plano, siempre disparada a pedido explícito, nunca automática) y `drive_search_knowledge` (búsqueda semántica sobre lo ya indexado).
+- Evaluada y pospuesta a propósito una infraestructura multi-usuario para esto: no existe todavía un segundo usuario real: los datos quedaron namespaced por `user_id` desde el día uno para que agregarlo, cuando corresponda, sea pasar otro `user_id`, no rediseñar el pipeline.
+- `drive_index_scan` corrido en vivo contra el Drive real del fundador (37.479 archivos indexables + 5.251 carpetas, ~820GB): el mayor consumidor de espacio es video (1.824 archivos, ~576GB), seguido de una categoría "other" sin extractor hoy (9.854 archivos, ~230GB) — PDF, imagen, audio y texto/Google Docs juntos son una fracción menor del total (~20GB).
+- Nuevo `drive_index_catalog_unsupported` + alias `query='free_tier'`, y corrido en vivo también: de los ~230GB de "other", ~212GB son software (instaladores ZIP, artefactos de un proyecto Unity) sin valor de conocimiento personal; el resto son robots/indicadores de trading reales en `.zip`/`.rar`/`.dll` (identificables por nombre, no extraíbles como texto) y, sin buscarlo, 95 `.docx` + 41 `.epub` + otros documentos personales genuinamente valiosos que hoy no tienen extractor — candidatos claros para una próxima ronda.
+- Corregido un bug real encontrado en el camino: un archivo marcado `error` en el manifest (por ejemplo, por falta de `VOYAGE_API_KEY`) quedaba descartado para siempre en vez de reintentarse en la próxima corrida.
+- 67 tests nuevos (160/160 en total). Encontrado y corregido durante la construcción: un fallo real en el extractor (no solo un tipo no soportado) tiraba abajo el thread de indexación entero en silencio, sin registrar nada — cubierto con test de regresión.
+- Ver ADR 0028.
+
+## [2026-07-28] Extractores de Office, registro real de actividad, y visión de negocio registrada
+
+- Nuevos `DocxExtractor`/`PptxExtractor`/`XlsxExtractor` (`.docx`/`.pptx`/`.xlsx`) sumados al tier gratuito de vectorización de Drive — los documentos personales reales que aparecieron en el catálogo de "other" (planes de negocio, etc.) ahora sí tienen extractor, sin costo de API.
+- Nuevo registro real de actividad del Orchestrator (`snarf/telemetry/activity_log.py`, `GET /dashboard/activity`): qué herramienta se ejecuta, cuándo, y con qué resultado — la base de datos real que pedía el fundador antes de construir cualquier visualización tipo "cerebro de Snarf". Sin widget visual todavía, a propósito.
+- El fundador planteó una visión mucho más amplia (dashboard de costos/ingresos/mercados/campañas de negocio, reemplazo de sus chatbots externos con migración de "Proyectos" de ChatGPT, arquitectura de Especialistas por dominio, creación/exportación de documentos, onboarding). Se registró completa en `MASTER_MAP.md` con el orden de ejecución acordado, sin construir las piezas grandes todavía — varias necesitan una fuente de datos real (costos, ingresos, mercado) que hoy no existe, y este proyecto no muestra datos inventados.
+- 23 tests nuevos (183/183 en total).
+- Ver ADR 0029.
