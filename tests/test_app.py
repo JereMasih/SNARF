@@ -185,7 +185,10 @@ def test_dashboard_preferences_defaults_before_any_save(client, tmp_path, monkey
     res = client.get("/dashboard/preferences")
     assert res.status_code == 200
     data = res.json()
-    assert data["panel_order"] == ["system", "conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube", "brain"]
+    assert data["panel_order"] == [
+        "history", "chat", "system", "conversations", "memory", "cost",
+        "drive", "gmail", "calendar", "youtube", "brain",
+    ]
     assert all(data["visible_widgets"].values())
 
 
@@ -204,6 +207,34 @@ def test_dashboard_preferences_put_then_get_roundtrip(client, tmp_path, monkeypa
 
     get_res = client.get("/dashboard/preferences")
     assert get_res.json() == put_res.json()
+
+
+def test_dashboard_preferences_span_roundtrip_via_http(client, tmp_path, monkeypatch):
+    from snarf.runtime import dashboard_prefs
+
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path / "prefs")
+    put_res = client.put(
+        "/dashboard/preferences",
+        json={"widget_options": {"drive": {"col_span": 8, "row_span": 14}}},
+    )
+    assert put_res.status_code == 200
+    assert put_res.json()["widget_options"]["drive"] == {"col_span": 8, "row_span": 14}
+
+    get_res = client.get("/dashboard/preferences")
+    assert get_res.json()["widget_options"]["drive"] == {"col_span": 8, "row_span": 14}
+
+
+def test_dashboard_preferences_http_cannot_hide_chat_or_history(client, tmp_path, monkeypatch):
+    from snarf.runtime import dashboard_prefs
+
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path / "prefs")
+    put_res = client.put(
+        "/dashboard/preferences",
+        json={"visible_widgets": {"chat": False, "history": False}},
+    )
+    assert put_res.status_code == 200
+    assert put_res.json()["visible_widgets"]["chat"] is True
+    assert put_res.json()["visible_widgets"]["history"] is True
 
 
 @pytest.fixture

@@ -123,6 +123,15 @@
     padding: calc(env(safe-area-inset-top, 0px) + 60px) 0 calc(env(safe-area-inset-bottom, 0px) + 16px);
   }
   .sidebar.open { transform: translateX(0); }
+  /* Modo enfoque (desktop): la misma barra lateral del menú hamburguesa de
+     mobile, reparentada adentro del panel de chat a pantalla completa —
+     acá deja de ser un cajón fuera de pantalla y pasa a ocupar su lugar fijo
+     al costado, siempre visible mientras el modo enfoque está abierto. */
+  .chat-focus-panel .sidebar.docked {
+    position: static; transform: none; transition: none;
+    width: 260px; min-width: 260px; height: 100%;
+    padding: 0.8rem 0;
+  }
   .sidebar-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.5);
     z-index: 7; opacity: 0; pointer-events: none; transition: opacity 0.28s ease;
@@ -194,41 +203,43 @@
     flex: 1 1 auto; min-height: 0; display: none; flex-direction: column;
   }
   .view-chat.active, .view-dashboard.active { display: flex; }
-  .dash-zone-top, .dash-zone-left, .dash-zone-right { display: none; }
 
-  /* --- modo Jarvis: chat centrado, paneles alrededor (desktop ancho) --- */
+  /* --- modo Jarvis: grilla unificada y redimensionable (desktop ancho) ---
+     Reemplaza las tres zonas fijas de antes (arriba/izquierda/derecha) por
+     una sola grilla de 12 columnas donde todo bloque —incluidos el chat y
+     el historial, antes fijos— es igual de movible y redimensionable. */
   @media (min-width: 900px) {
     body.jarvis-mode .menu-btn { display: none; }
+    /* Ya no hay una vista "solo chat" separada en desktop — el chat vive
+       siempre dentro de la grilla (ver reparentChatIntoDashboard); el modo
+       enfoque cubre la misma necesidad expandiendo ese mismo bloque. */
+    body.jarvis-mode .dash-btn { display: none; }
     body.jarvis-mode #appRoot {
-      display: grid;
-      grid-template-columns: 280px minmax(380px, 620px) 1fr;
-      grid-template-rows: auto 1fr;
-      grid-template-areas: "top top top" "left center right";
-      gap: 0.9rem;
-      padding: calc(env(safe-area-inset-top, 0px) + 3.8rem) 1.2rem 1rem;
-      height: 100%;
+      display: block; height: 100%; overflow-y: auto;
+      padding: calc(env(safe-area-inset-top, 0px) + 3.8rem) 1.2rem 1.5rem;
     }
-    body.jarvis-mode .view-chat {
-      display: flex; grid-area: center; min-height: 0;
-    }
+    body.jarvis-mode .view-chat { display: none; }
     body.jarvis-mode .view-dashboard { display: contents; }
-    body.jarvis-mode .dash-zone-top {
-      display: block; grid-area: top; min-height: 0; overflow-y: auto;
-    }
-    body.jarvis-mode .dash-zone-left {
-      display: flex; flex-direction: column; grid-area: left; min-height: 0; overflow-y: auto; gap: 0.8rem;
-    }
-    body.jarvis-mode .dash-zone-right {
-      display: flex; flex-direction: column; grid-area: right; min-height: 0; overflow-y: auto; gap: 0.8rem;
-    }
     body.jarvis-mode .dash-mobile-stack { display: none; }
+    body.jarvis-mode .dash-grid-desktop {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      grid-auto-rows: 28px;
+      grid-auto-flow: row;
+      gap: 0.9rem;
+    }
+    /* Cada bloque necesita una altura real (no solo intrínseca) para que
+       grid-row: span funcione — el contenido que no entra scrollea adentro
+       en vez de desbordar la tarjeta. Solo en desktop: mobile conserva su
+       .dash-widget de altura intrínseca de siempre, sin tocar. */
+    body.jarvis-mode .dash-widget {
+      display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden;
+    }
+    body.jarvis-mode .dash-widget-body {
+      display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    }
   }
-  .dash-left-convs {
-    border: 1px solid rgba(79,216,232,0.22); border-radius: 14px;
-    background: rgba(255,255,255,0.03); padding: 0.8rem; display: flex; flex-direction: column;
-    min-height: 160px; max-height: 40vh;
-  }
-  .dash-left-convs .conv-list { overflow-y: auto; }
+  .dash-grid-desktop { display: none; }
 
   /* --- panel drag handle / reordering --- */
   .dash-widget-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.15rem; }
@@ -269,6 +280,20 @@
   .dash-drag-handle:hover { opacity: 1; color: var(--glow); }
   .dash-widget.dragging, .dash-widget.dragging * { user-select: none; -webkit-user-select: none; cursor: grabbing; }
   .dash-widget.dragging { opacity: 0.4; border-color: var(--glow); }
+  .dash-resize-handle {
+    position: absolute; right: 4px; bottom: 4px; width: 18px; height: 18px; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-dim); opacity: 0.45; cursor: nwse-resize; touch-action: none;
+    user-select: none; -webkit-user-select: none;
+  }
+  .dash-resize-handle:hover { opacity: 1; color: var(--glow); }
+  .dash-widget.resizing { border-color: var(--glow); }
+  .dash-widget-expand-handle {
+    color: var(--text-dim); cursor: pointer; opacity: 0.55;
+    display: flex; align-items: center; justify-content: center;
+    min-width: 26px; min-height: 26px; margin: -6px -4px -6px 0.2rem;
+  }
+  .dash-widget-expand-handle:hover { opacity: 1; color: var(--glow); }
 
   /* --- panel de configuración --- */
   .settings-overlay {
@@ -369,6 +394,29 @@
   }
   .brain-edge-flow.brain-edge-flow-error { color: var(--brain-red) !important; }
   @keyframes brain-flow { to { stroke-dashoffset: -28; } }
+
+  /* --- modo enfoque: chat a pantalla completa + barra lateral --- */
+  .chat-focus-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 14;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+  }
+  .chat-focus-overlay.open { opacity: 1; pointer-events: auto; }
+  .chat-focus-panel {
+    position: fixed; z-index: 15;
+    left: 50%; top: 50%; transform: translate(-50%, -46%);
+    width: min(1100px, 96vw); height: min(860px, 94vh);
+    background: rgba(5,10,12,0.98); border: 1px solid rgba(79,216,232,0.35);
+    border-radius: 16px; overflow: hidden;
+    display: flex; flex-direction: row;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .chat-focus-panel.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); }
+  .chat-focus-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; position: relative; }
+  .chat-focus-close {
+    position: absolute; top: 10px; right: 10px; z-index: 2;
+    background: none; border: 1px solid rgba(79,216,232,0.3); color: var(--text-dim);
+    border-radius: 50%; width: 26px; height: 26px; cursor: pointer; font-size: 0.75rem;
+  }
 
   .brain-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 12;
@@ -817,6 +865,12 @@
     <button id="closePlayerBtn" class="close-btn">✕</button>
   </div>
 
+  <div class="chat-focus-overlay" id="chatFocusOverlay"></div>
+  <div class="chat-focus-panel" id="chatFocusPanel">
+    <button class="chat-focus-close" id="chatFocusCloseBtn">✕</button>
+    <div class="chat-focus-main" id="chatFocusMain"></div>
+  </div>
+
   <div class="settings-overlay" id="settingsOverlay"></div>
   <div class="settings-panel" id="settingsPanel">
     <div class="settings-head">
@@ -887,16 +941,17 @@
   </div>
 
   <div class="view-dashboard" id="viewDashboard">
-    <div class="dash-zone dash-zone-top" id="dashZoneTop"></div>
-    <div class="dash-zone dash-zone-left" id="dashZoneLeft">
-      <div class="dash-left-convs">
-        <button class="new-conv-btn" id="dashNewConvBtn">+ nueva conversación</button>
-        <div class="conv-list" id="dashConvList"></div>
-      </div>
-    </div>
-    <div class="dash-zone dash-zone-right" id="dashZoneRight"></div>
     <div class="dash-mobile-stack" id="dashboardInner"></div>
+    <div class="dash-grid-desktop" id="dashGridDesktop"></div>
   </div>
+  </div>
+
+  <!-- Contenido del bloque de historial, reparentado a #dashGridDesktop una
+       sola vez al arrancar en desktop (ver reparentHistoryIntoDashboard) —
+       nunca se reconstruye por HTML como los demás widgets. -->
+  <div id="dashHistoryParked" hidden>
+    <button class="new-conv-btn" id="dashNewConvBtn">+ nueva conversación</button>
+    <div class="conv-list" id="dashConvList"></div>
   </div>
 
 <script>
@@ -910,12 +965,15 @@ const ICONS = {
   gear: '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.8v2M10 15.2v2M17.2 10h-2M4.8 10h-2M15.1 4.9l-1.4 1.4M6.3 13.7l-1.4 1.4M15.1 15.1l-1.4-1.4M6.3 6.3 4.9 4.9" stroke-linecap="round"/></svg>',
   logout: '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 3H5.5A1.5 1.5 0 0 0 4 4.5v11A1.5 1.5 0 0 0 5.5 17h3"/><path d="M13 6.5 16.5 10 13 13.5"/><line x1="16.2" y1="10" x2="8" y2="10"/></svg>',
   drag: '<svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor" stroke="none"><circle cx="7" cy="5" r="1.1"/><circle cx="13" cy="5" r="1.1"/><circle cx="7" cy="10" r="1.1"/><circle cx="13" cy="10" r="1.1"/><circle cx="7" cy="15" r="1.1"/><circle cx="13" cy="15" r="1.1"/></svg>',
+  resize: '<svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 17H8M17 17V8M17 17 11 11"/></svg>',
+  expand: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3H4a1 1 0 0 0-1 1v3M13 3h3a1 1 0 0 1 1 1v3M17 13v3a1 1 0 0 1-1 1h-3M3 13v3a1 1 0 0 0 1 1h3"/></svg>',
 };
 
 const orbWrap = document.getElementById("orbWrap");
 const statusEl = document.getElementById("status");
 const chat = document.getElementById("chat");
 const chatInner = document.getElementById("chatInner");
+const controlBar = document.querySelector("#viewChat .control-bar");
 const review = document.getElementById("review");
 const reviewText = document.getElementById("reviewText");
 const modeFab = document.getElementById("modeFab");
@@ -942,9 +1000,7 @@ const dashBtn = document.getElementById("dashBtn");
 const viewChat = document.getElementById("viewChat");
 const viewDashboard = document.getElementById("viewDashboard");
 const dashboardInner = document.getElementById("dashboardInner");
-const dashZoneTop = document.getElementById("dashZoneTop");
-const dashZoneLeft = document.getElementById("dashZoneLeft");
-const dashZoneRight = document.getElementById("dashZoneRight");
+const dashGridDesktop = document.getElementById("dashGridDesktop");
 const dashConvList = document.getElementById("dashConvList");
 const dashNewConvBtn = document.getElementById("dashNewConvBtn");
 const userMenu = document.getElementById("userMenu");
@@ -952,6 +1008,10 @@ const userMenuBtn = document.getElementById("userMenuBtn");
 const userAvatar = document.getElementById("userAvatar");
 const userNameLabel = document.getElementById("userNameLabel");
 const settingsBtn = document.getElementById("settingsBtn");
+const chatFocusOverlay = document.getElementById("chatFocusOverlay");
+const chatFocusPanel = document.getElementById("chatFocusPanel");
+const chatFocusCloseBtn = document.getElementById("chatFocusCloseBtn");
+const chatFocusMain = document.getElementById("chatFocusMain");
 const settingsOverlay = document.getElementById("settingsOverlay");
 const settingsPanel = document.getElementById("settingsPanel");
 const settingsCloseBtn = document.getElementById("settingsCloseBtn");
@@ -1043,7 +1103,9 @@ function renderMarkdown(text) {
 /* ---------- chat helpers ---------- */
 function idleLabel() {
   if (mode === "click") return "click para grabar";
-  return "escribí tu mensaje";
+  // En modo texto no hace falta: el placeholder del campo ("Escribile a
+  // Snarf...") ya dice lo mismo — mostrar los dos era redundante.
+  return "";
 }
 function setState(next, label) {
   state = next;
@@ -1064,7 +1126,7 @@ async function fetchAndPlay(text, btn) {
     });
     const data = await res.json();
     if (data.audio_base64) {
-      playAudio("data:audio/mpeg;base64," + data.audio_base64);
+      await playAudio("data:audio/mpeg;base64," + data.audio_base64);
     } else {
       btn.textContent = "no disponible";
     }
@@ -1105,7 +1167,7 @@ function hideTyping() {
   if (typingBubble) { typingBubble.remove(); typingBubble = null; }
 }
 
-function setMode(next) {
+function setMode(next, autoFocus = true) {
   if (state === "listening" || state === "thinking") return;
   mode = next;
   modeFab.innerHTML = MODE_ICONS[mode];
@@ -1114,7 +1176,10 @@ function setMode(next) {
   review.classList.remove("visible");
   textRow.classList.toggle("visible", mode === "text");
   setState("idle", idleLabel());
-  if (mode === "text") textInput.focus();
+  // autoFocus=false al arrancar la app: enfocar el campo de entrada abre el
+  // teclado nativo solo en mobile — el fundador pidió arrancar siempre en
+  // modo texto pero con el teclado retraído, no abierto de entrada.
+  if (mode === "text" && autoFocus) textInput.focus();
 }
 modeOptions.forEach(btn => btn.addEventListener("click", () => { setMode(btn.dataset.mode); closeModePopover(); }));
 
@@ -1133,8 +1198,15 @@ function playAudio(dataUrl) {
   sharedAudio.src = dataUrl;
   sharedAudio.playbackRate = currentSpeed;
   speedBtn.textContent = currentSpeed + "x";
-  sharedAudio.play().catch(() => {});
   audioPlayer.classList.add("visible");
+  // Antes el error de reproducción (política de autoplay, o una carga
+  // interrumpida por otro click de "escuchar" mientras esta cargaba) se
+  // tragaba en silencio — el reproductor quedaba visible como si sonara,
+  // pero nunca sonaba nada. Ahora se propaga para que fetchAndPlay lo muestre.
+  return sharedAudio.play().catch((e) => {
+    audioPlayer.classList.remove("visible");
+    throw e;
+  });
 }
 speedBtn.addEventListener("click", () => {
   currentSpeed = SPEEDS[(SPEEDS.indexOf(currentSpeed) + 1) % SPEEDS.length];
@@ -1233,8 +1305,20 @@ document.addEventListener("click", (e) => {
 });
 
 /* ---------- dashboard ---------- */
+// Los 9 widgets "de toggle" de siempre — sin tocar: siguen siendo exactamente
+// lo que usa el panel de configuración (así chat/historial nunca aparecen
+// ahí, sin filtrado extra) y renderMobileDashboard (así mobile los sigue
+// excluyendo, sin filtrado extra).
 const WIDGET_IDS = ["system", "conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube", "brain"];
+// La grilla de escritorio unificada suma "history" y "chat" — antes vivían
+// fuera del sistema de widgets, fijos, sin poder moverse ni redimensionar.
+// Deben mantenerse en el mismo orden que WIDGET_IDS del backend
+// (snarf/runtime/dashboard_prefs.py).
+const DESKTOP_BLOCK_IDS = ["history", "chat", ...WIDGET_IDS];
+const ALWAYS_VISIBLE_BLOCK_IDS = ["chat", "history"];
 const WIDGET_LABELS = {
+  history: "Historial de conversaciones",
+  chat: "Chat con Snarf",
   system: "Estado del sistema",
   conversations: "Conversaciones",
   memory: "Memoria episódica",
@@ -1245,14 +1329,42 @@ const WIDGET_LABELS = {
   youtube: "YouTube",
   brain: "Cerebro",
 };
-const LEFT_ZONE = ["system"];
-// El resto de los widgets (menos "system", que siempre queda a la izquierda
-// del chat) forman un solo grupo reordenable: el primero en el orden ocupa
-// la franja de arriba (ancho completo), el resto cae en la columna derecha.
-// Ningún widget está fijo ahí — arrastrar cualquiera al frente lo promueve.
-const TOP_AND_RIGHT_ZONE = ["conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube", "brain"];
 const GOOGLE_WIDGETS = ["drive", "gmail", "calendar", "youtube"];
 const GMAIL_MAX_RESULTS_CHOICES = [5, 10, 20];
+
+// Espejo de los límites/valores por defecto de snarf/runtime/dashboard_prefs.py
+// — el backend es la autoridad real (clampea de nuevo al guardar); esto es
+// solo para el feedback visual en vivo mientras se arrastra/redimensiona.
+const GRID_COLUMNS = 12;
+const MIN_COL_SPAN = 1, MAX_COL_SPAN = GRID_COLUMNS;
+const MIN_ROW_SPAN = 3, MAX_ROW_SPAN = 30;
+const DEFAULT_SPANS = {
+  history: { col_span: 3, row_span: 16 },
+  chat: { col_span: 6, row_span: 16 },
+  system: { col_span: 3, row_span: 8 },
+  cost: { col_span: 3, row_span: 8 },
+  conversations: { col_span: 6, row_span: 8 },
+  memory: { col_span: 6, row_span: 8 },
+  drive: { col_span: 4, row_span: 8 },
+  gmail: { col_span: 4, row_span: 8 },
+  calendar: { col_span: 4, row_span: 8 },
+  youtube: { col_span: 4, row_span: 8 },
+  brain: { col_span: 4, row_span: 8 },
+};
+function clamp(n, min, max) { return Math.min(max, Math.max(min, Number(n) || min)); }
+function blockSpan(id) {
+  const opts = (dashboardPrefs && dashboardPrefs.widget_options && dashboardPrefs.widget_options[id]) || {};
+  const fallback = DEFAULT_SPANS[id] || { col_span: 4, row_span: 8 };
+  return {
+    colSpan: clamp(opts.col_span ?? fallback.col_span, MIN_COL_SPAN, MAX_COL_SPAN),
+    rowSpan: clamp(opts.row_span ?? fallback.row_span, MIN_ROW_SPAN, MAX_ROW_SPAN),
+  };
+}
+function applyBlockSpan(el, id) {
+  const { colSpan, rowSpan } = blockSpan(id);
+  el.style.gridColumn = `span ${colSpan}`;
+  el.style.gridRow = `span ${rowSpan}`;
+}
 
 let currentView = "chat";
 let dashboardPrefs = null;
@@ -1273,6 +1385,7 @@ function showChat() {
   applyJarvisMode();
   stopGmailDigestPolling();
   closeBrainFullscreen();
+  closeChatFocus();
 }
 function showDashboard() {
   currentView = "dashboard";
@@ -1284,7 +1397,15 @@ function showDashboard() {
   refreshDashboard();
 }
 dashBtn.addEventListener("click", () => (currentView === "chat" ? showDashboard() : showChat()));
-desktopMedia.addEventListener("change", () => { applyJarvisMode(); if (currentView === "dashboard") refreshDashboard(); });
+desktopMedia.addEventListener("change", () => {
+  // Si el usuario cargó la app en mobile y después ensanchó la ventana más
+  // allá de los 900px en la misma sesión, la grilla de escritorio todavía no
+  // tiene el chat/historial reparentados — se hace acá, sin forzar ningún
+  // cambio de vista (eso sería un salto no pedido en medio de una conversación).
+  if (isDesktopDashboard()) reparentIntoDashboardOnce();
+  applyJarvisMode();
+  if (currentView === "dashboard") refreshDashboard();
+});
 
 function escapeHtml(text) {
   return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -1294,6 +1415,8 @@ function formatDate(ts) {
   return ts ? new Date(ts * 1000).toLocaleDateString("es-AR") : "sin datos todavía";
 }
 const WIDGET_SUBTITLES = {
+  history: "tus conversaciones guardadas",
+  chat: "grabá o escribí para hablar con Snarf",
   system: "disponibilidad de las capacidades de Snarf",
   conversations: "actividad de mensajes en los últimos 14 días",
   memory: "todo lo que Snarf recuerda de tus conversaciones pasadas",
@@ -1304,13 +1427,22 @@ const WIDGET_SUBTITLES = {
   youtube: "canales de YouTube a los que estás suscripto",
   brain: "actividad del sistema en vivo — tocá para expandir",
 };
-function widgetShell(id, bodyHTML, draggable) {
+function widgetShell(id, bodyHTML, { draggable = true, resizable = false } = {}) {
   const handle = draggable ? `<span class="dash-drag-handle" data-drag-handle>${ICONS.drag}</span>` : "";
-  return `<div class="dash-widget" data-widget-id="${id}">
+  const resizeHandle = resizable
+    ? `<span class="dash-resize-handle" data-resize-handle title="arrastrá para cambiar el tamaño">${ICONS.resize}</span>`
+    : "";
+  const span = resizable ? ` style="${blockSpanStyle(id)}"` : "";
+  return `<div class="dash-widget" data-widget-id="${id}"${span}>
     <div class="dash-widget-head"><h3>${WIDGET_LABELS[id]}</h3>${handle}</div>
     <div class="dash-widget-sub">${WIDGET_SUBTITLES[id] || ""}</div>
     <div class="dash-widget-body">${bodyHTML}</div>
+    ${resizeHandle}
   </div>`;
+}
+function blockSpanStyle(id) {
+  const { colSpan, rowSpan } = blockSpan(id);
+  return `grid-column: span ${colSpan}; grid-row: span ${rowSpan};`;
 }
 function loadingBody() { return '<div class="dash-loading">cargando...</div>'; }
 
@@ -2203,7 +2335,14 @@ function makeReorderable(containerOrContainers, onReorder) {
           let inserted = false;
           for (const sib of siblings) {
             const rect = sib.getBoundingClientRect();
-            if (ev.clientY < rect.top + rect.height / 2) {
+            // 2D, no solo Y: con bloques de ancho variable en una grilla real
+            // (antes todos tenían el mismo ancho), comparar solo la altura
+            // ubicaba mal el punto de inserción en filas con más de un bloque.
+            // "antes" de un hermano = está completamente arriba de su fila
+            // (sin importar X), o está en su misma franja vertical y a la
+            // izquierda de su punto medio horizontal.
+            const before = ev.clientY < rect.top || (ev.clientY < rect.bottom && ev.clientX < rect.left + rect.width / 2);
+            if (before) {
               sib.parentElement.insertBefore(card, sib);
               inserted = true;
               break;
@@ -2232,8 +2371,70 @@ function makeReorderable(containerOrContainers, onReorder) {
 }
 
 function reorderWithinSubset(order, subsetIds, newSubsetOrder) {
+  // Un id del subset que hoy está oculto (no viene en newSubsetOrder) antes
+  // igual consumía un idx++ — con casi todo compartiendo un solo scope de
+  // reordenamiento (la grilla unificada), esto se dispara mucho más seguido
+  // que antes. Si no está en el nuevo orden, se deja donde ya estaba.
+  const newSet = new Set(newSubsetOrder);
   let idx = 0;
-  return order.map((id) => (subsetIds.includes(id) ? newSubsetOrder[idx++] : id));
+  return order.map((id) => (subsetIds.includes(id) && newSet.has(id) ? newSubsetOrder[idx++] : id));
+}
+
+function gridMetrics(gridEl) {
+  const cs = getComputedStyle(gridEl);
+  const colGap = parseFloat(cs.columnGap) || 0;
+  const rowGap = parseFloat(cs.rowGap) || 0;
+  // El navegador ya resuelve "repeat(12, 1fr)" a píxeles concretos acá — no
+  // hace falta medir aparte, y queda correcto sin importar el ancho real del
+  // contenedor en cada momento.
+  const colWidth = parseFloat(cs.gridTemplateColumns.split(" ")[0]) || 1;
+  const rowHeight = parseFloat(cs.gridAutoRows) || 28;
+  return { colWidth, colGap, rowHeight, rowGap };
+}
+
+// Redimensionar es un gesto nuevo, separado del de arrastrar-para-reordenar
+// — mismo estilo general (Pointer Events, listeners en document) pero mueve
+// el borde del bloque en vez de su posición en el DOM.
+function makeResizable(containerOrContainers, onResize) {
+  const containers = Array.isArray(containerOrContainers) ? containerOrContainers : [containerOrContainers];
+  containers.forEach((container) => {
+    container.querySelectorAll("[data-resize-handle]").forEach((handle) => {
+      handle.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation(); // nunca debe interferir con el asa de arrastre del mismo bloque
+        const card = handle.closest("[data-widget-id]");
+        const grid = card.parentElement;
+        const { colWidth, colGap, rowHeight, rowGap } = gridMetrics(grid);
+        const startX = e.clientX, startY = e.clientY;
+        const startRect = card.getBoundingClientRect();
+        const startColSpan = Math.max(1, Math.round((startRect.width + colGap) / (colWidth + colGap)));
+        const startRowSpan = Math.max(1, Math.round((startRect.height + rowGap) / (rowHeight + rowGap)));
+        card.classList.add("resizing");
+        isDraggingPanel = true; // reusa la misma bandera para que el swipe/otros gestos no interfieran
+        let colSpan = startColSpan, rowSpan = startRowSpan;
+
+        const onMove = (ev) => {
+          const deltaCol = Math.round((ev.clientX - startX) / (colWidth + colGap));
+          const deltaRow = Math.round((ev.clientY - startY) / (rowHeight + rowGap));
+          colSpan = clamp(startColSpan + deltaCol, MIN_COL_SPAN, MAX_COL_SPAN);
+          rowSpan = clamp(startRowSpan + deltaRow, MIN_ROW_SPAN, MAX_ROW_SPAN);
+          card.style.gridColumn = `span ${colSpan}`;
+          card.style.gridRow = `span ${rowSpan}`;
+        };
+        const onUp = () => {
+          document.removeEventListener("pointermove", onMove);
+          document.removeEventListener("pointerup", onUp);
+          document.removeEventListener("pointercancel", onUp);
+          card.classList.remove("resizing");
+          isDraggingPanel = false;
+          onResize(card.dataset.widgetId, colSpan, rowSpan);
+        };
+        document.addEventListener("pointermove", onMove);
+        document.addEventListener("pointerup", onUp);
+        document.addEventListener("pointercancel", onUp);
+      });
+    });
+  });
 }
 
 async function persistPrefs() {
@@ -2251,14 +2452,12 @@ function visibleOrdered(ids) {
 }
 
 function renderMobileDashboard(summary) {
-  dashZoneTop.innerHTML = "";
-  dashZoneRight.innerHTML = "";
   const ids = visibleOrdered(WIDGET_IDS);
   if (!ids.length) {
     dashboardInner.innerHTML = '<div class="dash-loading">no hay widgets activos — activá alguno en configuración</div>';
     return;
   }
-  dashboardInner.innerHTML = `<div class="dash-grid">${ids.map((id) => widgetShell(id, widgetBodyHTML(id, summary), true)).join("")}</div>`;
+  dashboardInner.innerHTML = `<div class="dash-grid">${ids.map((id) => widgetShell(id, widgetBodyHTML(id, summary), { draggable: true, resizable: false })).join("")}</div>`;
   const grid = dashboardInner.querySelector(".dash-grid");
   makeReorderable(grid, (newIds) => {
     dashboardPrefs.panel_order = newIds;
@@ -2268,29 +2467,122 @@ function renderMobileDashboard(summary) {
   if (ids.includes("brain")) loadBrainWidgetInto(dashboardInner);
 }
 
+// Chat e historial no se reconstruyen por HTML como los demás widgets — son
+// nodos vivos con listeners atados (grabación, textarea, audio, refresco de
+// conversaciones). wrapExistingAsBlock los mueve (nunca clona) a un wrapper
+// .dash-widget nuevo, la primera vez que arranca en desktop.
+function wrapExistingAsBlock(id, bodyEl, { draggable = true, resizable = true } = {}) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "dash-widget";
+  wrapper.dataset.widgetId = id;
+  if (resizable) applyBlockSpan(wrapper, id);
+  const head = document.createElement("div");
+  head.className = "dash-widget-head";
+  head.innerHTML = `<h3>${WIDGET_LABELS[id]}</h3>` + (draggable ? `<span class="dash-drag-handle" data-drag-handle>${ICONS.drag}</span>` : "");
+  const sub = document.createElement("div");
+  sub.className = "dash-widget-sub";
+  sub.textContent = WIDGET_SUBTITLES[id] || "";
+  wrapper.appendChild(head);
+  wrapper.appendChild(sub);
+  wrapper.appendChild(bodyEl); // mueve el nodo vivo, no lo duplica
+  if (resizable) {
+    wrapper.insertAdjacentHTML("beforeend", `<span class="dash-resize-handle" data-resize-handle title="arrastrá para cambiar el tamaño">${ICONS.resize}</span>`);
+  }
+  return wrapper;
+}
+
+function reparentChatIntoDashboard() {
+  const body = document.createElement("div");
+  body.className = "dash-widget-body dash-chat-body";
+  body.appendChild(chat);       // mueve #chat, listeners intactos
+  body.appendChild(controlBar); // mueve .control-bar, listeners intactos
+  const wrapper = wrapExistingAsBlock("chat", body);
+  wrapper.querySelector(".dash-widget-head").insertAdjacentHTML(
+    "beforeend",
+    `<button class="dash-widget-expand-handle" id="chatExpandBtn" title="pantalla completa">${ICONS.expand}</button>`
+  );
+  dashGridDesktop.appendChild(wrapper);
+  document.getElementById("chatExpandBtn").addEventListener("click", openChatFocus);
+}
+
+function reparentHistoryIntoDashboard() {
+  const parked = document.getElementById("dashHistoryParked");
+  parked.hidden = false;
+  parked.removeAttribute("id");
+  parked.className = "dash-widget-body dash-history-body";
+  dashGridDesktop.appendChild(wrapExistingAsBlock("history", parked));
+}
+
+function reparentIntoDashboardOnce() {
+  if (dashGridDesktop.dataset.reparented) return;
+  dashGridDesktop.dataset.reparented = "true";
+  reparentHistoryIntoDashboard();
+  reparentChatIntoDashboard();
+}
+
+// Modo enfoque: el chat (siempre el mismo nodo vivo) y la barra lateral del
+// menú hamburguesa de mobile (misma idea, reusada en vez de duplicada) se
+// mueven a un overlay a pantalla completa — nunca se clonan ni se
+// reconstruyen, solo cambian de padre, igual que el resto de este sistema.
+let chatFocusOpen = false;
+function openChatFocus() {
+  if (chatFocusOpen) return;
+  chatFocusOpen = true;
+  sidebar.classList.add("docked");
+  chatFocusPanel.insertBefore(sidebar, chatFocusMain);
+  chatFocusMain.appendChild(chat);
+  chatFocusMain.appendChild(controlBar);
+  chatFocusOverlay.classList.add("open");
+  chatFocusPanel.classList.add("open");
+  refreshConvLists();
+}
+function closeChatFocus() {
+  if (!chatFocusOpen) return;
+  chatFocusOpen = false;
+  chatFocusOverlay.classList.remove("open");
+  chatFocusPanel.classList.remove("open");
+  sidebar.classList.remove("docked");
+  document.body.appendChild(sidebar); // vuelve a su lugar de siempre, para el menú hamburguesa de mobile
+  const chatBody = document.querySelector(".dash-chat-body");
+  if (chatBody) {
+    chatBody.appendChild(chat);
+    chatBody.appendChild(controlBar);
+  }
+}
+chatFocusOverlay.addEventListener("click", closeChatFocus);
+chatFocusCloseBtn.addEventListener("click", closeChatFocus);
+
 function renderDesktopDashboard(summary) {
-  dashboardInner.innerHTML = "";
-  const combinedIds = visibleOrdered(TOP_AND_RIGHT_ZONE);
-  const topIds = combinedIds.slice(0, 1);
-  const rightIds = combinedIds.slice(1);
-  const leftIds = visibleOrdered(LEFT_ZONE);
+  const ids = visibleOrdered(DESKTOP_BLOCK_IDS); // siempre incluye chat/historial (forzado en el backend)
+  const rest = ids.filter((id) => !ALWAYS_VISIBLE_BLOCK_IDS.includes(id));
 
-  dashZoneTop.innerHTML = topIds.map((id) => widgetShell(id, widgetBodyHTML(id, summary), true)).join("");
-  dashZoneRight.innerHTML = rightIds.map((id) => widgetShell(id, widgetBodyHTML(id, summary), true)).join("");
-  const existingLeftWidgets = dashZoneLeft.querySelectorAll(".dash-widget");
-  existingLeftWidgets.forEach((el) => el.remove());
-  dashZoneLeft.insertAdjacentHTML("beforeend", leftIds.map((id) => widgetShell(id, widgetBodyHTML(id, summary), false)).join(""));
+  dashGridDesktop.querySelectorAll("[data-widget-id]").forEach((el) => {
+    if (!ALWAYS_VISIBLE_BLOCK_IDS.includes(el.dataset.widgetId)) el.remove();
+  });
+  dashGridDesktop.insertAdjacentHTML(
+    "beforeend",
+    rest.map((id) => widgetShell(id, widgetBodyHTML(id, summary), { draggable: true, resizable: true })).join("")
+  );
 
-  makeReorderable([dashZoneTop, dashZoneRight], (newIds) => {
-    dashboardPrefs.panel_order = reorderWithinSubset(dashboardPrefs.panel_order, TOP_AND_RIGHT_ZONE, newIds);
-    persistPrefs();
-    renderDesktopDashboard(summary);
+  // Reordena TODO (los widgets recién reconstruidos + chat/historial, que
+  // son permanentes) al orden real guardado — appendChild sobre un nodo ya
+  // existente lo MUEVE, así que este único loop deja el DOM en el orden correcto.
+  ids.forEach((id) => {
+    const el = dashGridDesktop.querySelector(`[data-widget-id="${id}"]`);
+    if (el) { applyBlockSpan(el, id); dashGridDesktop.appendChild(el); }
   });
 
-  loadGoogleWidgetsInto(dashZoneTop, topIds);
-  loadGoogleWidgetsInto(dashZoneRight, rightIds);
-  if (topIds.includes("brain")) loadBrainWidgetInto(dashZoneTop);
-  if (rightIds.includes("brain")) loadBrainWidgetInto(dashZoneRight);
+  makeReorderable(dashGridDesktop, (newIds) => {
+    dashboardPrefs.panel_order = reorderWithinSubset(dashboardPrefs.panel_order, DESKTOP_BLOCK_IDS, newIds);
+    persistPrefs();
+  });
+  makeResizable(dashGridDesktop, (id, colSpan, rowSpan) => {
+    dashboardPrefs.widget_options[id] = { ...(dashboardPrefs.widget_options[id] || {}), col_span: colSpan, row_span: rowSpan };
+    persistPrefs();
+  });
+
+  loadGoogleWidgetsInto(dashGridDesktop, rest);
+  if (rest.includes("brain")) loadBrainWidgetInto(dashGridDesktop);
   refreshConvLists();
 }
 
@@ -2344,12 +2636,14 @@ settingsOverlay.addEventListener("click", closeSettings);
 let touchStartX = null;
 let touchStartY = null;
 document.addEventListener("touchstart", (e) => {
-  if (state === "listening" || isDraggingPanel) return;
+  // En desktop ya no hay una vista "solo chat" separada a la que swipear —
+  // el chat vive siempre dentro de la grilla del dashboard.
+  if (isDesktopDashboard() || state === "listening" || isDraggingPanel) return;
   touchStartX = e.touches[0].clientX;
   touchStartY = e.touches[0].clientY;
 }, { passive: true });
 document.addEventListener("touchend", (e) => {
-  if (touchStartX === null || isDraggingPanel) { touchStartX = null; return; }
+  if (isDesktopDashboard() || touchStartX === null || isDraggingPanel) { touchStartX = null; return; }
   const dx = e.changedTouches[0].clientX - touchStartX;
   const dy = e.changedTouches[0].clientY - touchStartY;
   touchStartX = null;
@@ -2523,7 +2817,15 @@ fileInput.addEventListener("change", () => {
   if (file) uploadAttachedFile(file);
 });
 
-setMode(mode);
+// En desktop arrancamos siempre en el Dashboard (con la distribución que el
+// usuario haya guardado la última vez) — el chat vive ahí adentro como un
+// bloque más. Mobile sigue arrancando en "chat", sin tocar nada.
+if (isDesktopDashboard()) {
+  reparentIntoDashboardOnce();
+  showDashboard();
+}
+
+setMode(mode, false);
 
 fetch("/status").then(r => r.json()).then(s => {
   ttsAvailable = !!s.tts_available;
