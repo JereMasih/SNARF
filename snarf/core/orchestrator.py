@@ -3,6 +3,7 @@ from pathlib import Path
 
 from snarf.capabilities.anthropic_llm import AnthropicLLM
 from snarf.capabilities.docx_extractor import DocxExtractor
+from snarf.capabilities.document_builder import DocumentBuilder
 from snarf.capabilities.ffmpeg_audio import FfmpegAudioExtractor
 from snarf.capabilities.elevenlabs_stt import ElevenLabsSTT
 from snarf.capabilities.google_auth import GoogleAuth
@@ -10,11 +11,13 @@ from snarf.capabilities.google_calendar import GoogleCalendar
 from snarf.capabilities.google_drive import GoogleDrive
 from snarf.capabilities.google_gmail import GoogleGmail
 from snarf.capabilities.google_youtube import GoogleYouTube
+from snarf.capabilities.local_file_store import LocalFileStore
 from snarf.capabilities.pdf_extractor import PdfExtractor
 from snarf.capabilities.pptx_extractor import PptxExtractor
 from snarf.capabilities.voyage_embeddings import VoyageEmbeddings
 from snarf.capabilities.xlsx_extractor import XlsxExtractor
 from snarf.core.identity import load_identity
+from snarf.knowledge.document_publisher import DocumentPublisher
 from snarf.knowledge.drive_indexer import DriveIndexer
 from snarf.knowledge.extraction import ContentExtractor
 from snarf.knowledge.vector_store import VectorStore
@@ -37,6 +40,7 @@ GMAIL_DIGEST_MODEL = "claude-haiku-4-5"
 DRIVE_VISION_MODEL = "claude-haiku-4-5"
 
 DRIVE_INDEX_DATA_DIR = Path("data/drive_index")
+LOCAL_FILES_DATA_DIR = Path("data/local_files")
 
 SYSTEM_PREFIX = (
     "Sos Snarf. A continuación se incluyen, en orden de jerarquía, los documentos "
@@ -96,6 +100,22 @@ SYSTEM_PREFIX = (
     "mostraste un drive_index_scan en esta conversación, mostraselo primero "
     "(cantidad de archivos, tamaño, desglose por tipo) y dejá que decida el alcance "
     "antes de arrancar.\n\n"
+    "También podés crear archivos reales: drive_create_document (markdown, pdf o un "
+    "Google Doc editable), drive_create_spreadsheet (xlsx o Google Sheet) y "
+    "drive_create_presentation (pptx o Google Slides). Todas aceptan tres destinos — "
+    "preguntale siempre a quien te lo pidió cuál prefiere antes de crear, salvo que ya "
+    "te lo haya dicho explícitamente en este intercambio: "
+    "(1) destination='drive' — se guarda en la carpeta 'Snarf - Archivos' del Drive "
+    "real de esa persona, usa espacio de su cuota; "
+    "(2) destination='device' — se prepara para descargar directo a SU dispositivo "
+    "(computadora o celular), con el diálogo nativo de 'Guardar como' del navegador; "
+    "compartile el download_url que te devuelve como un link markdown para que lo "
+    "descargue con un clic; "
+    "(3) destination='server' — se guarda en el disco del propio servidor de Snarf, "
+    "como carpeta de trabajo. Este destino es EXCLUSIVO del fundador — si quien te "
+    "habla no es el fundador, ni se lo ofrezcas como opción. Los tres destinos quedan "
+    "indexados al toque, así que después se puede encontrar con drive_search_knowledge "
+    "sin importar dónde haya quedado.\n\n"
 )
 
 TOOLS = [
@@ -416,6 +436,79 @@ TOOLS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "drive_create_document",
+        "description": (
+            "Crea un documento real y devuelve su link o ubicación. format='markdown' o 'pdf' generan el "
+            "archivo tal cual; format='google_doc' crea un Google Doc editable nativo (solo con "
+            "destination='drive'). destination='drive' lo sube a la carpeta 'Snarf - Archivos' del Drive "
+            "del fundador; destination='local' lo guarda en el servidor sin tocar su Drive ni su cuota. "
+            "Preguntale al fundador cuál prefiere antes de crearlo, salvo que ya te lo haya dicho. Queda "
+            "indexado de inmediato en ambos casos — buscable con drive_search_knowledge sin esperar la "
+            "próxima corrida de indexación."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "content": {"type": "string", "description": "Texto del documento, en Markdown si el formato lo aprovecha."},
+                "format": {"type": "string", "enum": ["markdown", "pdf", "google_doc"]},
+                "destination": {"type": "string", "enum": ["drive", "device", "server"], "description": "Por defecto 'drive'. 'server' solo disponible para el fundador."},
+            },
+            "required": ["title", "content"],
+        },
+    },
+    {
+        "name": "drive_create_spreadsheet",
+        "description": (
+            "Crea una planilla real. format='xlsx' genera un archivo Excel; format='google_sheet' crea un "
+            "Google Sheet editable nativo (solo con destination='drive'). destination='drive' la sube a la "
+            "carpeta 'Snarf - Archivos' del Drive del fundador; destination='local' la guarda en el "
+            "servidor sin tocar su Drive. Preguntale al fundador cuál prefiere antes de crearla, salvo que "
+            "ya te lo haya dicho. Queda indexada de inmediato en ambos casos."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "rows": {
+                    "type": "array",
+                    "description": "Filas de la planilla; cada fila es un array de valores (texto o número). La primera fila suele ser el encabezado.",
+                    "items": {"type": "array"},
+                },
+                "format": {"type": "string", "enum": ["xlsx", "google_sheet"]},
+                "destination": {"type": "string", "enum": ["drive", "device", "server"], "description": "Por defecto 'drive'. 'server' solo disponible para el fundador."},
+            },
+            "required": ["title", "rows"],
+        },
+    },
+    {
+        "name": "drive_create_presentation",
+        "description": (
+            "Crea una presentación real. format='pptx' genera un archivo PowerPoint; format='google_slide' "
+            "crea un Google Slides editable nativo (solo con destination='drive'). destination='drive' la "
+            "sube a la carpeta 'Snarf - Archivos' del Drive del fundador; destination='local' la guarda en "
+            "el servidor sin tocar su Drive. Preguntale al fundador cuál prefiere antes de crearla, salvo "
+            "que ya te lo haya dicho. Queda indexada de inmediato en ambos casos."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "slides": {
+                    "type": "array",
+                    "description": "Una entrada por diapositiva, además del título.",
+                    "items": {
+                        "type": "object",
+                        "properties": {"title": {"type": "string"}, "body": {"type": "string"}},
+                    },
+                },
+                "format": {"type": "string", "enum": ["pptx", "google_slide"]},
+                "destination": {"type": "string", "enum": ["drive", "device", "server"], "description": "Por defecto 'drive'. 'server' solo disponible para el fundador."},
+            },
+            "required": ["title", "slides"],
+        },
+    },
 ]
 
 
@@ -459,6 +552,17 @@ class Orchestrator:
             vector_store=VectorStore(persist_directory=str(user_index_dir / "chroma")),
             manifest_path=user_index_dir / "manifest.json",
         )
+        self._document_publisher = DocumentPublisher(
+            builder=DocumentBuilder(),
+            drive=self._drive,
+            indexer=self._drive_indexer,
+            local_store=LocalFileStore(LOCAL_FILES_DATA_DIR / user_id),
+            user_id=user_id,
+            # El destino 'server' (disco del propio servidor, sin subir a
+            # Drive) es una herramienta de trabajo del fundador — cuando
+            # exista un segundo usuario real, no debe poder pedirlo.
+            allow_server_storage=(user_id == DEFAULT_USER_ID),
+        )
 
         self._tool_handlers = {
             "list_conversations": lambda i: self._memory.list_conversations(),
@@ -499,6 +603,15 @@ class Orchestrator:
             "drive_index_status": lambda i: self._drive_indexer.status(),
             "drive_index_stop": lambda i: self._drive_indexer.stop(),
             "drive_search_knowledge": lambda i: self._drive_indexer.search(i["query"], top_k=i.get("top_k", 5)),
+            "drive_create_document": lambda i: self._document_publisher.create_document(
+                i["title"], i["content"], format=i.get("format", "markdown"), destination=i.get("destination", "drive")
+            ),
+            "drive_create_spreadsheet": lambda i: self._document_publisher.create_spreadsheet(
+                i["title"], i["rows"], format=i.get("format", "xlsx"), destination=i.get("destination", "drive")
+            ),
+            "drive_create_presentation": lambda i: self._document_publisher.create_presentation(
+                i["title"], i["slides"], format=i.get("format", "pptx"), destination=i.get("destination", "drive")
+            ),
         }
 
     @property
@@ -532,6 +645,10 @@ class Orchestrator:
     @property
     def drive_indexer(self) -> DriveIndexer:
         return self._drive_indexer
+
+    @property
+    def document_publisher(self) -> DocumentPublisher:
+        return self._document_publisher
 
     def warmup(self) -> None:
         self._llm.warmup()

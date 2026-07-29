@@ -1,6 +1,7 @@
 import base64
 import os
 import socket
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -13,7 +14,7 @@ from pydantic import BaseModel
 from snarf.capabilities.elevenlabs_stt import ElevenLabsSTT
 from snarf.capabilities.elevenlabs_tts import ElevenLabsTTS
 from snarf.capabilities.google_auth import TOKENS_DIR as GOOGLE_TOKENS_DIR
-from snarf.core.orchestrator import DEFAULT_USER_ID, Orchestrator
+from snarf.core.orchestrator import DEFAULT_USER_ID, LOCAL_FILES_DATA_DIR, Orchestrator
 from snarf.runtime.dashboard_prefs import load_prefs, save_prefs
 from snarf.telemetry import activity_log, usage_tracker
 from snarf.runtime.web_auth import (
@@ -135,6 +136,48 @@ def synthesize_speech(payload: TTSRequest, user_id: str = Depends(require_user))
         return TTSResponse(audio_base64=None)
     audio_bytes = tts.synthesize(payload.text)
     return TTSResponse(audio_base64=base64.b64encode(audio_bytes).decode("ascii"))
+
+
+@app.post("/files/upload")
+async def upload_file(file: UploadFile, user_id: str = Depends(require_user)):
+    if not _google_connected(user_id):
+        raise HTTPException(400, "Google no conectado")
+    content = await file.read()
+    mime_type = file.content_type or "application/octet-stream"
+    try:
+        folder_id = orchestrator.document_publisher.folder_id()
+        created = orchestrator.drive.upload_file(file.filename or "archivo", content, mime_type, parent_id=folder_id)
+        index_result = orchestrator.drive_indexer.index_file(created)
+    except Exception as exc:
+        raise HTTPException(502, f"no se pudo subir/indexar el archivo: {exc}")
+
+    indexed = index_result.get("status") == "indexed"
+    response = {
+        "id": created["id"],
+        "name": created["name"],
+        "webViewLink": created.get("webViewLink"),
+        "indexed": indexed,
+    }
+    # Devolvemos la descripción/análisis de la imagen de inmediato, sin
+    # volver a pagar la extracción — ya quedó guardada al indexar.
+    if mime_type.startswith("image/") and indexed:
+        response["analysis"] = orchestrator.drive_indexer.get_indexed_text(created["id"])
+    return response
+
+
+@app.get("/files/local/{owner_user_id}/{filename}")
+def download_local_file(owner_user_id: str, filename: str, user_id: str = Depends(require_user)):
+    # Un usuario solo puede descargar sus propios archivos locales (hoy hay
+    # un único user_id real, pero el chequeo ya queda listo para cuando haya
+    # más de uno). Path(filename).name descarta cualquier componente de
+    # directorio (ej. "../../.env") antes de tocar el filesystem.
+    if owner_user_id != user_id:
+        raise HTTPException(403, "no autorizado")
+    safe_name = Path(filename).name
+    path = LOCAL_FILES_DATA_DIR / user_id / safe_name
+    if not path.is_file():
+        raise HTTPException(404, "archivo no encontrado")
+    return FileResponse(path, filename=safe_name)
 
 
 @app.get("/dashboard/summary")

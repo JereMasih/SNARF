@@ -1,4 +1,7 @@
+import io
+
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 
 from snarf.capabilities.base import Capability
 from snarf.capabilities.google_auth import GoogleAuth
@@ -75,6 +78,37 @@ class GoogleDrive(Capability):
         if parent_id:
             body["parents"] = [parent_id]
         return self._client().files().create(body=body, fields="id, name").execute()
+
+    def get_or_create_folder(self, name: str, parent_id: str | None = None) -> str:
+        query = f"name = '{name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        if parent_id:
+            query += f" and '{parent_id}' in parents"
+        existing = self.list_files(page_size=1, query=query)
+        if existing:
+            return existing[0]["id"]
+        return self.create_folder(name, parent_id=parent_id)["id"]
+
+    def upload_file(
+        self,
+        name: str,
+        content: bytes,
+        mime_type: str,
+        parent_id: str | None = None,
+        convert_to: str | None = None,
+    ) -> dict:
+        """Sube bytes reales a Drive. Si `convert_to` es un mimeType nativo de
+        Google (Docs/Sheets/Slides), Drive convierte el contenido subido al
+        formato editable nativo — no hace falta la API de Google Docs aparte."""
+        body: dict = {"name": name, "mimeType": convert_to or mime_type}
+        if parent_id:
+            body["parents"] = [parent_id]
+        media = MediaIoBaseUpload(io.BytesIO(content), mimetype=mime_type, resumable=False)
+        return (
+            self._client()
+            .files()
+            .create(body=body, media_body=media, fields="id, name, mimeType, modifiedTime, webViewLink")
+            .execute()
+        )
 
     def move_file(self, file_id: str, new_parent_id: str) -> dict:
         client = self._client()

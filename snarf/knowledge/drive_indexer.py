@@ -12,6 +12,14 @@ from snarf.knowledge.manifest import STATUS_ERROR, STATUS_INDEXED, STATUS_SKIPPE
 # gratuito de Voyage): Google Docs/Sheets/Slides, PDF, Word/PowerPoint/Excel
 # (.docx/.pptx/.xlsx) y texto plano. Deja afuera imagen, audio y video, que
 # sí tienen costo real por archivo.
+#
+# 'mimeType = text/plain' (no 'contains text/'): en la corrida real del
+# 2026-07-28 se comprobó que Drive clasifica como texto/* una cantidad
+# enorme de código fuente y configuración (.py, .cfg, .xml, .map, .conf,
+# .browser) de un backup de un entorno Python / proyecto Unity — 'contains'
+# los traía a todos, contaminando el índice con ruido que no es conocimiento
+# personal. Coincide además con el mimeType real que catalogamos para los
+# .py compilados en ADR 0028 (categoría "other", no "text").
 FREE_TIER_ALIAS = "free_tier"
 FREE_TIER_DRIVE_QUERY = (
     "mimeType = 'application/vnd.google-apps.document' or "
@@ -21,7 +29,7 @@ FREE_TIER_DRIVE_QUERY = (
     "mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' or "
     "mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation' or "
     "mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or "
-    "mimeType contains 'text/'"
+    "mimeType = 'text/plain'"
 )
 
 
@@ -76,6 +84,15 @@ class DriveIndexer:
                 total_files += 1
                 total_bytes += size
         return {"total_files": total_files, "total_bytes": total_bytes, "by_category": by_category}
+
+    def index_file(self, file: dict) -> dict:
+        """Indexa un único archivo ya conocido (id + mimeType + modifiedTime),
+        sin esperar a la próxima corrida de background — para archivos recién
+        creados o subidos, que deben quedar buscables de inmediato."""
+        data = self._manifest.load()
+        self._process_file(data, file)
+        self._manifest.save(data)
+        return data.get(file["id"], {})
 
     def catalog_unsupported(self, query: str | None = None) -> dict:
         """Recorre el Drive y registra, para todo archivo de categoría 'other'
@@ -142,6 +159,30 @@ class DriveIndexer:
         embedding = self._embeddings.embed([query], input_type="query")[0]
         return self._vector_store.search(embedding, top_k=top_k)
 
+    def get_indexed_text(self, file_id: str) -> str:
+        """Texto ya indexado de un archivo puntual (ej. la descripción que
+        generó la visión al indexar una imagen recién subida) — para
+        devolverlo de inmediato a la interfaz sin volver a pagar la
+        extracción."""
+        chunks = self._vector_store.get_by_file_id(file_id)
+        return "\n\n".join(c["text"] for c in chunks)
+
+    def index_local_text(self, item_id: str, name: str, text: str, extra_metadata: dict | None = None) -> dict:
+        """Indexa texto que no viene de Drive (ej. un documento que el
+        fundador eligió guardar localmente, no en su Drive) — ya se conoce el
+        texto de origen, así que no hace falta extraerlo de ningún archivo."""
+        chunks = chunking.chunk_text(text)
+        if not chunks:
+            return {"status": STATUS_SKIPPED_UNSUPPORTED, "chunk_count": 0}
+        embeddings = self._embeddings.embed(chunks, input_type="document")
+        ids = [f"{item_id}:{i}" for i in range(len(chunks))]
+        metadatas = [
+            {"file_id": item_id, "name": name, "location": "local", "chunk_index": i, **(extra_metadata or {})}
+            for i in range(len(chunks))
+        ]
+        self._vector_store.add(ids=ids, embeddings=embeddings, documents=chunks, metadatas=metadatas)
+        return {"status": STATUS_INDEXED, "chunk_count": len(chunks)}
+
     def _run(self, query: str | None) -> None:
         data = self._manifest.load()
         try:
@@ -196,6 +237,7 @@ class DriveIndexer:
                         "file_id": file_id,
                         "name": file.get("name", ""),
                         "webViewLink": file.get("webViewLink", ""),
+                        "location": "drive",
                         "chunk_index": i,
                     }
                     for i in range(len(chunks))

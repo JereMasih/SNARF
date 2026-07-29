@@ -716,6 +716,8 @@
         </div>
       </div>
       <div class="text-row" id="textRow">
+        <input type="file" id="fileInput" hidden>
+        <button class="icon-btn" id="attachBtn" title="Adjuntar archivo"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 6.5l-6 6a2.5 2.5 0 0 0 3.5 3.5l6.5-6.5a4 4 0 0 0-5.5-5.5l-7 7a5.5 5.5 0 0 0 7.5 7.5"/></svg></button>
         <input type="text" id="textInput" placeholder="Escribile a Snarf..." autocomplete="off">
         <button class="icon-btn" id="micBtn" title="Grabar"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg></button>
         <button class="icon-btn" id="textSendBtn" title="Enviar"><svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="16" x2="10" y2="4"/><path d="M5 9l5-5 5 5"/></svg></button>
@@ -788,6 +790,8 @@ const textRow = document.getElementById("textRow");
 const textInput = document.getElementById("textInput");
 const textSendBtn = document.getElementById("textSendBtn");
 const micBtn = document.getElementById("micBtn");
+const attachBtn = document.getElementById("attachBtn");
+const fileInput = document.getElementById("fileInput");
 const dashBtn = document.getElementById("dashBtn");
 const viewChat = document.getElementById("viewChat");
 const viewDashboard = document.getElementById("viewDashboard");
@@ -1749,6 +1753,37 @@ async function handleMicClick() {
   }
 }
 micBtn.addEventListener("click", handleMicClick);
+
+/* ---------- adjuntar archivo ---------- */
+async function uploadAttachedFile(file) {
+  addMessage("adjuntando " + file.name + "...", "user");
+  showTyping();
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const res = await apiFetch("/files/upload", { method: "POST", body: form });
+    hideTyping();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      addMessage("no pude subir el archivo: " + (err.detail || res.status), "snarf");
+      return;
+    }
+    const data = await res.json();
+    const link = data.webViewLink ? `[${data.name}](${data.webViewLink})` : data.name;
+    let text = `Subí y guardé **${link}** en tu Drive` + (data.indexed ? ", ya vectorizado y buscable." : " (todavía sin vectorizar).");
+    if (data.analysis) text += `\n\n${data.analysis}`;
+    addMessage(text, "snarf");
+  } catch (e) {
+    hideTyping();
+    addMessage("no pude subir el archivo: " + (e.message || e), "snarf");
+  }
+}
+attachBtn.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files[0];
+  fileInput.value = "";
+  if (file) uploadAttachedFile(file);
+});
 
 setMode(mode);
 

@@ -29,6 +29,13 @@ class VectorStore:
     def count(self) -> int:
         return self._collection().count()
 
+    def get_by_file_id(self, file_id: str) -> list[dict]:
+        result = self._collection().get(where={"file_id": file_id})
+        ids = result.get("ids") or []
+        documents = result.get("documents") or []
+        metadatas = result.get("metadatas") or []
+        return [{"id": ids[i], "text": documents[i], "metadata": metadatas[i]} for i in range(len(ids))]
+
     def search(self, query_embedding: list[float], top_k: int = 5) -> list[dict]:
         result = self._collection().query(query_embeddings=[query_embedding], n_results=top_k)
         ids = result.get("ids", [[]])[0]

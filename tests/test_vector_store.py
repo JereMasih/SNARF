@@ -36,6 +36,24 @@ def test_add_with_no_ids_is_a_safe_no_op(tmp_path):
     assert store.count() == 0
 
 
+def test_get_by_file_id_returns_only_that_files_chunks(tmp_path):
+    store = make_store(tmp_path)
+    store.add(
+        ids=["a:0", "b:0"],
+        embeddings=[[1.0, 0.0], [0.0, 1.0]],
+        documents=["contenido A", "contenido B"],
+        metadatas=[{"file_id": "a"}, {"file_id": "b"}],
+    )
+    chunks = store.get_by_file_id("a")
+    assert len(chunks) == 1
+    assert chunks[0]["text"] == "contenido A"
+
+
+def test_get_by_file_id_returns_empty_list_when_nothing_matches(tmp_path):
+    store = make_store(tmp_path)
+    assert store.get_by_file_id("no-existe") == []
+
+
 def test_constructing_a_store_does_not_touch_disk(tmp_path):
     # Construir VectorStore no debe crear el directorio de persistencia hasta
     # el primer uso real (mismo criterio que GoogleDrive._client()).

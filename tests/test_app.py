@@ -265,6 +265,91 @@ def test_gmail_digest_refresh_triggers_a_fresh_generation(client, connected_goog
     assert res.json() == {"connected": True, "digest": fresh}
 
 
+def test_upload_file_without_google_connected_returns_400(client, no_google_token):
+    res = client.post("/files/upload", files={"file": ("a.txt", b"contenido", "text/plain")})
+    assert res.status_code == 400
+
+
+def test_upload_file_saves_to_drive_and_indexes_it(client, connected_google_token, monkeypatch):
+    monkeypatch.setattr(app_module.orchestrator.document_publisher, "folder_id", lambda: "folder-1")
+    monkeypatch.setattr(
+        app_module.orchestrator.drive,
+        "upload_file",
+        lambda *a, **kw: {"id": "f1", "name": "a.txt", "mimeType": "text/plain", "modifiedTime": "t1", "webViewLink": "http://x"},
+    )
+    monkeypatch.setattr(app_module.orchestrator.drive_indexer, "index_file", lambda file: {"status": "indexed"})
+
+    res = client.post("/files/upload", files={"file": ("a.txt", b"contenido", "text/plain")})
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["indexed"] is True
+    assert data["webViewLink"] == "http://x"
+    assert "analysis" not in data
+
+
+def test_upload_image_returns_the_stored_analysis_text(client, connected_google_token, monkeypatch):
+    monkeypatch.setattr(app_module.orchestrator.document_publisher, "folder_id", lambda: "folder-1")
+    monkeypatch.setattr(
+        app_module.orchestrator.drive,
+        "upload_file",
+        lambda *a, **kw: {"id": "img1", "name": "foto.png", "mimeType": "image/png", "modifiedTime": "t1", "webViewLink": "http://x"},
+    )
+    monkeypatch.setattr(app_module.orchestrator.drive_indexer, "index_file", lambda file: {"status": "indexed"})
+    monkeypatch.setattr(app_module.orchestrator.drive_indexer, "get_indexed_text", lambda file_id: "una descripción real de la imagen")
+
+    res = client.post("/files/upload", files={"file": ("foto.png", b"bytes-de-imagen", "image/png")})
+
+    assert res.status_code == 200
+    assert res.json()["analysis"] == "una descripción real de la imagen"
+
+
+def test_upload_file_degrades_with_a_clear_error_when_drive_fails(client, connected_google_token, monkeypatch):
+    monkeypatch.setattr(app_module.orchestrator.document_publisher, "folder_id", lambda: "folder-1")
+
+    def boom(*a, **kw):
+        raise RuntimeError("drive caído")
+
+    monkeypatch.setattr(app_module.orchestrator.drive, "upload_file", boom)
+
+    res = client.post("/files/upload", files={"file": ("a.txt", b"x", "text/plain")})
+    assert res.status_code == 502
+
+
+def test_download_local_file_serves_real_bytes_from_disk(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "LOCAL_FILES_DATA_DIR", tmp_path)
+    user_dir = tmp_path / app_module.DEFAULT_USER_ID
+    user_dir.mkdir()
+    (user_dir / "borrador.md").write_bytes(b"contenido real del borrador")
+
+    res = client.get(f"/files/local/{app_module.DEFAULT_USER_ID}/borrador.md")
+
+    assert res.status_code == 200
+    assert res.content == b"contenido real del borrador"
+
+
+def test_download_local_file_returns_404_when_missing(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "LOCAL_FILES_DATA_DIR", tmp_path)
+    res = client.get(f"/files/local/{app_module.DEFAULT_USER_ID}/no-existe.md")
+    assert res.status_code == 404
+
+
+def test_download_local_file_rejects_a_different_users_file(client):
+    res = client.get("/files/local/otro_usuario/borrador.md")
+    assert res.status_code == 403
+
+
+def test_download_local_file_strips_directory_components_from_the_filename(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "LOCAL_FILES_DATA_DIR", tmp_path)
+    secret_dir = tmp_path.parent / "secreto"
+    secret_dir.mkdir(exist_ok=True)
+    (secret_dir / "no_deberia_verse.txt").write_bytes(b"secreto")
+
+    res = client.get(f"/files/local/{app_module.DEFAULT_USER_ID}/..%2Fsecreto%2Fno_deberia_verse.txt")
+
+    assert res.status_code == 404
+
+
 def test_gmail_digest_refresh_degrades_gracefully_on_error(client, connected_google_token, monkeypatch):
     def boom(**kwargs):
         raise RuntimeError("falló la interpretación")

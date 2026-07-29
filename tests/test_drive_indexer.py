@@ -49,6 +49,14 @@ class FakeVectorStore:
     def search(self, query_embedding, top_k=5):
         return [{"text": "resultado", "embedding": query_embedding, "top_k": top_k}]
 
+    def get_by_file_id(self, file_id):
+        chunks = []
+        for ids, _embeddings, documents, metadatas in self.added:
+            for i, meta in enumerate(metadatas):
+                if meta.get("file_id") == file_id:
+                    chunks.append({"id": ids[i], "text": documents[i], "metadata": meta})
+        return chunks
+
 
 def make_indexer(tmp_path, files, results, delay=0.0, embeddings=None, vector_store=None):
     drive = FakeDrive(files)
@@ -92,6 +100,8 @@ def test_start_processes_files_and_stores_chunks_with_embeddings(tmp_path):
     assert status["indexed"] == 1
     assert len(vector_store.added) == 1
     assert len(embeddings.calls) == 1
+    _ids, _embeds, _docs, metadatas = vector_store.added[0]
+    assert metadatas[0]["location"] == "drive"
 
 
 def test_start_marks_unsupported_files_as_skipped_without_storing_anything(tmp_path):
@@ -164,6 +174,57 @@ def test_search_embeds_the_query_and_delegates_to_the_vector_store(tmp_path):
     results = indexer.search("una pregunta", top_k=3)
     assert embeddings.calls == [(["una pregunta"], "query")]
     assert results[0]["top_k"] == 3
+
+
+def test_index_file_indexes_a_single_file_immediately_without_a_background_run(tmp_path):
+    file = {"id": "1", "mimeType": "application/pdf", "name": "a.pdf", "modifiedTime": "t1"}
+    results = {"1": ExtractionResult(text="contenido recién subido")}
+    indexer, _, vector_store = make_indexer(tmp_path, [], results)
+
+    result = indexer.index_file(file)
+
+    assert result["status"] == "indexed"
+    assert len(vector_store.added) == 1
+    assert indexer.status()["running"] is False
+
+
+def test_get_indexed_text_returns_the_text_stored_for_that_file(tmp_path):
+    file = {"id": "1", "mimeType": "image/png", "name": "foto.png", "modifiedTime": "t1"}
+    results = {"1": ExtractionResult(text="una descripción real de la imagen")}
+    indexer, _, _ = make_indexer(tmp_path, [], results)
+
+    indexer.index_file(file)
+
+    assert indexer.get_indexed_text("1") == "una descripción real de la imagen"
+
+
+def test_get_indexed_text_is_empty_for_a_file_never_indexed(tmp_path):
+    indexer, _, _ = make_indexer(tmp_path, [], {})
+    assert indexer.get_indexed_text("no-existe") == ""
+
+
+def test_index_local_text_stores_chunks_tagged_as_local(tmp_path):
+    indexer, embeddings, vector_store = make_indexer(tmp_path, [], {})
+    result = indexer.index_local_text("local:abc", "borrador.md", "contenido real de un borrador local")
+    assert result["status"] == "indexed"
+    assert len(vector_store.added) == 1
+    _ids, _embeds, _docs, metadatas = vector_store.added[0]
+    assert metadatas[0]["location"] == "local"
+    assert metadatas[0]["file_id"] == "local:abc"
+
+
+def test_index_local_text_merges_extra_metadata(tmp_path):
+    indexer, _, vector_store = make_indexer(tmp_path, [], {})
+    indexer.index_local_text("local:abc", "borrador.md", "contenido", extra_metadata={"path": "/local/files/borrador.md"})
+    _ids, _embeds, _docs, metadatas = vector_store.added[0]
+    assert metadatas[0]["path"] == "/local/files/borrador.md"
+
+
+def test_index_local_text_with_empty_text_is_skipped_without_storing_anything(tmp_path):
+    indexer, _, vector_store = make_indexer(tmp_path, [], {})
+    result = indexer.index_local_text("local:abc", "vacio.md", "   ")
+    assert result["status"] == "skipped_unsupported"
+    assert vector_store.added == []
 
 
 def test_scan_resolves_the_free_tier_alias_to_the_real_drive_query(tmp_path):

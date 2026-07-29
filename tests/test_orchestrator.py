@@ -168,3 +168,52 @@ def test_drive_search_knowledge_delegates_to_the_indexer(orchestrator, monkeypat
     monkeypatch.setattr(orchestrator.drive_indexer, "search", lambda query, top_k=5: [{"text": query, "top_k": top_k}])
     result = orchestrator._handle_tool("drive_search_knowledge", {"query": "algo", "top_k": 3})
     assert result == [{"text": "algo", "top_k": 3}]
+
+
+def test_drive_create_document_delegates_to_the_publisher(orchestrator, monkeypatch):
+    monkeypatch.setattr(
+        orchestrator.document_publisher,
+        "create_document",
+        lambda title, content, format="markdown", destination="drive": {
+            "id": "f1", "title": title, "format": format, "destination": destination
+        },
+    )
+    result = orchestrator._handle_tool(
+        "drive_create_document", {"title": "T", "content": "c", "format": "pdf", "destination": "device"}
+    )
+    assert result == {"id": "f1", "title": "T", "format": "pdf", "destination": "device"}
+
+
+def test_drive_create_document_defaults_to_drive_when_destination_not_given(orchestrator, monkeypatch):
+    received = {}
+    monkeypatch.setattr(
+        orchestrator.document_publisher,
+        "create_document",
+        lambda title, content, format="markdown", destination="drive": received.update(destination=destination) or {},
+    )
+    orchestrator._handle_tool("drive_create_document", {"title": "T", "content": "c"})
+    assert received == {"destination": "drive"}
+
+
+def test_drive_create_spreadsheet_delegates_to_the_publisher(orchestrator, monkeypatch):
+    monkeypatch.setattr(
+        orchestrator.document_publisher,
+        "create_spreadsheet",
+        lambda title, rows, format="xlsx", destination="drive": {"id": "f2", "rows": rows, "destination": destination},
+    )
+    result = orchestrator._handle_tool("drive_create_spreadsheet", {"title": "T", "rows": [["a", "b"]]})
+    assert result == {"id": "f2", "rows": [["a", "b"]], "destination": "drive"}
+
+
+def test_drive_create_presentation_delegates_to_the_publisher(orchestrator, monkeypatch):
+    monkeypatch.setattr(
+        orchestrator.document_publisher,
+        "create_presentation",
+        lambda title, slides, format="pptx", destination="drive": {
+            "id": "f3", "slides": slides, "destination": destination
+        },
+    )
+    result = orchestrator._handle_tool(
+        "drive_create_presentation", {"title": "T", "slides": [{"title": "s1"}], "destination": "device"}
+    )
+    assert result == {"id": "f3", "slides": [{"title": "s1"}], "destination": "device"}

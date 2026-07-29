@@ -11,14 +11,19 @@ DEFAULT_MODEL = "voyage-4-lite"
 class VoyageEmbeddings(Capability):
     name = "voyage_embeddings"
 
-    def __init__(self, model: str = DEFAULT_MODEL):
+    def __init__(self, model: str = DEFAULT_MODEL, max_retries: int = 5):
         self.model = model
         self._api_key = os.environ.get("VOYAGE_API_KEY")
         self._client = None
         if self._api_key:
             import voyageai
 
-            self._client = voyageai.Client(api_key=self._api_key)
+            # Cuentas sin método de pago cargado en Voyage quedan limitadas a
+            # 3 RPM — sin reintentos, la mayoría de los embeds de una corrida
+            # real fallan por rate limit, no por falta de crédito. El SDK ya
+            # sabe respetar el header retry-after; se lo delegamos en vez de
+            # reinventar el backoff acá.
+            self._client = voyageai.Client(api_key=self._api_key, max_retries=max_retries)
 
     @property
     def available(self) -> bool:
