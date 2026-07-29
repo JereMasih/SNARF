@@ -404,3 +404,9 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - El toggle de modo Toque/Teclado se oculta en desktop (redundante ahí: la caja de texto ya tiene su propio botón de micrófono).
 - Confirmado (no es un bug nuevo): los widgets de costo y uso mostrando $0.00/0 caracteres son la consecuencia directa y esperada del incidente de ADR 0042 — el cupo real de ElevenLabs sí se muestra correctamente.
 - 305/305 tests. Ver ADR 0043.
+
+## [2026-07-29] El fallo SSL de Google era una condición de carrera, no la red
+
+- **Diagnóstico corregido**: el reintento triple de ADR 0043 no eliminó el error `[SSL] record layer failure` en producción — seguía apareciendo bajo uso real del dashboard. Reproducido a voluntad: 24 llamadas concurrentes reales (`ThreadPoolExecutor`) contra Gmail/Calendar/Drive, compartiendo el `self._service` cacheado de cada Capacidad, producían fallos SSL reales consistentemente; la misma API llamada secuencialmente nunca fallaba. Causa real: FastAPI corre cada endpoint en un thread del pool, el dashboard dispara varios widgets en paralelo, y `httplib2` (la base de `googleapiclient`) no es thread-safe para compartir un cliente entre threads — dos threads leyendo/escribiendo el mismo socket TLS corrompen la conexión.
+- `GoogleDrive`/`GoogleGmail`/`GoogleCalendar`/`GoogleYouTube` pasan a cachear su cliente en `threading.local()` — cada thread tiene el suyo, nunca comparte el socket de otro. Verificado: el mismo escenario de 24 llamadas concurrentes reales, ahora con 0 fallos.
+- 313/313 tests (8 nuevos verificando aislamiento real entre threads). Ver ADR 0044.

@@ -1,4 +1,5 @@
 import io
+import threading
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
@@ -19,7 +20,35 @@ class GoogleDrive(Capability):
 
     def __init__(self, auth: GoogleAuth | None = None):
         self._auth = auth or GoogleAuth()
-        self._service = None
+        # FastAPI corre cada endpoint sync en un thread del threadpool — el
+        # dashboard dispara varios widgets en paralelo, así que esta
+        # Capacidad puede recibir llamadas concurrentes desde threads
+        # distintos. Un solo `self._service` compartido corrompía la
+        # conexión SSL/socket subyacente cuando dos threads la usaban al
+        # mismo tiempo (confirmado reproduciendo el fallo real con
+        # ThreadPoolExecutor: "[SSL] record layer failure"/"internal
+        # error"/"length mismatch", todos síntomas clásicos de compartir un
+        # socket TLS entre threads). `threading.local()` le da a cada thread
+        # su propio cliente, cacheado igual dentro de ese thread.
+        self._local = threading.local()
+
+    @property
+    def _service(self):
+        return getattr(self._local_storage(), "service", None)
+
+    @_service.setter
+    def _service(self, value):
+        self._local_storage().service = value
+
+    def _local_storage(self) -> threading.local:
+        # Defensivo ante construcción vía __new__ (como hacen los tests,
+        # asignando _service directo sin pasar por __init__) — nunca falla
+        # con AttributeError sin importar cómo se haya creado la instancia.
+        local = self.__dict__.get("_local")
+        if local is None:
+            local = threading.local()
+            self._local = local
+        return local
 
     @property
     def available(self) -> bool:

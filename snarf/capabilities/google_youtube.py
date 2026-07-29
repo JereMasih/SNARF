@@ -1,3 +1,5 @@
+import threading
+
 from googleapiclient.discovery import build
 
 from snarf.capabilities.base import Capability
@@ -10,7 +12,29 @@ class GoogleYouTube(Capability):
 
     def __init__(self, auth: GoogleAuth | None = None):
         self._auth = auth or GoogleAuth()
-        self._service = None
+        # Ver el comentario equivalente en GoogleDrive: un solo `self._service`
+        # compartido entre threads del threadpool de FastAPI corrompía la
+        # conexión SSL/socket subyacente bajo llamadas concurrentes reales
+        # (confirmado reproduciendo el fallo con ThreadPoolExecutor).
+        self._local = threading.local()
+
+    @property
+    def _service(self):
+        return getattr(self._local_storage(), "service", None)
+
+    @_service.setter
+    def _service(self, value):
+        self._local_storage().service = value
+
+    def _local_storage(self) -> threading.local:
+        # Defensivo ante construcción vía __new__ (como hacen los tests,
+        # asignando _service directo sin pasar por __init__) — nunca falla
+        # con AttributeError sin importar cómo se haya creado la instancia.
+        local = self.__dict__.get("_local")
+        if local is None:
+            local = threading.local()
+            self._local = local
+        return local
 
     @property
     def available(self) -> bool:
