@@ -12,5 +12,6 @@ data/local_files/
 data/usage_log.jsonl
 data/activity_log.jsonl
 data/input_log.jsonl
+data_backups/
 credentials/
 server.log

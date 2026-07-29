@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import os
 import socket
@@ -17,6 +18,7 @@ from snarf.capabilities.elevenlabs_tts import ElevenLabsTTS
 from snarf.capabilities.google_auth import TOKENS_DIR as GOOGLE_TOKENS_DIR
 from snarf.core.orchestrator import DEFAULT_USER_ID, LOCAL_FILES_DATA_DIR, Orchestrator
 from snarf.runtime.dashboard_prefs import load_prefs, save_prefs
+from snarf.runtime import data_backup
 from snarf.knowledge.extraction import categorize_mime
 from snarf.telemetry import activity_log, brain, input_log, usage_tracker
 from snarf.runtime.web_auth import (
@@ -37,9 +39,25 @@ def _google_connected(user_id: str) -> bool:
     return (GOOGLE_TOKENS_DIR / f"{user_id}.json").exists()
 
 
+BACKUP_INTERVAL_SECONDS = 6 * 3600
+
+
+async def _periodic_backup_loop():
+    while True:
+        await asyncio.sleep(BACKUP_INTERVAL_SECONDS)
+        data_backup.backup_now()
+
+
 @app.on_event("startup")
-def warmup():
+async def warmup():
     orchestrator.warmup()
+    # PYTEST_CURRENT_TEST lo setea pytest automáticamente durante cada test —
+    # evita que cada TestClient() de la suite dispare un backup real sobre
+    # data/ (irían cientos por corrida) y una tarea de fondo que nunca se
+    # cancela entre tests.
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        data_backup.backup_now()
+        asyncio.create_task(_periodic_backup_loop())
 
 
 class SendRequest(BaseModel):
@@ -241,6 +259,22 @@ def get_dashboard_preferences(user_id: str = Depends(require_user)):
 @app.put("/dashboard/preferences")
 def put_dashboard_preferences(payload: DashboardPreferences, user_id: str = Depends(require_user)):
     return save_prefs(user_id, payload.model_dump())
+
+
+@app.get("/dashboard/widgets/usage")
+def dashboard_widget_usage(user_id: str = Depends(require_user)):
+    metrics = usage_tracker.usage_metrics()
+    cost_by_vendor = usage_tracker.summarize()["by_vendor_usd"]
+    result = {
+        vendor: {**data, "cost_usd": cost_by_vendor.get(vendor)}
+        for vendor, data in metrics.items()
+    }
+    if tts.available:
+        try:
+            result.setdefault("elevenlabs", {})["subscription"] = tts.subscription_info()
+        except Exception as exc:
+            result.setdefault("elevenlabs", {})["subscription_error"] = str(exc)
+    return {"vendors": result}
 
 
 @app.get("/dashboard/widgets/drive")

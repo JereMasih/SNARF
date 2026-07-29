@@ -205,7 +205,7 @@ def test_dashboard_preferences_defaults_before_any_save(client, tmp_path, monkey
     data = res.json()
     assert data["panel_order"] == [
         "history", "brain", "system", "cost", "chat",
-        "conversations", "memory", "drive", "gmail", "calendar", "youtube",
+        "conversations", "memory", "usage", "drive", "gmail", "calendar", "youtube",
     ]
     assert all(data["visible_widgets"].values())
 
@@ -273,6 +273,48 @@ def connected_google_token(tmp_path, monkeypatch):
     tokens_dir.mkdir()
     (tokens_dir / f"{app_module.DEFAULT_USER_ID}.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(app_module, "GOOGLE_TOKENS_DIR", tokens_dir)
+
+
+def test_dashboard_widget_usage_reports_real_metrics_per_vendor(client):
+    usage_tracker.record_anthropic_call("claude-sonnet-5", 1000, 500)
+    usage_tracker.record_elevenlabs_tts_call(120)
+    res = client.get("/dashboard/widgets/usage")
+    assert res.status_code == 200
+    vendors = res.json()["vendors"]
+    assert vendors["anthropic"]["calls"] == 1
+    assert vendors["anthropic"]["input_tokens"] == 1000
+    assert vendors["anthropic"]["cost_usd"] > 0
+    assert vendors["elevenlabs"]["characters"] == 120
+    assert vendors["elevenlabs"]["cost_usd"] is None
+
+
+def test_dashboard_widget_usage_includes_real_elevenlabs_subscription_when_available(client, monkeypatch):
+    monkeypatch.setattr(app_module.tts, "_api_key", "fake-key")
+    monkeypatch.setattr(app_module.tts, "_voice_id", "fake-voice")
+    monkeypatch.setattr(
+        app_module.tts,
+        "subscription_info",
+        lambda: {"tier": "starter", "character_count": 1234, "character_limit": 30000},
+    )
+    usage_tracker.record_elevenlabs_tts_call(50)
+    res = client.get("/dashboard/widgets/usage")
+    subscription = res.json()["vendors"]["elevenlabs"]["subscription"]
+    assert subscription == {"tier": "starter", "character_count": 1234, "character_limit": 30000}
+
+
+def test_dashboard_widget_usage_reports_subscription_error_without_hiding_local_metrics(client, monkeypatch):
+    monkeypatch.setattr(app_module.tts, "_api_key", "fake-key")
+    monkeypatch.setattr(app_module.tts, "_voice_id", "fake-voice")
+
+    def boom():
+        raise RuntimeError("401 unauthorized")
+
+    monkeypatch.setattr(app_module.tts, "subscription_info", boom)
+    usage_tracker.record_elevenlabs_tts_call(50)
+    res = client.get("/dashboard/widgets/usage")
+    data = res.json()["vendors"]["elevenlabs"]
+    assert data["characters"] == 50
+    assert "401" in data["subscription_error"]
 
 
 def test_dashboard_widget_drive_returns_recent_files(client, connected_google_token, monkeypatch):

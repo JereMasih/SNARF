@@ -5,6 +5,7 @@ from googleapiclient.http import MediaIoBaseUpload
 
 from snarf.capabilities.base import Capability
 from snarf.capabilities.google_auth import GoogleAuth
+from snarf.capabilities.google_retry import retry_once_with_fresh_client
 
 GOOGLE_DOCS_EXPORT_MIME = {
     "application/vnd.google-apps.document": "text/plain",
@@ -29,6 +30,7 @@ class GoogleDrive(Capability):
             self._service = build("drive", "v3", credentials=self._auth.credentials())
         return self._service
 
+    @retry_once_with_fresh_client
     def list_files(self, page_size: int = 50, query: str | None = None) -> list[dict]:
         params = {
             "pageSize": page_size,
@@ -39,6 +41,7 @@ class GoogleDrive(Capability):
         result = self._client().files().list(**params).execute()
         return result.get("files", [])
 
+    @retry_once_with_fresh_client
     def list_files_page(self, page_size: int = 200, query: str | None = None, page_token: str | None = None) -> dict:
         params = {
             "pageSize": page_size,
@@ -62,6 +65,7 @@ class GoogleDrive(Capability):
             if not page_token:
                 return
 
+    @retry_once_with_fresh_client
     def read_file_text(self, file_id: str, mime_type: str) -> str:
         client = self._client()
         if mime_type in GOOGLE_DOCS_EXPORT_MIME:
@@ -70,9 +74,11 @@ class GoogleDrive(Capability):
             data = client.files().get_media(fileId=file_id).execute()
         return data.decode("utf-8", errors="ignore") if isinstance(data, bytes) else str(data)
 
+    @retry_once_with_fresh_client
     def read_file_bytes(self, file_id: str) -> bytes:
         return self._client().files().get_media(fileId=file_id).execute()
 
+    @retry_once_with_fresh_client
     def create_folder(self, name: str, parent_id: str | None = None) -> dict:
         body = {"name": name, "mimeType": "application/vnd.google-apps.folder"}
         if parent_id:
@@ -88,6 +94,9 @@ class GoogleDrive(Capability):
             return existing[0]["id"]
         return self.create_folder(name, parent_id=parent_id)["id"]
 
+    # Sin retry acá a propósito: MediaIoBaseUpload consume su stream de
+    # bytes al ejecutar — reintentar con el mismo objeto subiría contenido
+    # vacío en silencio en vez de fallar fuerte, mucho peor que el error real.
     def upload_file(
         self,
         name: str,
@@ -110,6 +119,7 @@ class GoogleDrive(Capability):
             .execute()
         )
 
+    @retry_once_with_fresh_client
     def move_file(self, file_id: str, new_parent_id: str) -> dict:
         client = self._client()
         file = client.files().get(fileId=file_id, fields="parents").execute()
@@ -120,5 +130,6 @@ class GoogleDrive(Capability):
             .execute()
         )
 
+    @retry_once_with_fresh_client
     def delete_file(self, file_id: str) -> None:
         self._client().files().delete(fileId=file_id).execute()

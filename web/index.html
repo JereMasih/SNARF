@@ -263,6 +263,7 @@
     color: var(--text); font-family: inherit; font-size: 0.68rem; padding: 0.15rem 0.4rem;
   }
   .dash-gmail-digest { margin-top: 0.7rem; padding-top: 0.6rem; border-top: 1px solid rgba(255,255,255,0.06); }
+  .dash-gmail-digest-refs { margin-top: 0.5rem; padding-top: 0.4rem; border-top: 1px dashed rgba(255,255,255,0.08); }
   .dash-mini-btn {
     background: rgba(79,216,232,0.12); border: 1px solid rgba(79,216,232,0.35); color: var(--glow-soft);
     font-family: inherit; font-size: 0.66rem; letter-spacing: 0.02em; padding: 0.3rem 0.6rem;
@@ -733,7 +734,7 @@
   .review { width: 100%; max-width: 480px; display: none; flex-direction: column; gap: 0.5rem; }
   .review.visible { display: flex; }
   .review textarea {
-    width: 100%; min-height: 4rem; resize: none;
+    width: 100%; min-height: 4.5rem; max-height: 10rem; resize: none; overflow-y: auto; line-height: 1.4;
     background: rgba(255,255,255,0.04); border: 1px solid rgba(79,216,232,0.25);
     border-radius: 10px; color: var(--text); font-family: inherit; font-size: 0.85rem; padding: 0.7rem;
   }
@@ -813,22 +814,26 @@
     display: none;
     width: 100%; max-width: 480px;
     gap: 0.5rem;
-    align-items: center;
+    align-items: flex-end;
   }
   .text-row.visible { display: flex; }
-  .text-row input {
+  .text-row textarea {
     flex: 1 1 auto;
     min-width: 0;
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(79,216,232,0.3);
-    border-radius: 999px;
+    border-radius: 20px;
     color: var(--text);
     font-family: inherit;
     font-size: 0.9rem;
     padding: 0.7rem 1rem;
     outline: none;
+    resize: none;
+    max-height: 9rem;
+    overflow-y: auto;
+    line-height: 1.4;
   }
-  .text-row input::placeholder { color: var(--text-dim); }
+  .text-row textarea::placeholder { color: var(--text-dim); }
   .text-row .icon-btn {
     flex: 0 0 auto;
     width: 42px; height: 42px;
@@ -942,7 +947,7 @@
       <div class="text-row" id="textRow">
         <input type="file" id="fileInput" hidden>
         <button class="icon-btn" id="attachBtn" title="Adjuntar archivo"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 6.5l-6 6a2.5 2.5 0 0 0 3.5 3.5l6.5-6.5a4 4 0 0 0-5.5-5.5l-7 7a5.5 5.5 0 0 0 7.5 7.5"/></svg></button>
-        <input type="text" id="textInput" placeholder="Escribile a Snarf..." autocomplete="off">
+        <textarea id="textInput" placeholder="Escribile a Snarf..." rows="1"></textarea>
         <button class="icon-btn" id="micBtn" title="Grabar"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg></button>
         <button class="icon-btn" id="textSendBtn" title="Enviar"><svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="16" x2="10" y2="4"/><path d="M5 9l5-5 5 5"/></svg></button>
       </div>
@@ -1349,7 +1354,7 @@ document.addEventListener("click", (e) => {
 // lo que usa el panel de configuración (así chat/historial nunca aparecen
 // ahí, sin filtrado extra) y renderMobileDashboard (así mobile los sigue
 // excluyendo, sin filtrado extra).
-const WIDGET_IDS = ["brain", "system", "cost", "conversations", "memory", "drive", "gmail", "calendar", "youtube"];
+const WIDGET_IDS = ["brain", "system", "cost", "conversations", "memory", "usage", "drive", "gmail", "calendar", "youtube"];
 // La grilla de escritorio unificada suma "history" y "chat" — antes vivían
 // fuera del sistema de widgets, fijos, sin poder moverse ni redimensionar.
 // Deben mantenerse en el mismo orden que WIDGET_IDS del backend
@@ -1363,6 +1368,7 @@ const WIDGET_LABELS = {
   conversations: "Conversaciones",
   memory: "Memoria episódica",
   cost: "Costo de API",
+  usage: "Uso real de APIs",
   drive: "Google Drive",
   gmail: "Gmail",
   calendar: "Calendar",
@@ -1381,15 +1387,16 @@ const MIN_ROW_SPAN = 3, MAX_ROW_SPAN = 30;
 const DEFAULT_SPANS = {
   history: { col_span: 3, row_span: 28 },
   brain: { col_span: 6, row_span: 12 },
-  system: { col_span: 3, row_span: 7 },
-  cost: { col_span: 3, row_span: 7 },
+  system: { col_span: 3, row_span: 5 },
+  cost: { col_span: 3, row_span: 8 },
   chat: { col_span: 6, row_span: 16 },
-  conversations: { col_span: 3, row_span: 9 },
-  memory: { col_span: 3, row_span: 9 },
-  drive: { col_span: 3, row_span: 8 },
-  gmail: { col_span: 3, row_span: 8 },
-  calendar: { col_span: 3, row_span: 8 },
-  youtube: { col_span: 3, row_span: 8 },
+  conversations: { col_span: 3, row_span: 7 },
+  memory: { col_span: 3, row_span: 6 },
+  usage: { col_span: 3, row_span: 9 },
+  drive: { col_span: 3, row_span: 9 },
+  gmail: { col_span: 3, row_span: 10 },
+  calendar: { col_span: 3, row_span: 5 },
+  youtube: { col_span: 3, row_span: 6 },
 };
 function clamp(n, min, max) { return Math.min(max, Math.max(min, Number(n) || min)); }
 function blockSpan(id) {
@@ -1454,6 +1461,12 @@ function statusDot(ok) { return `<span class="dash-dot ${ok ? "ok" : "off"}"></s
 function formatDate(ts) {
   return ts ? new Date(ts * 1000).toLocaleDateString("es-AR") : "sin datos todavía";
 }
+function gmailDate(rfc2822) {
+  if (!rfc2822) return "";
+  const parsed = Date.parse(rfc2822);
+  if (Number.isNaN(parsed)) return "";
+  return new Date(parsed).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
 const WIDGET_SUBTITLES = {
   history: "tus conversaciones guardadas",
   chat: "grabá o escribí para hablar con Snarf",
@@ -1461,6 +1474,7 @@ const WIDGET_SUBTITLES = {
   conversations: "actividad de mensajes en los últimos 14 días",
   memory: "todo lo que Snarf recuerda de tus conversaciones pasadas",
   cost: "gasto estimado en las APIs que usa Snarf (no es tu saldo real de cada cuenta)",
+  usage: "consumo real por API — llamadas, tokens, caracteres, y el cupo real de ElevenLabs",
   drive: "últimos archivos modificados en tu Google Drive",
   gmail: "últimos mensajes recibidos en tu Gmail",
   calendar: "tus próximos eventos de Google Calendar",
@@ -1539,6 +1553,46 @@ function costBodyHTML(summary) {
     ${unknownNote}
     <div class="dash-row dash-dim">estimado según tarifas públicas, no tu saldo real de cada cuenta</div>`;
 }
+function formatCount(n) {
+  return Number(n || 0).toLocaleString("es-AR");
+}
+function usageBodyHTML(data) {
+  const vendors = data.vendors || {};
+  const anthropic = vendors.anthropic;
+  const voyage = vendors.voyage;
+  const elevenlabs = vendors.elevenlabs;
+  const rows = [];
+  if (anthropic) {
+    rows.push(`
+      <div class="dash-row-stacked">
+        <span class="dash-row-title">Anthropic</span>
+        <span class="dash-row-sub">${formatCount(anthropic.calls)} llamada(s) · ${formatCount(anthropic.input_tokens)} tokens entrada · ${formatCount(anthropic.output_tokens)} tokens salida</span>
+      </div>`);
+  }
+  if (elevenlabs) {
+    const sub = elevenlabs.subscription;
+    const subLine = sub
+      ? `<span class="dash-row-sub">cupo real (${escapeHtml(sub.tier || "")}): ${formatCount(sub.character_count)} / ${formatCount(sub.character_limit)} caracteres</span>`
+      : elevenlabs.subscription_error
+        ? `<span class="dash-row-sub dash-dim">no se pudo consultar el cupo real (${escapeHtml(elevenlabs.subscription_error)})</span>`
+        : "";
+    rows.push(`
+      <div class="dash-row-stacked">
+        <span class="dash-row-title">ElevenLabs</span>
+        <span class="dash-row-sub">${formatCount(elevenlabs.characters)} caracteres (TTS) · ${formatCount(Math.round((elevenlabs.duration_seconds || 0) / 60))} min transcriptos (STT)</span>
+        ${subLine}
+      </div>`);
+  }
+  if (voyage) {
+    rows.push(`
+      <div class="dash-row-stacked">
+        <span class="dash-row-title">Voyage AI</span>
+        <span class="dash-row-sub">${formatCount(voyage.calls)} llamada(s) · ${formatCount(voyage.tokens)} tokens embebidos</span>
+      </div>`);
+  }
+  if (!rows.length) return '<div class="dash-row dash-dim">todavía sin uso registrado</div>';
+  return rows.join("") + '<div class="dash-row dash-dim">cupo real solo para ElevenLabs (única API que lo expone); el resto es consumo trackeado localmente</div>';
+}
 function notConnectedBody() {
   return '<div class="dash-row dash-dim">Google no conectado todavía</div>';
 }
@@ -1589,7 +1643,8 @@ function gmailBodyHTML(data, gmailMaxResults) {
   const rows = data.messages
     .map((m) => {
       const url = `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(m.id)}`;
-      return `<div class="dash-row-stacked"><span class="dash-row-title"><a href="${url}" target="_blank" rel="noopener">${escapeHtml(m.subject || "(sin asunto)")}</a></span><span class="dash-row-sub">${escapeHtml(m.from || "")}</span></div>`;
+      const meta = [m.from, gmailDate(m.date)].filter(Boolean).join(" · ");
+      return `<div class="dash-row-stacked"><span class="dash-row-title"><a href="${url}" target="_blank" rel="noopener">${escapeHtml(m.subject || "(sin asunto)")}</a></span><span class="dash-row-sub">${escapeHtml(meta)}</span></div>`;
     })
     .join("");
   return selector + rows + digestSection;
@@ -1627,6 +1682,7 @@ function widgetBodyHTML(id, summary) {
   if (id === "conversations") return conversationsBodyHTML(summary);
   if (id === "memory") return memoryBodyHTML(summary);
   if (id === "cost") return costBodyHTML(summary);
+  if (id === "usage") return loadingBody();
   if (GOOGLE_WIDGETS.includes(id)) return summary.capabilities.google_connected ? loadingBody() : notConnectedBody();
   if (id === "brain") return loadingBody();
   return "";
@@ -1713,7 +1769,20 @@ function applyGmailDigest(body, digest) {
     return;
   }
   meta.textContent = "actualizado " + relativeTime(digest.generated_at);
-  content.innerHTML = renderMarkdown(digest.digest_text || "");
+  // El texto del LLM interpreta y prioriza, pero es prosa libre — no se le
+  // pide que invente fechas o links. La referencia real (con fecha y enlace
+  // reales) se arma acá, a partir de los datos estructurados que ya vinieron
+  // del propio Gmail, para que la interpretación no quede sin ninguno.
+  const refRows = (digest.messages || [])
+    .map((m) => {
+      const url = `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(m.id || "")}`;
+      const meta = [m.from, gmailDate(m.date)].filter(Boolean).join(" · ");
+      return `<div class="dash-row-stacked"><span class="dash-row-title"><a href="${url}" target="_blank" rel="noopener">${escapeHtml(m.subject || "(sin asunto)")}</a></span><span class="dash-row-sub">${escapeHtml(meta)}</span></div>`;
+    })
+    .join("");
+  content.innerHTML =
+    renderMarkdown(digest.digest_text || "") +
+    (refRows ? `<div class="dash-gmail-digest-refs">${refRows}</div>` : "");
 }
 async function refreshGmailDigest(body) {
   const btn = body.querySelector("#gmailDigestBtn");
@@ -1756,6 +1825,18 @@ async function loadGoogleWidgetsInto(root, visibleIds) {
       if (body) body.innerHTML = errorBody(e.message || e);
     }
   });
+}
+
+async function loadUsageWidgetInto(root) {
+  const body = root.querySelector('[data-widget-id="usage"] .dash-widget-body');
+  if (!body) return;
+  try {
+    const res = await apiFetch("/dashboard/widgets/usage");
+    const data = await res.json();
+    body.innerHTML = usageBodyHTML(data);
+  } catch (e) {
+    body.innerHTML = errorBody(e.message || e);
+  }
 }
 
 /* ---------- cerebro de Snarf ---------- */
@@ -2608,6 +2689,7 @@ function renderMobileDashboard(summary) {
   });
   loadGoogleWidgetsInto(dashboardInner, ids);
   if (ids.includes("brain")) loadBrainWidgetInto(dashboardInner);
+  if (ids.includes("usage")) loadUsageWidgetInto(dashboardInner);
 }
 
 // Chat e historial no se reconstruyen por HTML como los demás widgets — son
@@ -2726,6 +2808,7 @@ function renderDesktopDashboard(summary) {
 
   loadGoogleWidgetsInto(dashGridDesktop, rest);
   if (rest.includes("brain")) loadBrainWidgetInto(dashGridDesktop);
+  if (rest.includes("usage")) loadUsageWidgetInto(dashGridDesktop);
   refreshConvLists();
 }
 
@@ -2881,6 +2964,7 @@ async function handleClickMode() {
       if (error) { setState("error", error); return; }
       if (!transcript.trim()) { setState("idle", "no se escuchó nada, probá de nuevo"); return; }
       reviewText.value = transcript;
+      autoResizeTextarea(reviewText);
       review.classList.add("visible");
       setState("idle", "revisá y enviá");
     } catch (e) { setState("error", "error: " + (e.message || e)); }
@@ -2897,15 +2981,26 @@ document.getElementById("cancelBtn").addEventListener("click", () => {
   setState("idle", idleLabel());
 });
 
+// Textarea que crece con el texto (tipeado o transcripto) hasta un máximo,
+// después scrollea adentro — así se ve completo mientras se edita antes de
+// enviar, en vez de cortarse en una sola línea.
+function autoResizeTextarea(el) {
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + "px";
+}
+textInput.addEventListener("input", () => autoResizeTextarea(textInput));
+reviewText.addEventListener("input", () => autoResizeTextarea(reviewText));
+
 function sendFromTextInput() {
   const text = textInput.value;
   textInput.value = "";
+  autoResizeTextarea(textInput);
   unlockAudio();
   sendText(text).then(() => textInput.focus());
 }
 textSendBtn.addEventListener("click", sendFromTextInput);
 textInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") { e.preventDefault(); sendFromTextInput(); }
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendFromTextInput(); }
 });
 
 async function handleMicClick() {
@@ -2926,6 +3021,7 @@ async function handleMicClick() {
       const { transcript, error } = await transcribeBlob(blob);
       if (error) { setState("error", error); return; }
       textInput.value = transcript;
+      autoResizeTextarea(textInput);
       setState("idle", idleLabel());
       textInput.focus();
     } catch (err) {

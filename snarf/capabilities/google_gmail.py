@@ -5,6 +5,7 @@ from googleapiclient.discovery import build
 
 from snarf.capabilities.base import Capability
 from snarf.capabilities.google_auth import GoogleAuth
+from snarf.capabilities.google_retry import retry_once_with_fresh_client
 
 
 class GoogleGmail(Capability):
@@ -23,6 +24,7 @@ class GoogleGmail(Capability):
             self._service = build("gmail", "v1", credentials=self._auth.credentials())
         return self._service
 
+    @retry_once_with_fresh_client
     def list_messages(self, max_results: int = 10, query: str | None = None) -> list[dict]:
         params = {"userId": "me", "maxResults": max_results}
         if query:
@@ -49,6 +51,7 @@ class GoogleGmail(Capability):
             )
         return summaries
 
+    @retry_once_with_fresh_client
     def read_message(self, message_id: str) -> dict:
         msg = self._client().users().messages().get(userId="me", id=message_id, format="full").execute()
         headers = {h["name"]: h["value"] for h in msg["payload"]["headers"]}
@@ -78,6 +81,7 @@ class GoogleGmail(Capability):
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
         return self._client().users().messages().send(userId="me", body={"raw": raw}).execute()
 
+    @retry_once_with_fresh_client
     def list_labels(self) -> list[dict]:
         result = self._client().users().labels().list(userId="me").execute()
         return [{"id": l["id"], "name": l["name"], "type": l.get("type", "")} for l in result.get("labels", [])]

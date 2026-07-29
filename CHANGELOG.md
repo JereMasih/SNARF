@@ -379,3 +379,18 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - **Bug real, causa encontrada con Playwright**: el reproductor de audio flotante tenía `z-index: 9`, por debajo del panel de configuración, el cerebro a pantalla completa y el modo enfoque (10 a 15) — quedaba literalmente tapado e inaccesible detrás de cualquiera de esos paneles mientras el audio sonaba. Subido a `z-index: 20` (por encima de todo lo demás). Confirmado con `elementFromPoint` que el botón ahora sí recibe el click estando el modo enfoque abierto encima.
 - **Pausa/reanudar**: nuevo botón en el reproductor, sincronizado con los eventos reales `play`/`pause` del audio (no solo con su propio click) — la etiqueta también pasa a decir "en pausa" en vez de seguir diciendo "reproduciendo" cuando está pausado.
 - 289/289 tests. Ver ADR 0040.
+
+## [2026-07-29] Gmail resiliente ante fallos transitorios, uso real por API, y dashboard con tamaños más justos
+
+- **Bug real, causa encontrada inspeccionando el server en vivo**: el widget de Gmail devolvía `[SSL] record layer failure` — la conexión `googleapiclient` cacheada como singleton en `GoogleDrive`/`GoogleGmail`/`GoogleCalendar`/`GoogleYouTube` puede quedar rota en un proceso de larga vida. Nuevo decorador `retry_once_with_fresh_client`: reintenta una sola vez con el cliente reconstruido ante cualquier fallo, sin ocultar un fallo real y persistente. Aplicado solo a lecturas idempotentes, nunca a `upload_file`/`send_message`/mutaciones (riesgo de duplicar el efecto en un reintento).
+- Fechas y enlaces reales en Gmail: la lista de mensajes ya tenía el dato (`date`) pero no se mostraba; el digest interpretado por el LLM ahora viene acompañado de una referencia estructurada real (id/asunto/de/fecha) por mensaje, en vez de depender de que la prosa libre del LLM mencione fechas o links (que sería inventar datos).
+- Nuevo widget "Uso real de APIs": consumo trackeado localmente (llamadas, tokens, caracteres, segundos) por Anthropic/ElevenLabs/Voyage, más el cupo real de la cuenta de ElevenLabs (`GET /v1/user/subscription`, en vivo) — el panel de costo existente es una estimación en dólares, nunca fue un saldo real, por eso cargar crédito en ElevenLabs no lo movía.
+- Tamaños de widgets del dashboard recalibrados usando como evidencia los tamaños que el propio fundador ya había elegido a mano en su layout guardado (no una preferencia estética a ciegas) — solo cambia el default para instalaciones nuevas, el layout ya guardado no se tocó.
+- `#textInput` pasa de `<input>` de una línea a un `<textarea>` que crece hasta ~6 líneas visibles antes de scrollear internamente; `Shift+Enter` inserta salto de línea real, `Enter` solo sigue enviando. Mismo tratamiento en el cuadro de revisión de transcripción por voz.
+- 305/305 tests. Ver ADR 0041.
+
+## [2026-07-29] Respaldo automático de `data/`
+
+- **Incidente real durante esta sesión**: al verificar en vivo el widget de uso, Claude Code escribió datos de prueba en el `data/usage_log.jsonl` real por error, y al intentar revertirlo con una sintaxis de `head` no soportada en macOS terminó sobreescribiendo el archivo real completo con uno vacío — perdiendo sin posibilidad de recuperación las 4304 líneas de historial real de uso acumulado. No estaba en git (gitignored a propósito), no había snapshot ni backup de ningún tipo.
+- Nuevo `snarf/runtime/data_backup.py`: respalda automáticamente memoria episódica, logs de actividad/uso/entrada, preferencias del dashboard, caché del digest de Gmail y archivos locales (no el índice de Drive, regenerable desde la fuente real) a `data_backups/`, con los últimos 14 snapshots. Se dispara al arrancar el server y cada 6 horas mientras corre.
+- 305/305 tests. Ver ADR 0042.

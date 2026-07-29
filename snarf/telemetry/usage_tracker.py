@@ -79,6 +79,26 @@ def recent(n: int = 100, path: Path | None = None) -> list[dict]:
     return _read_all(path)[-n:]
 
 
+def usage_metrics(path: Path | None = None) -> dict:
+    # Métricas reales de consumo por vendor (llamadas, tokens, caracteres,
+    # duración) — a diferencia de `summarize()`, que resume dólares
+    # estimados, esto suma directamente los campos que cada tipo de llamada
+    # ya registra, sin convertir nada a costo.
+    metrics: dict[str, dict] = {}
+    for e in _read_all(path):
+        m = metrics.setdefault(
+            e["vendor"],
+            {"calls": 0, "input_tokens": 0, "output_tokens": 0, "tokens": 0, "characters": 0, "duration_seconds": 0.0},
+        )
+        m["calls"] += 1
+        m["input_tokens"] += e.get("input_tokens") or 0
+        m["output_tokens"] += e.get("output_tokens") or 0
+        m["tokens"] += e.get("tokens") or 0
+        m["characters"] += e.get("characters") or 0
+        m["duration_seconds"] += e.get("duration_seconds") or 0
+    return metrics
+
+
 def summarize(path: Path | None = None, recent_days: int = 7) -> dict:
     entries = _read_all(path)
     now = time.time()

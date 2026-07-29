@@ -17,7 +17,7 @@ PREFS_DIR = Path("data/dashboard_prefs")
 # en vez de desparramarse a lo ancho).
 WIDGET_IDS = [
     "history", "brain", "system", "cost", "chat",
-    "conversations", "memory", "drive", "gmail", "calendar", "youtube",
+    "conversations", "memory", "usage", "drive", "gmail", "calendar", "youtube",
 ]
 # Nunca se pueden ocultar, ni siquiera con un payload directo a la API — son
 # el núcleo de la app, no un widget más que el fundador pueda apagar sin querer.
@@ -35,18 +35,27 @@ MIN_ROW_SPAN, MAX_ROW_SPAN = 3, 30
 # bajando debajo) — mismo col_span=3 en todos para que el auto-flow disperso
 # los apile en una sola columna en vez de desparramarlos a lo ancho. Ver ADR
 # 0037.
+#
+# Recalibrado en ADR 0041: los valores de ADR 0037 dejaban de más en los
+# widgets con poco contenido real (system/conversations/memory solo muestran
+# unas pocas líneas de texto) y de menos en los que muestran listas densas
+# (drive con 5 archivos en formato de 2 líneas c/u). La señal real: el propio
+# fundador, usando la grilla en vivo, redujo a mano system/conversations/
+# memory/calendar/youtube y agrandó drive/cost — esos ajustes en vivo son la
+# evidencia de qué tamaño hace falta, no una preferencia estética a ciegas.
 DEFAULT_SPANS = {
     "history": {"col_span": 3, "row_span": 28},
     "brain": {"col_span": 6, "row_span": 12},
-    "system": {"col_span": 3, "row_span": 7},
-    "cost": {"col_span": 3, "row_span": 7},
+    "system": {"col_span": 3, "row_span": 5},
+    "cost": {"col_span": 3, "row_span": 8},
     "chat": {"col_span": 6, "row_span": 16},
-    "conversations": {"col_span": 3, "row_span": 9},
-    "memory": {"col_span": 3, "row_span": 9},
-    "drive": {"col_span": 3, "row_span": 8},
-    "gmail": {"col_span": 3, "row_span": 8},
-    "calendar": {"col_span": 3, "row_span": 8},
-    "youtube": {"col_span": 3, "row_span": 8},
+    "conversations": {"col_span": 3, "row_span": 7},
+    "memory": {"col_span": 3, "row_span": 6},
+    "usage": {"col_span": 3, "row_span": 9},
+    "drive": {"col_span": 3, "row_span": 9},
+    "gmail": {"col_span": 3, "row_span": 10},
+    "calendar": {"col_span": 3, "row_span": 5},
+    "youtube": {"col_span": 3, "row_span": 6},
 }
 
 

@@ -4,6 +4,7 @@ from googleapiclient.discovery import build
 
 from snarf.capabilities.base import Capability
 from snarf.capabilities.google_auth import GoogleAuth
+from snarf.capabilities.google_retry import retry_once_with_fresh_client
 
 
 class GoogleCalendar(Capability):
@@ -22,6 +23,7 @@ class GoogleCalendar(Capability):
             self._service = build("calendar", "v3", credentials=self._auth.credentials())
         return self._service
 
+    @retry_once_with_fresh_client
     def list_calendars(self) -> list[dict]:
         result = self._client().calendarList().list().execute()
         return [
@@ -38,6 +40,7 @@ class GoogleCalendar(Capability):
     def delete_calendar(self, calendar_id: str) -> None:
         self._client().calendars().delete(calendarId=calendar_id).execute()
 
+    @retry_once_with_fresh_client
     def list_upcoming_events(self, max_results: int = 10, calendar_id: str = "primary") -> list[dict]:
         now = datetime.now(timezone.utc).isoformat()
         result = (
@@ -82,6 +85,7 @@ class GoogleCalendar(Capability):
             event["location"] = location
         return self._client().events().insert(calendarId=calendar_id, body=event).execute()
 
+    @retry_once_with_fresh_client
     def search_events(self, query: str, calendar_id: str = "primary", max_results: int = 10) -> list[dict]:
         """Busca eventos por texto, sin restricción de fecha (incluye pasados y futuros)."""
         time_min = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()

@@ -6,6 +6,7 @@ from snarf.capabilities.base import Capability
 from snarf.telemetry import usage_tracker
 
 API_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+SUBSCRIPTION_URL = "https://api.elevenlabs.io/v1/user/subscription"
 DEFAULT_MODEL = "eleven_turbo_v2_5"
 
 
@@ -34,3 +35,20 @@ class ElevenLabsTTS(Capability):
         response.raise_for_status()
         usage_tracker.record_elevenlabs_tts_call(len(text))
         return response.content
+
+    def subscription_info(self) -> dict:
+        # El "gasto estimado" del panel de costo se calcula desde llamadas
+        # trackeadas localmente — cargar crédito en la cuenta de ElevenLabs no
+        # cambia nada ahí (no es un saldo real). Esto sí es el dato real de la
+        # cuenta, consultado en vivo, no inventado.
+        if not self._api_key:
+            raise RuntimeError("ELEVENLABS_API_KEY no configurada (ver .env.example).")
+        response = requests.get(SUBSCRIPTION_URL, headers={"xi-api-key": self._api_key}, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        return {
+            "tier": data.get("tier", ""),
+            "character_count": data.get("character_count", 0),
+            "character_limit": data.get("character_limit", 0),
+            "next_reset_unix": data.get("next_character_count_reset_unix"),
+        }

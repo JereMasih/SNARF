@@ -85,3 +85,12 @@ def test_refresh_with_no_messages_has_no_latest_message_id(tmp_path, monkeypatch
     specialist, _ = make_specialist(tmp_path, monkeypatch, messages=[])
     digest = specialist.refresh()
     assert digest["latest_message_id"] is None
+
+
+def test_refresh_includes_structured_message_references_with_dates_and_ids(tmp_path, monkeypatch):
+    messages = [
+        {"id": "msg-1", "from": "a@b.com", "subject": "hola", "date": "Tue, 29 Jul 2026 10:00:00 -0300", "snippet": "x"}
+    ]
+    specialist, _ = make_specialist(tmp_path, monkeypatch, messages=messages)
+    digest = specialist.refresh()
+    assert digest["messages"] == [{"id": "msg-1", "subject": "hola", "from": "a@b.com", "date": "Tue, 29 Jul 2026 10:00:00 -0300"}]

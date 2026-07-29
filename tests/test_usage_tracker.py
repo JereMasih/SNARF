@@ -95,3 +95,25 @@ def test_recent_returns_only_the_last_n_entries(tmp_path):
 def test_recent_with_no_entries_is_empty(tmp_path):
     path = tmp_path / "no_existe.jsonl"
     assert usage_tracker.recent(path=path) == []
+
+
+def test_usage_metrics_aggregates_real_consumption_per_vendor(tmp_path):
+    path = tmp_path / "usage.jsonl"
+    usage_tracker.record_anthropic_call("claude-sonnet-5", 1000, 500, path=path)
+    usage_tracker.record_anthropic_call("claude-sonnet-5", 200, 100, path=path)
+    usage_tracker.record_elevenlabs_tts_call(120, path=path)
+    usage_tracker.record_elevenlabs_stt_call(30.0, path=path)
+    usage_tracker.record_voyage_call("voyage-4-lite", 5000, path=path)
+    metrics = usage_tracker.usage_metrics(path=path)
+    assert metrics["anthropic"]["calls"] == 2
+    assert metrics["anthropic"]["input_tokens"] == 1200
+    assert metrics["anthropic"]["output_tokens"] == 600
+    assert metrics["elevenlabs"]["calls"] == 2
+    assert metrics["elevenlabs"]["characters"] == 120
+    assert metrics["elevenlabs"]["duration_seconds"] == 30.0
+    assert metrics["voyage"]["tokens"] == 5000
+
+
+def test_usage_metrics_with_no_entries_is_empty(tmp_path):
+    path = tmp_path / "no_existe.jsonl"
+    assert usage_tracker.usage_metrics(path=path) == {}

@@ -52,6 +52,14 @@ class GmailDigestSpecialist(Specialist):
             "message_count": len(messages),
             "digest_text": digest_text,
             "latest_message_id": messages[0].get("id") if messages else None,
+            # Referencia estructurada (id/asunto/de/fecha) de los mensajes que
+            # el LLM interpretó arriba — el frontend la usa para mostrar
+            # fechas y enlaces reales junto a la interpretación, en vez de
+            # confiar en que el texto libre del LLM los mencione.
+            "messages": [
+                {"id": m.get("id"), "subject": m.get("subject", ""), "from": m.get("from", ""), "date": m.get("date", "")}
+                for m in messages
+            ],
         }
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self._cache_path().write_text(json.dumps(digest, ensure_ascii=False, indent=2), encoding="utf-8")
