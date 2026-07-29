@@ -20,7 +20,7 @@ def raw_client(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
     monkeypatch.setenv("SNARF_ACCESS_PASSWORD", CORRECT_PASSWORD)
     monkeypatch.setenv("SESSION_SECRET", "a-test-secret")
-    with TestClient(app_module.app) as c:
+    with TestClient(app_module.app, base_url="https://testserver") as c:
         yield c
 
 
@@ -75,6 +75,14 @@ def test_login_with_correct_password_grants_full_access(raw_client):
     assert send_res.status_code == 200
 
 
+def test_session_cookie_is_marked_secure(raw_client):
+    # Defensa en profundidad: aunque hoy Tailscale ya sirve todo por HTTPS
+    # (ADR 0008), la cookie de sesión no debería depender únicamente de eso.
+    login_res = raw_client.post("/login", json={"password": CORRECT_PASSWORD})
+    set_cookie_header = login_res.headers["set-cookie"]
+    assert "Secure" in set_cookie_header
+
+
 def test_logout_revokes_access(raw_client):
     raw_client.post("/login", json={"password": CORRECT_PASSWORD})
     raw_client.post("/logout")
@@ -97,7 +105,7 @@ def test_login_fails_closed_without_session_secret(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
     monkeypatch.setenv("SNARF_ACCESS_PASSWORD", CORRECT_PASSWORD)
     monkeypatch.delenv("SESSION_SECRET", raising=False)
-    with TestClient(app_module.app) as c:
+    with TestClient(app_module.app, base_url="https://testserver") as c:
         res = c.post("/login", json={"password": CORRECT_PASSWORD})
         assert res.status_code == 503
 
@@ -107,7 +115,7 @@ def test_login_fails_closed_without_access_password_configured(tmp_path, monkeyp
     monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
     monkeypatch.delenv("SNARF_ACCESS_PASSWORD", raising=False)
     monkeypatch.setenv("SESSION_SECRET", "a-test-secret")
-    with TestClient(app_module.app) as c:
+    with TestClient(app_module.app, base_url="https://testserver") as c:
         res = c.post("/login", json={"password": "cualquier-cosa"})
         assert res.status_code == 401
 

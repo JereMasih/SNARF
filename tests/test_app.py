@@ -21,7 +21,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(activity_log, "DEFAULT_PATH", tmp_path / "activity_log.jsonl")
     monkeypatch.setenv("SNARF_ACCESS_PASSWORD", TEST_PASSWORD)
     monkeypatch.setenv("SESSION_SECRET", "test-session-secret")
-    with TestClient(app_module.app) as c:
+    with TestClient(app_module.app, base_url="https://testserver") as c:
         # Estos tests no son sobre auth (eso está en test_web_auth.py); se
         # loguea de una vez con el flujo real para que el resto del archivo
         # pruebe el comportamiento normal de la app ya autenticada.

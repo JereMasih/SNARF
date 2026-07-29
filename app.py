@@ -88,7 +88,7 @@ def login(payload: LoginRequest):
     token = create_session_token(os.environ["SESSION_SECRET"], DEFAULT_USER_ID)
     response = JSONResponse({"status": "ok"})
     response.set_cookie(
-        SESSION_COOKIE_NAME, token, max_age=SESSION_MAX_AGE_SECONDS, httponly=True, samesite="lax"
+        SESSION_COOKIE_NAME, token, max_age=SESSION_MAX_AGE_SECONDS, httponly=True, samesite="lax", secure=True
     )
     return response
 
