@@ -214,7 +214,19 @@
        de pantalla, no por body.jarvis-mode, que no es seleccionable desde
        html) y no en cada clase suelta. Pensado para 1920×1080 real. */
     html { font-size: 18px; }
-    body.jarvis-mode .menu-btn { display: none; }
+    /* El historial de conversaciones ya es un bloque siempre visible de la
+       grilla en desktop, pero el botón hamburguesa (menuBtn) sigue siendo el
+       único camino real al menú de usuario (configuración del dashboard,
+       cerrar sesión) — ocultarlo del todo, como hacía antes, dejaba el modo
+       desktop sin ningún acceso a esos dos. Se mantiene visible; abre el
+       mismo cajón lateral de siempre, que funciona igual estando o no en
+       modo Jarvis. */
+    /* El toggle de modo (Toque/Teclado) sí se oculta: en desktop siempre se
+       arranca en modo Teclado (ver "let mode" más abajo) y la caja de texto
+       ya tiene su propio botón de micrófono al lado — el modo Toque (el
+       orbe a pantalla completa) no aporta nada ahí y el toggle quedaba
+       sobrando en la barra superior. */
+    body.jarvis-mode .mode-fab { display: none; }
     /* Ya no hay una vista "solo chat" separada en desktop — el chat vive
        siempre dentro de la grilla (ver reparentChatIntoDashboard); el modo
        enfoque cubre la misma necesidad expandiendo ese mismo bloque. */
@@ -247,9 +259,12 @@
   .dash-grid-desktop { display: none; }
 
   /* --- panel drag handle / reordering --- */
-  .dash-widget-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.15rem; }
+  .dash-widget-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.15rem; flex-shrink: 0; }
   .dash-widget-head h3 { margin: 0; }
-  .dash-widget-sub { font-size: 0.66rem; color: var(--text-dim); margin-bottom: 0.6rem; opacity: 0.85; }
+  .dash-widget-sub {
+    font-size: 0.66rem; color: var(--text-dim); margin-bottom: 0.6rem; opacity: 0.85;
+    flex-shrink: 0;
+  }
   .dash-row a, .dash-row-title a {
     color: inherit; text-decoration: none; border-bottom: 1px dotted rgba(79,216,232,0.4);
   }
@@ -262,7 +277,7 @@
     background: rgba(255,255,255,0.05); border: 1px solid rgba(79,216,232,0.3); border-radius: 6px;
     color: var(--text); font-family: inherit; font-size: 0.68rem; padding: 0.15rem 0.4rem;
   }
-  .dash-gmail-digest { margin-top: 0.7rem; padding-top: 0.6rem; border-top: 1px solid rgba(255,255,255,0.06); }
+  .dash-gmail-list { margin-top: 0.7rem; padding-top: 0.6rem; border-top: 1px solid rgba(255,255,255,0.06); }
   .dash-gmail-digest-refs { margin-top: 0.5rem; padding-top: 0.4rem; border-top: 1px dashed rgba(255,255,255,0.08); }
   .dash-mini-btn {
     background: rgba(79,216,232,0.12); border: 1px solid rgba(79,216,232,0.35); color: var(--glow-soft);
@@ -1622,14 +1637,10 @@ function driveBodyHTML(data) {
 }
 function gmailBodyHTML(data, gmailMaxResults) {
   if (!data.connected) return notConnectedBody();
-  const selector = `
-    <div class="dash-widget-config">
-      mostrar
-      <select id="gmailMaxResults">
-        ${GMAIL_MAX_RESULTS_CHOICES.map((n) => `<option value="${n}" ${n === gmailMaxResults ? "selected" : ""}>${n}</option>`).join("")}
-      </select>
-      mensajes
-    </div>`;
+  // La interpretación va primero (es lo que el fundador quiere leer
+  // apenas abre el widget); la lista de mensajes en sí, con su selector de
+  // cantidad, queda debajo — es la referencia para cuando hace falta ir a
+  // revisar un mensaje puntual, no lo primero que hace falta ver.
   const digestSection = `
     <div class="dash-gmail-digest">
       <div class="dash-widget-config">
@@ -1638,8 +1649,17 @@ function gmailBodyHTML(data, gmailMaxResults) {
       </div>
       <div id="gmailDigestContent"></div>
     </div>`;
-  if (data.error) return selector + errorBody(data.error) + digestSection;
-  if (!data.messages.length) return selector + '<div class="dash-row dash-dim">sin mensajes recientes</div>' + digestSection;
+  const selector = `
+    <div class="dash-gmail-list">
+      <div class="dash-widget-config">
+        mostrar
+        <select id="gmailMaxResults">
+          ${GMAIL_MAX_RESULTS_CHOICES.map((n) => `<option value="${n}" ${n === gmailMaxResults ? "selected" : ""}>${n}</option>`).join("")}
+        </select>
+        mensajes
+      </div>`;
+  if (data.error) return digestSection + selector + errorBody(data.error) + "</div>";
+  if (!data.messages.length) return digestSection + selector + '<div class="dash-row dash-dim">sin mensajes recientes</div></div>';
   const rows = data.messages
     .map((m) => {
       const url = `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(m.id)}`;
@@ -1647,7 +1667,7 @@ function gmailBodyHTML(data, gmailMaxResults) {
       return `<div class="dash-row-stacked"><span class="dash-row-title"><a href="${url}" target="_blank" rel="noopener">${escapeHtml(m.subject || "(sin asunto)")}</a></span><span class="dash-row-sub">${escapeHtml(meta)}</span></div>`;
     })
     .join("");
-  return selector + rows + digestSection;
+  return digestSection + selector + rows + "</div>";
 }
 function calendarBodyHTML(data) {
   if (!data.connected) return notConnectedBody();

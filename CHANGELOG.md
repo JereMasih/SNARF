@@ -394,3 +394,13 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - **Incidente real durante esta sesión**: al verificar en vivo el widget de uso, Claude Code escribió datos de prueba en el `data/usage_log.jsonl` real por error, y al intentar revertirlo con una sintaxis de `head` no soportada en macOS terminó sobreescribiendo el archivo real completo con uno vacío — perdiendo sin posibilidad de recuperación las 4304 líneas de historial real de uso acumulado. No estaba en git (gitignored a propósito), no había snapshot ni backup de ningún tipo.
 - Nuevo `snarf/runtime/data_backup.py`: respalda automáticamente memoria episódica, logs de actividad/uso/entrada, preferencias del dashboard, caché del digest de Gmail y archivos locales (no el índice de Drive, regenerable desde la fuente real) a `data_backups/`, con los últimos 14 snapshots. Se dispara al arrancar el server y cada 6 horas mientras corre.
 - 305/305 tests. Ver ADR 0042.
+
+## [2026-07-29] Desktop usable de verdad: reintento triple, widgets que no se cortan, Gmail reordenado
+
+- **Bug real, confirmado en vivo**: el reintento único de ADR 0041 no alcanzaba — el mismo `[SSL] record layer failure` podía pegarle también al reintento (falla de red genuinamente intermitente). `retry_once_with_fresh_client` pasa a `retry_with_fresh_client`, con 3 intentos en total y una pausa corta entre cada uno.
+- **Bug real de CSS**: al achicar un widget arrastrando su esquina, el título y subtítulo podían recortarse junto con el contenido. Corregido con `flex-shrink: 0` — ahora solo el cuerpo del widget se comprime/scrollea, título y subtítulo quedan siempre completos.
+- Gmail: la interpretación de la bandeja ahora va primero, la lista de mensajes (con su selector de cantidad) queda debajo — antes era al revés.
+- **Bug real preexistente, no de esta sesión**: en modo desktop, el botón que abre el menú de usuario (configuración del dashboard, cerrar sesión) estaba oculto sin ningún reemplazo — quedaban completamente inalcanzables en escritorio. Restaurado.
+- El toggle de modo Toque/Teclado se oculta en desktop (redundante ahí: la caja de texto ya tiene su propio botón de micrófono).
+- Confirmado (no es un bug nuevo): los widgets de costo y uso mostrando $0.00/0 caracteres son la consecuencia directa y esperada del incidente de ADR 0042 — el cupo real de ElevenLabs sí se muestra correctamente.
+- 305/305 tests. Ver ADR 0043.

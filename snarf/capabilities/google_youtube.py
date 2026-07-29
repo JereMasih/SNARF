@@ -2,7 +2,7 @@ from googleapiclient.discovery import build
 
 from snarf.capabilities.base import Capability
 from snarf.capabilities.google_auth import GoogleAuth
-from snarf.capabilities.google_retry import retry_once_with_fresh_client
+from snarf.capabilities.google_retry import retry_with_fresh_client
 
 
 class GoogleYouTube(Capability):
@@ -21,7 +21,7 @@ class GoogleYouTube(Capability):
             self._service = build("youtube", "v3", credentials=self._auth.credentials())
         return self._service
 
-    @retry_once_with_fresh_client
+    @retry_with_fresh_client
     def list_subscriptions(self, max_results: int = 25) -> list[dict]:
         result = self._client().subscriptions().list(part="snippet", mine=True, maxResults=max_results).execute()
         return [
@@ -32,7 +32,7 @@ class GoogleYouTube(Capability):
             for item in result.get("items", [])
         ]
 
-    @retry_once_with_fresh_client
+    @retry_with_fresh_client
     def list_liked_videos(self, max_results: int = 25) -> list[dict]:
         result = self._client().videos().list(part="snippet", myRating="like", maxResults=max_results).execute()
         return [
