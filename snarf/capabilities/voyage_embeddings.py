@@ -7,6 +7,11 @@ from snarf.telemetry import usage_tracker
 # cuenta — ver snarf/telemetry/pricing.py y el ADR que introdujo esta pieza.
 DEFAULT_MODEL = "voyage-4-lite"
 
+# La API de Voyage rechaza una sola llamada con más de 1000 textos — un
+# archivo real y grande (encontrado en producción: hasta ~10.600 chunks) la
+# supera fácil. Se parte en lotes en vez de mandarlo todo junto.
+MAX_BATCH_SIZE = 1000
+
 
 class VoyageEmbeddings(Capability):
     name = "voyage_embeddings"
@@ -32,6 +37,10 @@ class VoyageEmbeddings(Capability):
     def embed(self, texts: list[str], input_type: str = "document") -> list[list[float]]:
         if not self._client:
             raise RuntimeError("VOYAGE_API_KEY no configurada (ver .env.example).")
-        result = self._client.embed(texts, model=self.model, input_type=input_type)
-        usage_tracker.record_voyage_call(self.model, result.total_tokens)
-        return result.embeddings
+        embeddings: list[list[float]] = []
+        for start in range(0, len(texts), MAX_BATCH_SIZE):
+            batch = texts[start : start + MAX_BATCH_SIZE]
+            result = self._client.embed(batch, model=self.model, input_type=input_type)
+            usage_tracker.record_voyage_call(self.model, result.total_tokens)
+            embeddings.extend(result.embeddings)
+        return embeddings
