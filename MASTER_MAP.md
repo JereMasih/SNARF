@@ -33,7 +33,7 @@ Documentos:
 
 - FOUNDATION (vigente)
 - PROJECT_CONTEXT (vigente)
-- CHARACTER (vigente, v0.1)
+- CHARACTER (vigente, v0.2 desde el 2026-07-29 — ver ADR 0039: ingenio seco, responsabilidad propia y registro/cercanía, manteniendo explícitamente la regla anti-imitación de personajes de ficción de v0.1)
 - CONSTITUTION — nota: constitucionalmente pertenece a Governance (define autoridad, no identidad), pero vive en Identity por ahora al no existir todavía una carpeta propia; ver nota de Governance.
 
 Documentos previstos, sin crear todavía:
