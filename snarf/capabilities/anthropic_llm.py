@@ -8,6 +8,23 @@ from snarf.telemetry import usage_tracker
 DEFAULT_MODEL = "claude-sonnet-5"
 MAX_TOOL_ROUNDS = 5
 MAX_OUTPUT_TOKENS = 4096
+CACHE_TTL = "1h"
+
+
+def _mark_cache_breakpoint(message: dict) -> dict:
+    """Devuelve una copia del mensaje con cache_control en su último bloque.
+
+    No muta el mensaje original: los mensajes de entrada pueden ser
+    reutilizados por quien llama (ver EpisodicMemory.recent en el
+    orchestrator), y este marcado es efímero por-llamada.
+    """
+    content = message.get("content")
+    blocks = [{"type": "text", "text": content}] if isinstance(content, str) else [
+        dict(block) if isinstance(block, dict) else block for block in content
+    ]
+    if blocks and isinstance(blocks[-1], dict):
+        blocks[-1] = {**blocks[-1], "cache_control": {"type": "ephemeral", "ttl": CACHE_TTL}}
+    return {**message, "content": blocks}
 
 
 class AnthropicLLM(Capability):
@@ -54,11 +71,23 @@ class AnthropicLLM(Capability):
         # también las tools que lo preceden (mismo orden de renderizado:
         # tools -> system -> messages), y no cuesta nada si el prompt es
         # demasiado corto para cachear (simplemente no cachea, sin error).
-        cached_system = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+        # TTL extendido (1h en vez del default de 5 min): Snarf llama a la
+        # API directa, no la suscripción de Claude, así que sin esto el
+        # cache expira rápido entre usos espaciados del fundador.
+        cached_system = [
+            {"type": "text", "text": system, "cache_control": {"type": "ephemeral", "ttl": CACHE_TTL}}
+        ]
 
         conversation = list(messages)
         for _ in range(MAX_TOOL_ROUNDS):
-            kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=conversation)
+            call_messages = list(conversation)
+            if call_messages:
+                # Segundo punto de cacheo: el historial de la conversación
+                # (reconstruido igual en cada turno desde EpisodicMemory) y,
+                # dentro de una misma llamada, cada ronda del loop de
+                # herramientas — hoy se reprocesaba entero y sin cachear.
+                call_messages[-1] = _mark_cache_breakpoint(call_messages[-1])
+            kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=call_messages)
             if tools:
                 kwargs["tools"] = tools
             response = self._client.messages.create(**kwargs)

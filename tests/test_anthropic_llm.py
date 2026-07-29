@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from snarf.capabilities.anthropic_llm import MAX_OUTPUT_TOKENS, AnthropicLLM
+from snarf.capabilities.anthropic_llm import CACHE_TTL, MAX_OUTPUT_TOKENS, AnthropicLLM
 
 
 class FakeTextBlock:
@@ -10,8 +10,25 @@ class FakeTextBlock:
         self.text = text
 
 
+class FakeToolUseBlock:
+    type = "tool_use"
+
+    def __init__(self, id, name, input):
+        self.id = id
+        self.name = name
+        self.input = input
+
+
 def fake_response(stop_reason, text, usage=None):
     return SimpleNamespace(stop_reason=stop_reason, content=[FakeTextBlock(text)], usage=usage)
+
+
+def fake_tool_use_response(tool_use_id, tool_name, tool_input):
+    return SimpleNamespace(
+        stop_reason="tool_use",
+        content=[FakeToolUseBlock(tool_use_id, tool_name, tool_input)],
+        usage=None,
+    )
 
 
 class FakeMessages:
@@ -68,8 +85,76 @@ def test_generate_sends_system_prompt_with_cache_control():
     llm.generate(system="el prompt de identidad", messages=[{"role": "user", "content": "hola"}])
     sent_system = llm._client.messages.calls[0]["system"]
     assert sent_system == [
-        {"type": "text", "text": "el prompt de identidad", "cache_control": {"type": "ephemeral"}}
+        {
+            "type": "text",
+            "text": "el prompt de identidad",
+            "cache_control": {"type": "ephemeral", "ttl": CACHE_TTL},
+        }
     ]
+
+
+def test_generate_marks_the_last_message_as_a_cache_breakpoint():
+    """El historial de conversación se reconstruye idéntico en cada turno
+    (EpisodicMemory.recent), así que también es cacheable — sin esto se
+    reprocesaba entero y sin descuento en cada mensaje."""
+    llm = make_llm([fake_response("end_turn", "ok")])
+    llm.generate(
+        system="sys",
+        messages=[
+            {"role": "user", "content": "primer turno"},
+            {"role": "assistant", "content": "respuesta previa"},
+            {"role": "user", "content": "turno actual"},
+        ],
+    )
+    sent_messages = llm._client.messages.calls[0]["messages"]
+    assert sent_messages[0] == {"role": "user", "content": "primer turno"}
+    assert sent_messages[-1] == {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "turno actual", "cache_control": {"type": "ephemeral", "ttl": CACHE_TTL}}
+        ],
+    }
+
+
+def test_generate_does_not_mutate_the_caller_supplied_messages_list():
+    """El marcado de cache_control debe ser efímero por-llamada: mutar el
+    dict original rompería al orchestrator, que reconstruye `messages` desde
+    memoria y podría reusar esas mismas referencias."""
+    llm = make_llm([fake_response("end_turn", "ok")])
+    original_messages = [{"role": "user", "content": "hola"}]
+    llm.generate(system="sys", messages=original_messages)
+    assert original_messages == [{"role": "user", "content": "hola"}]
+
+
+def test_generate_marks_each_tool_loop_round_without_leaking_cache_control_between_rounds():
+    """Cada ronda del loop de herramientas reprocesaba la conversación entera
+    sin cachear, incluso dentro de la misma llamada — ahora cada ronda marca
+    su propio último mensaje como punto de cacheo."""
+    llm = make_llm(
+        [
+            fake_tool_use_response("call-1", "some_tool", {}),
+            fake_response("end_turn", "listo"),
+        ]
+    )
+    result = llm.generate(
+        system="sys",
+        messages=[{"role": "user", "content": "hacé algo"}],
+        tools=[{"name": "some_tool"}],
+        tool_handler=lambda name, input: {"ok": True},
+    )
+    assert result == "listo"
+
+    first_call_messages = llm._client.messages.calls[0]["messages"]
+    assert first_call_messages[-1]["content"] == [
+        {"type": "text", "text": "hacé algo", "cache_control": {"type": "ephemeral", "ttl": CACHE_TTL}}
+    ]
+
+    second_call_messages = llm._client.messages.calls[1]["messages"]
+    # El mensaje de assistant (tool_use) del medio no lleva cache_control propio.
+    assert second_call_messages[1]["content"][0].type == "tool_use"
+    tool_result_block = second_call_messages[-1]["content"][-1]
+    assert tool_result_block["cache_control"] == {"type": "ephemeral", "ttl": CACHE_TTL}
+    assert tool_result_block["type"] == "tool_result"
 
 
 def test_generate_records_token_usage_for_cost_tracking(monkeypatch):
