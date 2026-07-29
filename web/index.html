@@ -358,7 +358,12 @@
        brain-color-* real (ver brainColorClassFor en el JS) — si esta regla
        fijara un color acá, pisaría a esas clases por venir después en la
        hoja de estilos (misma especificidad, gana la última declarada). */
-    fill: currentColor; fill-opacity: 0.2; stroke: currentColor; stroke-width: 1.5;
+    /* stroke-width bajo + stroke-opacity reducida + resplandor permanente:
+       menos "círculo de diagrama de red" de borde duro, más orbe de luz que
+       se funde con la malla — el aspecto "rústico" reportado por el
+       fundador venía de acá, no solo de las líneas rectas. */
+    fill: currentColor; fill-opacity: 0.22; stroke: currentColor; stroke-width: 1; stroke-opacity: 0.6;
+    filter: drop-shadow(0 0 6px currentColor);
     transform-origin: center; transform-box: fill-box;
   }
   .brain-node-center { fill-opacity: 0.25; stroke-width: 2.2; filter: drop-shadow(0 0 14px var(--brain-violet)); }
@@ -463,7 +468,11 @@
   .brain-feed-row .dash-dot { align-self: center; }
   .brain-feed-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .brain-feed-time { flex-shrink: 0; font-size: 0.68rem; color: var(--text-dim); }
-  .brain-edge { stroke: var(--glow-dim); stroke-opacity: 0.35; stroke-width: 1; fill: none; }
+  /* Opacidad baja a propósito: la línea recta centro-nodo tiene que existir
+     (el pulso puntual viaja por ella, animateMotion/mpath) pero en reposo no
+     debe leerse como un diagrama de red — la malla orgánica de arriba es la
+     que tiene que dominar visualmente. */
+  .brain-edge { stroke: var(--glow-dim); stroke-opacity: 0.13; stroke-width: 0.7; fill: none; }
   .brain-node-label { fill: var(--text-dim); font-size: 11px; text-anchor: middle; }
   /* Pulso puntual por evento real — currentColor toma el color propio del
      nodo de origen (ver brainColorClassFor), salvo que sea un error o un
@@ -2255,9 +2264,14 @@ function triggerBrainCameraFocus(nodeId) {
   const cx = parseFloat(node.getAttribute("cx"));
   const cy = parseFloat(node.getAttribute("cy"));
   if (Number.isNaN(cx) || Number.isNaN(cy)) return;
-  brainCamera.targetX = cx;
-  brainCamera.targetY = cy;
-  brainCamera.targetZoom = 1.55;
+  // El origen de la escala se mezcla hacia el centro (no va 100% al nodo) y
+  // el zoom es más moderado — un foco total sobre un nodo del anillo
+  // externo empuja el lado opuesto del grafo (y sus etiquetas) fuera del
+  // recorte del contenedor. Bug real reportado por el fundador, corregido
+  // acá en vez de solo en el estilo.
+  brainCamera.targetX = 250 + (cx - 250) * 0.32;
+  brainCamera.targetY = 250 + (cy - 250) * 0.32;
+  brainCamera.targetZoom = 1.14;
   if (brainFocusResetTimer) clearTimeout(brainFocusResetTimer);
   brainFocusResetTimer = setTimeout(() => {
     brainCamera.targetX = 250;
