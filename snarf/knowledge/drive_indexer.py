@@ -138,6 +138,23 @@ class DriveIndexer:
         with self._lock:
             return dict(self._status)
 
+    def manifest_summary(self) -> dict:
+        """Cuenta de archivos por estado en el manifiesto ya persistido en
+        disco — no dispara ningún escaneo nuevo. Base real para el nodo de
+        Conocimiento del cerebro de Snarf (ver ADR pendiente de registrar)."""
+        data = self._manifest.load()
+        counts = {STATUS_INDEXED: 0, STATUS_ERROR: 0, STATUS_SKIPPED_UNSUPPORTED: 0}
+        for entry in data.values():
+            status = entry.get("status")
+            if status in counts:
+                counts[status] += 1
+        return {
+            "indexed": counts[STATUS_INDEXED],
+            "error": counts[STATUS_ERROR],
+            "skipped_unsupported": counts[STATUS_SKIPPED_UNSUPPORTED],
+            "total": len(data),
+        }
+
     def start(self, query: str | None = None) -> dict:
         query = _resolve_query(query)
         with self._lock:

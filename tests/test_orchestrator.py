@@ -1,6 +1,7 @@
 import pytest
 
 from snarf.core.orchestrator import Orchestrator
+from snarf.knowledge.extraction import ExtractionResult
 
 
 @pytest.fixture
@@ -15,6 +16,21 @@ def test_echo_mode_without_api_key_and_persists_to_memory(orchestrator):
     response = orchestrator.handle("text", "hola snarf", conversation_id="c1")
     assert "hola snarf" in response
     assert "modo eco" in response
+    assert orchestrator.memory.get_conversation("c1")[0]["response"] == response
+
+
+def test_handle_degrades_gracefully_when_the_llm_call_fails(orchestrator, monkeypatch):
+    # Regresión: un fallo real del LLM (crédito agotado, rate limit, red)
+    # tiraba un 500 crudo hasta /send en vez de degradar como /transcribe.
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+
+    def boom(**kwargs):
+        raise RuntimeError("Your credit balance is too low")
+
+    monkeypatch.setattr(orchestrator._llm, "generate", boom)
+    response = orchestrator.handle("text", "hola snarf", conversation_id="c1")
+    assert "error real del LLM" in response
+    assert "credit balance" in response
     assert orchestrator.memory.get_conversation("c1")[0]["response"] == response
 
 
@@ -127,6 +143,33 @@ def test_gmail_summarize_inbox_force_refresh_ignores_cache(orchestrator, monkeyp
     monkeypatch.setattr(orchestrator.gmail_digest, "cached_digest", lambda: cached)
     monkeypatch.setattr(orchestrator.gmail_digest, "refresh", lambda **kw: fresh)
     assert orchestrator._handle_tool("gmail_summarize_inbox", {"force_refresh": True}) == fresh
+
+
+def test_drive_read_file_delegates_to_the_content_extractor_not_raw_bytes(orchestrator, monkeypatch):
+    # Regresión: antes llamaba directo a GoogleDrive.read_file_text(), que
+    # decodifica cualquier binario (PDF, Word, imagen) como UTF-8 a lo
+    # bruto — glifos y bytes de imagen en vez de texto real.
+    received = {}
+
+    def fake_extract(file):
+        received.update(file)
+        return ExtractionResult(text="contenido real extraído del pdf")
+
+    monkeypatch.setattr(orchestrator._content_extractor, "extract", fake_extract)
+    result = orchestrator._handle_tool("drive_read_file", {"file_id": "f1", "mime_type": "application/pdf"})
+
+    assert result == "contenido real extraído del pdf"
+    assert received == {"id": "f1", "mimeType": "application/pdf"}
+
+
+def test_drive_read_file_reports_extraction_failure_explicitly(orchestrator, monkeypatch):
+    monkeypatch.setattr(
+        orchestrator._content_extractor,
+        "extract",
+        lambda file: ExtractionResult(skipped_reason="PDF sin texto extraíble (ni nativo ni OCR)"),
+    )
+    result = orchestrator._handle_tool("drive_read_file", {"file_id": "f1", "mime_type": "application/pdf"})
+    assert result == {"error": "PDF sin texto extraíble (ni nativo ni OCR)"}
 
 
 def test_drive_index_scan_delegates_to_the_indexer_with_the_given_query(orchestrator, monkeypatch):

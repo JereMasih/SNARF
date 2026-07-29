@@ -103,6 +103,19 @@ def test_extract_pdf_uses_pdf_extractor():
     assert result.text == "texto extraído"
 
 
+def test_extract_pdf_with_no_usable_text_is_reported_explicitly_not_indexed_empty():
+    # Regresión: un PDF escaneado sin capa de texto (ni nativa ni por OCR)
+    # devuelve "" — antes eso se indexaba en silencio como si hubiera
+    # funcionado; ahora tiene que quedar como no soportado, explícito.
+    extractor = make_extractor(
+        drive=FakeDrive(bytes_map={"p1": b"pdf-bytes"}),
+        pdf_extractor=FakePdf(text=""),
+    )
+    result = extractor.extract({"id": "p1", "mimeType": "application/pdf"})
+    assert not result.ok
+    assert "sin texto extraíble" in result.skipped_reason
+
+
 def test_extract_docx_uses_docx_extractor():
     extractor = make_extractor(drive=FakeDrive(bytes_map={"d1": b"docx-bytes"}))
     result = extractor.extract(

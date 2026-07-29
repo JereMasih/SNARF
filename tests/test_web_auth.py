@@ -75,6 +75,20 @@ def test_login_with_correct_password_grants_full_access(raw_client):
     assert send_res.status_code == 200
 
 
+def test_login_with_non_ascii_password_succeeds(tmp_path, monkeypatch):
+    # Regresión: secrets.compare_digest no acepta str no-ASCII directamente
+    # (tildes, ñ) — antes tiraba un 500 en vez de comparar la contraseña.
+    non_ascii_password = "contraseña-con-ñ-y-tildé"
+    monkeypatch.setattr(app_module.orchestrator, "_memory", EpisodicMemory(path=tmp_path / "memory.jsonl"))
+    monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
+    monkeypatch.setenv("SNARF_ACCESS_PASSWORD", non_ascii_password)
+    monkeypatch.setenv("SESSION_SECRET", "a-test-secret")
+    with TestClient(app_module.app, base_url="https://testserver") as c:
+        res = c.post("/login", json={"password": non_ascii_password})
+        assert res.status_code == 200
+        assert SESSION_COOKIE_NAME in c.cookies
+
+
 def test_session_cookie_is_marked_secure(raw_client):
     # Defensa en profundidad: aunque hoy Tailscale ya sirve todo por HTTPS
     # (ADR 0008), la cookie de sesión no debería depender únicamente de eso.

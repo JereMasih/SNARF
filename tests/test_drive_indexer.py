@@ -3,6 +3,7 @@ import time
 
 from snarf.knowledge.drive_indexer import FREE_TIER_DRIVE_QUERY, DriveIndexer
 from snarf.knowledge.extraction import ExtractionResult
+from snarf.knowledge.manifest import STATUS_ERROR, STATUS_INDEXED, STATUS_SKIPPED_UNSUPPORTED, IndexManifest
 
 
 class FakeDrive:
@@ -261,3 +262,27 @@ def test_catalog_unsupported_groups_by_real_mime_type_and_persists_a_registry(tm
     saved = json.loads((tmp_path / "unsupported_catalog.json").read_text(encoding="utf-8"))
     assert len(saved["files"]) == 3
     assert {f["id"] for f in saved["files"]} == {"1", "2", "3"}
+
+
+def test_manifest_summary_counts_files_by_status_without_scanning(tmp_path):
+    manifest_path = tmp_path / "manifest.json"
+    manifest = IndexManifest(manifest_path)
+    data = {}
+    manifest.mark(data, "1", "t1", STATUS_INDEXED, chunk_count=3)
+    manifest.mark(data, "2", "t1", STATUS_INDEXED, chunk_count=1)
+    manifest.mark(data, "3", "t1", STATUS_ERROR, reason="boom")
+    manifest.mark(data, "4", "t1", STATUS_SKIPPED_UNSUPPORTED)
+    manifest.save(data)
+    indexer = DriveIndexer(FakeDrive([]), FakeExtractor({}), FakeEmbeddings(), FakeVectorStore(), manifest_path)
+
+    summary = indexer.manifest_summary()
+
+    assert summary == {"indexed": 2, "error": 1, "skipped_unsupported": 1, "total": 4}
+
+
+def test_manifest_summary_with_no_manifest_file_is_all_zeroes(tmp_path):
+    indexer = DriveIndexer(FakeDrive([]), FakeExtractor({}), FakeEmbeddings(), FakeVectorStore(), tmp_path / "manifest.json")
+
+    summary = indexer.manifest_summary()
+
+    assert summary == {"indexed": 0, "error": 0, "skipped_unsupported": 0, "total": 0}

@@ -85,7 +85,10 @@ class ContentExtractor:
                 return ExtractionResult(self._drive.read_file_text(file_id, mime))
             extractor = self._binary_extractors.get(mime)
             if extractor is not None:
-                return ExtractionResult(extractor.extract_text(self._drive.read_file_bytes(file_id)))
+                text = extractor.extract_text(self._drive.read_file_bytes(file_id))
+                if mime == PDF_MIME and not text.strip():
+                    return ExtractionResult(skipped_reason="PDF sin texto extraíble (ni nativo ni OCR)")
+                return ExtractionResult(text)
             if mime.startswith("image/"):
                 return self._extract_image(file_id, mime)
             if mime.startswith("audio/"):

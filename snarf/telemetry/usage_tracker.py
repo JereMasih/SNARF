@@ -75,6 +75,10 @@ def _cumulative_voyage_tokens(path: Path | None) -> int:
     return sum(e.get("tokens", 0) for e in _read_all(path) if e.get("vendor") == "voyage")
 
 
+def recent(n: int = 100, path: Path | None = None) -> list[dict]:
+    return _read_all(path)[-n:]
+
+
 def summarize(path: Path | None = None, recent_days: int = 7) -> dict:
     entries = _read_all(path)
     now = time.time()

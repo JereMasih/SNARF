@@ -155,7 +155,7 @@ TOOLS = [
     },
     {
         "name": "drive_read_file",
-        "description": "Lee el contenido de texto de un archivo de Drive dado su id y mimeType (solo texto: Google Docs, Sheets, texto plano).",
+        "description": "Lee el contenido de un archivo de Drive dado su id y mimeType: texto plano/Google Docs/Sheets directo, PDF/Word/PowerPoint/Excel extraídos (con OCR automático si el PDF es un escaneo sin texto real), descripción por visión si es imagen, transcripción si es audio o video.",
         "input_schema": {
             "type": "object",
             "properties": {"file_id": {"type": "string"}, "mime_type": {"type": "string"}},
@@ -544,6 +544,7 @@ class Orchestrator:
             pptx_extractor=PptxExtractor(),
             xlsx_extractor=XlsxExtractor(),
         )
+        self._content_extractor = content_extractor
         user_index_dir = DRIVE_INDEX_DATA_DIR / user_id
         self._drive_indexer = DriveIndexer(
             drive=self._drive,
@@ -569,7 +570,7 @@ class Orchestrator:
             "get_conversation": lambda i: self._memory.get_conversation(i.get("conversation_id", "")),
             "search_memory": lambda i: self._memory.search(i.get("query", "")),
             "drive_list_files": lambda i: self._drive.list_files(page_size=i.get("page_size", 50), query=i.get("query")),
-            "drive_read_file": lambda i: self._drive.read_file_text(i["file_id"], i["mime_type"]),
+            "drive_read_file": lambda i: self._read_drive_file(i["file_id"], i["mime_type"]),
             "drive_create_folder": lambda i: self._drive.create_folder(i["name"], parent_id=i.get("parent_id")),
             "drive_move_file": lambda i: self._drive.move_file(i["file_id"], i["new_parent_id"]),
             "gmail_list_messages": lambda i: self._gmail.list_messages(max_results=i.get("max_results", 10), query=i.get("query")),
@@ -652,6 +653,19 @@ class Orchestrator:
 
     def warmup(self) -> None:
         self._llm.warmup()
+
+    def _read_drive_file(self, file_id: str, mime_type: str) -> str | dict:
+        # Antes llamaba directo a GoogleDrive.read_file_text() (texto plano /
+        # Google Docs, decodifica bytes crudos como UTF-8 para cualquier otra
+        # cosa) — un PDF, Word, imagen o audio se leía como bytes de glifo o
+        # binario ilegible. ContentExtractor ya sabe extraer cada tipo de
+        # verdad (mismo pipeline que la indexación de Drive, ADR 0028) —
+        # reusarlo acá cierra esa brecha en vez de mantener dos caminos que
+        # pueden desalinearse (ADR pendiente de registrar).
+        result = self._content_extractor.extract({"id": file_id, "mimeType": mime_type})
+        if not result.ok:
+            return {"error": result.skipped_reason}
+        return result.text
 
     @staticmethod
     def _pending(preview: dict) -> dict:
@@ -768,9 +782,15 @@ class Orchestrator:
                 messages.append({"role": "user", "content": entry["input"]})
                 messages.append({"role": "assistant", "content": entry["response"]})
             messages.append({"role": "user", "content": user_input})
-            response = self._llm.generate(
-                system=system, messages=messages, tools=TOOLS, tool_handler=self._handle_tool
-            )
+            try:
+                response = self._llm.generate(
+                    system=system, messages=messages, tools=TOOLS, tool_handler=self._handle_tool
+                )
+            except Exception as exc:
+                # Antes esto tiraba un 500 crudo hasta /send — un fallo real
+                # del LLM (crédito agotado, rate limit, red) degrada con
+                # gracia igual que /transcribe, en vez de romper la request.
+                response = f"[error real del LLM, no pude responder: {exc}]"
 
         self._memory.append(channel_name, user_input, response, conversation_id=conversation_id)
         return response

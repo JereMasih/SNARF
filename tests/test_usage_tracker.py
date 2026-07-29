@@ -82,3 +82,16 @@ def test_summarize_with_no_entries_reports_zeroes(tmp_path):
     summary = usage_tracker.summarize(path=path)
     assert summary["total_usd"] == 0
     assert summary["total_calls"] == 0
+
+
+def test_recent_returns_only_the_last_n_entries(tmp_path):
+    path = tmp_path / "usage.jsonl"
+    for i in range(5):
+        usage_tracker.record_voyage_call("voyage-4-lite", tokens=i, path=path)
+    entries = usage_tracker.recent(n=2, path=path)
+    assert [e["tokens"] for e in entries] == [3, 4]
+
+
+def test_recent_with_no_entries_is_empty(tmp_path):
+    path = tmp_path / "no_existe.jsonl"
+    assert usage_tracker.recent(path=path) == []

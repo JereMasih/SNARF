@@ -1,6 +1,7 @@
 import base64
 import os
 import socket
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -16,7 +17,8 @@ from snarf.capabilities.elevenlabs_tts import ElevenLabsTTS
 from snarf.capabilities.google_auth import TOKENS_DIR as GOOGLE_TOKENS_DIR
 from snarf.core.orchestrator import DEFAULT_USER_ID, LOCAL_FILES_DATA_DIR, Orchestrator
 from snarf.runtime.dashboard_prefs import load_prefs, save_prefs
-from snarf.telemetry import activity_log, usage_tracker
+from snarf.knowledge.extraction import categorize_mime
+from snarf.telemetry import activity_log, brain, input_log, usage_tracker
 from snarf.runtime.web_auth import (
     SESSION_COOKIE_NAME,
     SESSION_MAX_AGE_SECONDS,
@@ -116,6 +118,7 @@ async def transcribe(file: UploadFile, user_id: str = Depends(require_user)):
     audio_bytes = await file.read()
     if len(audio_bytes) < 2000:
         return {"transcript": ""}
+    input_log.record("voice")
     try:
         text = stt.transcribe(audio_bytes, filename=file.filename or "audio.webm")
     except Exception as exc:
@@ -126,6 +129,7 @@ async def transcribe(file: UploadFile, user_id: str = Depends(require_user)):
 
 @app.post("/send", response_model=SendResponse)
 def send(payload: SendRequest, user_id: str = Depends(require_user)):
+    input_log.record("text")
     response_text = orchestrator.handle("visual", payload.text, conversation_id=payload.conversation_id)
     return SendResponse(response=response_text)
 
@@ -144,6 +148,7 @@ async def upload_file(file: UploadFile, user_id: str = Depends(require_user)):
         raise HTTPException(400, "Google no conectado")
     content = await file.read()
     mime_type = file.content_type or "application/octet-stream"
+    input_log.record("file", category=categorize_mime(mime_type))
     try:
         folder_id = orchestrator.document_publisher.folder_id()
         created = orchestrator.drive.upload_file(file.filename or "archivo", content, mime_type, parent_id=folder_id)
@@ -201,6 +206,26 @@ def dashboard_activity(user_id: str = Depends(require_user)):
     # base para una futura visualización tipo "cerebro" de Snarf (ver
     # Roadmaps en MASTER_MAP.md). Todavía sin widget visual, solo el dato.
     return {"stats": activity_log.stats(), "recent": activity_log.recent(50)}
+
+
+@app.get("/dashboard/brain")
+def dashboard_brain(since: float | None = None, user_id: str = Depends(require_user)):
+    # Grafo del "cerebro de Snarf": combina activity_log (herramientas
+    # despachadas por el Orchestrator), usage_log (llamadas a Anthropic/
+    # ElevenLabs/Voyage, que no tienen tool_name propio), input_log (texto/
+    # voz/archivo entrando por /send, /transcribe, /files/upload) y el
+    # manifiesto de indexación ya persistido. `since` es siempre el
+    # `server_time` de la respuesta anterior, no un timestamp de evento —
+    # así el filtro > nunca pierde ni duplica eventos entre polls.
+    manifest_summary = orchestrator.drive_indexer.manifest_summary()
+    snap = brain.snapshot(
+        activity_log.recent(n=10000),
+        usage_tracker.recent(n=10000),
+        input_log.recent(n=10000),
+        manifest_summary,
+        since=since,
+    )
+    return {"server_time": time.time(), **snap}
 
 
 @app.get("/dashboard/preferences")

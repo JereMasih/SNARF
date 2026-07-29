@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 
 import app as app_module
 from snarf.memory.episodic import EpisodicMemory
-from snarf.telemetry import activity_log, usage_tracker
+from snarf.telemetry import activity_log, input_log, usage_tracker
 
 TEST_PASSWORD = "test-password-for-pytest"
 
@@ -19,6 +19,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module.tts, "_api_key", None)
     monkeypatch.setattr(usage_tracker, "DEFAULT_PATH", tmp_path / "usage_log.jsonl")
     monkeypatch.setattr(activity_log, "DEFAULT_PATH", tmp_path / "activity_log.jsonl")
+    monkeypatch.setattr(input_log, "DEFAULT_PATH", tmp_path / "input_log.jsonl")
     monkeypatch.setenv("SNARF_ACCESS_PASSWORD", TEST_PASSWORD)
     monkeypatch.setenv("SESSION_SECRET", "test-session-secret")
     with TestClient(app_module.app, base_url="https://testserver") as c:
@@ -48,6 +49,13 @@ def test_send_echo_mode_roundtrip(client):
     assert "hola" in res.json()["response"]
 
 
+def test_send_records_a_text_input_log_entry(client):
+    client.post("/send", json={"text": "hola", "conversation_id": "abc"})
+    entries = input_log.recent()
+    assert len(entries) == 1
+    assert entries[0]["channel"] == "text"
+
+
 def test_conversations_list_reflects_appended_entries(client):
     client.post("/send", json={"text": "primer mensaje", "conversation_id": "conv-1"})
     res = client.get("/conversations")
@@ -71,6 +79,15 @@ def test_transcribe_without_credentials_returns_empty_transcript(client):
     assert res.json() == {"transcript": ""}
 
 
+def test_transcribe_records_a_voice_input_log_entry_for_real_audio(client, monkeypatch):
+    monkeypatch.setattr(app_module.stt, "_api_key", "fake-key-for-test")
+    monkeypatch.setattr(app_module.stt, "transcribe", lambda *a, **kw: "texto transcripto")
+    client.post("/transcribe", files={"file": ("audio.webm", b"x" * 5000, "audio/webm")})
+    entries = input_log.recent()
+    assert len(entries) == 1
+    assert entries[0]["channel"] == "voice"
+
+
 def test_transcribe_rejects_too_short_audio(client, monkeypatch):
     # Con credenciales (simuladas) presentes, el guard de tamaño mínimo debe
     # cortar antes de siquiera intentar llamar a la API de ElevenLabs.
@@ -78,6 +95,12 @@ def test_transcribe_rejects_too_short_audio(client, monkeypatch):
     res = client.post("/transcribe", files={"file": ("audio.webm", b"short", "audio/webm")})
     assert res.status_code == 200
     assert res.json() == {"transcript": ""}
+
+
+def test_transcribe_does_not_record_input_log_entry_for_too_short_audio(client, monkeypatch):
+    monkeypatch.setattr(app_module.stt, "_api_key", "fake-key-for-test")
+    client.post("/transcribe", files={"file": ("audio.webm", b"short", "audio/webm")})
+    assert input_log.recent() == []
 
 
 def test_tts_without_credentials_returns_no_audio(client):
@@ -120,6 +143,41 @@ def test_dashboard_summary_reports_google_connected_when_token_exists(client, tm
     assert res.json()["capabilities"]["google_connected"] is True
 
 
+def test_dashboard_brain_returns_nodes_and_events(client, monkeypatch):
+    monkeypatch.setattr(
+        app_module.orchestrator.drive_indexer,
+        "manifest_summary",
+        lambda: {"indexed": 0, "error": 0, "skipped_unsupported": 0, "total": 0},
+    )
+    activity_log.record("drive_list_files", "ok")
+    usage_tracker.record_voyage_call("voyage-4-lite", tokens=100)
+
+    res = client.get("/dashboard/brain")
+    assert res.status_code == 200
+    data = res.json()
+
+    assert "server_time" in data
+    assert data["nodes"]["drive"]["count"] == 1
+    assert data["nodes"]["knowledge"]["count"] == 1
+    assert len(data["events"]) == 2
+
+
+def test_dashboard_brain_since_param_filters_to_new_events_only(client, monkeypatch):
+    monkeypatch.setattr(
+        app_module.orchestrator.drive_indexer,
+        "manifest_summary",
+        lambda: {"indexed": 0, "error": 0, "skipped_unsupported": 0, "total": 0},
+    )
+    activity_log.record("drive_list_files", "ok")
+    first = client.get("/dashboard/brain").json()
+
+    activity_log.record("gmail_list_messages", "ok")
+    second = client.get(f"/dashboard/brain?since={first['server_time']}").json()
+
+    assert len(second["events"]) == 1
+    assert second["events"][0]["node"] == "gmail"
+
+
 def test_dashboard_preferences_defaults_before_any_save(client, tmp_path, monkeypatch):
     from snarf.runtime import dashboard_prefs
 
@@ -127,7 +185,7 @@ def test_dashboard_preferences_defaults_before_any_save(client, tmp_path, monkey
     res = client.get("/dashboard/preferences")
     assert res.status_code == 200
     data = res.json()
-    assert data["panel_order"] == ["system", "conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube"]
+    assert data["panel_order"] == ["system", "conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube", "brain"]
     assert all(data["visible_widgets"].values())
 
 
@@ -286,6 +344,23 @@ def test_upload_file_saves_to_drive_and_indexes_it(client, connected_google_toke
     assert data["indexed"] is True
     assert data["webViewLink"] == "http://x"
     assert "analysis" not in data
+
+
+def test_upload_file_records_a_file_input_log_entry_with_its_real_category(client, connected_google_token, monkeypatch):
+    monkeypatch.setattr(app_module.orchestrator.document_publisher, "folder_id", lambda: "folder-1")
+    monkeypatch.setattr(
+        app_module.orchestrator.drive,
+        "upload_file",
+        lambda *a, **kw: {"id": "f1", "name": "a.png", "mimeType": "image/png", "modifiedTime": "t1", "webViewLink": "http://x"},
+    )
+    monkeypatch.setattr(app_module.orchestrator.drive_indexer, "index_file", lambda file: {"status": "indexed"})
+
+    client.post("/files/upload", files={"file": ("a.png", b"contenido", "image/png")})
+
+    entries = input_log.recent()
+    assert len(entries) == 1
+    assert entries[0]["channel"] == "file"
+    assert entries[0]["category"] == "image"
 
 
 def test_upload_image_returns_the_stored_analysis_text(client, connected_google_token, monkeypatch):

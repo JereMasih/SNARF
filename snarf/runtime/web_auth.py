@@ -31,7 +31,10 @@ def password_matches(candidate: str) -> bool:
     expected = os.environ.get("SNARF_ACCESS_PASSWORD")
     if not expected:
         return False
-    return secrets.compare_digest(candidate, expected)
+    # secrets.compare_digest no acepta str con caracteres no-ASCII (ej. tildes,
+    # ñ) — codificar a bytes lo soporta sin perder la comparación a tiempo
+    # constante.
+    return secrets.compare_digest(candidate.encode("utf-8"), expected.encode("utf-8"))
 
 
 def require_user(snarf_session: str | None = Cookie(default=None)) -> str:

@@ -12,6 +12,20 @@
     --text-dim: #6f8891;
     --text: #d7eef2;
     --error: #e85a5a;
+
+    /* Paleta real de la marca del fundador ("PALETA DE COLORES JERE MASIH
+       TRADER", encontrada en su Drive indexado) — reusada tal cual, no
+       inventada. Solo el cerebro de Snarf la usa; el resto de la interfaz
+       se queda monocromática cian a propósito. */
+    --brain-magenta: #ff00ee;
+    --brain-aqua: #00ffde;
+    --brain-violet: #a124ff;
+    --brain-violet-dark: #16003e;
+    --brain-green: #00ff0a;
+    --brain-red: #ff2952;
+    --brain-yellow: #ffe600;
+    --brain-white: #ffffff;
+    --brain-grey: #6b7684;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html { background: #000; height: 100%; overflow-x: hidden; overscroll-behavior: none; }
@@ -293,6 +307,116 @@
   }
   .settings-toggle.on { background: rgba(79,216,232,0.25); border-color: var(--glow); }
   .settings-toggle.on::after { transform: translateX(15px); background: var(--glow); }
+
+  /* --- cerebro de Snarf --- */
+  .brain-mini { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+  .brain-mini svg { width: 100%; max-width: 160px; height: auto; }
+  .brain-mini-stat { font-size: 0.78rem; color: var(--text); text-align: center; }
+  .brain-mini-stat-sub { font-size: 0.68rem; color: var(--text-dim); text-align: center; }
+
+  /* El color de cada nodo/edge viene de `color` (currentColor) — una clase
+     por Capacidad/tier se lo asigna una sola vez al construir el grafo, acá
+     abajo solo se define la paleta en sí. */
+  .brain-color-aqua { color: var(--brain-aqua); }
+  .brain-color-magenta { color: var(--brain-magenta); }
+  .brain-color-violet { color: var(--brain-violet); }
+  .brain-color-grey { color: var(--brain-grey); }
+  .brain-color-white { color: var(--brain-white); }
+
+  .brain-node {
+    /* Sin color por defecto a propósito: cada nodo siempre lleva una clase
+       brain-color-* real (ver brainColorClassFor en el JS) — si esta regla
+       fijara un color acá, pisaría a esas clases por venir después en la
+       hoja de estilos (misma especificidad, gana la última declarada). */
+    fill: currentColor; fill-opacity: 0.2; stroke: currentColor; stroke-width: 1.5;
+    transform-origin: center; transform-box: fill-box;
+  }
+  .brain-node-center { fill-opacity: 0.25; stroke-width: 2.2; filter: drop-shadow(0 0 9px var(--brain-violet)); }
+  .brain-node-specialist { stroke-dasharray: 2 2; }
+  /* Nunca tuvo actividad real registrada — ni activo ni en espera, un nodo
+     "fantasma": potencial todavía sin usar, no un estado inventado. */
+  .brain-node-ghost { color: var(--brain-grey) !important; fill-opacity: 0.05; stroke-dasharray: 1 4; opacity: 0.4; animation: none !important; }
+  .brain-ring { fill: none; stroke: rgba(150,170,190,0.16); stroke-width: 1; stroke-dasharray: 1 5; }
+
+  /* Latido lento y tenue: el estado por defecto de cualquier nodo con
+     historia real pero sin actividad reciente — "en espera", nunca del
+     todo apagado. */
+  @keyframes brain-breathe { 0%, 100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 0.85; transform: scale(1.04); } }
+  .brain-node-idle { animation: brain-breathe 3.6s ease-in-out infinite; }
+  .brain-mini-center.brain-node-idle { animation-duration: 2.4s; }
+
+  /* Latido rápido tipo "lub-dub": nodos con actividad real reciente (ver
+     BRAIN_ACTIVE_WINDOW_S en el JS) — más brillante y con un doble golpe,
+     distinto a propósito del latido de espera de arriba. currentColor hace
+     que el resplandor tome el color propio de cada nodo/tier. */
+  @keyframes brain-heartbeat {
+    0%, 100% { opacity: 0.85; transform: scale(1); filter: drop-shadow(0 0 2px currentColor); }
+    12% { opacity: 1; transform: scale(1.2); filter: drop-shadow(0 0 11px currentColor); }
+    24% { opacity: 0.9; transform: scale(1.02); }
+    36% { opacity: 1; transform: scale(1.16); filter: drop-shadow(0 0 11px currentColor); }
+    50%, 100% { opacity: 0.85; transform: scale(1); }
+  }
+  .brain-node-active { animation: brain-heartbeat 1.3s ease-in-out infinite; }
+
+  /* Flujo continuo de luz sobre un edge activo — "corriente" entre neuronas,
+     independiente de los pulsos puntuales que viajan por cada evento nuevo.
+     currentColor: cada edge ya tiene su clase de color asignada al nodo que
+     conecta (ver brainColorClassFor en el JS). */
+  .brain-edge-flow {
+    fill: none; stroke: currentColor; stroke-width: 1.8; stroke-opacity: 0.9;
+    stroke-dasharray: 5 9; filter: drop-shadow(0 0 4px currentColor);
+    animation: brain-flow 1s linear infinite;
+  }
+  .brain-edge-flow.brain-edge-flow-error { color: var(--brain-red) !important; }
+  @keyframes brain-flow { to { stroke-dashoffset: -28; } }
+
+  .brain-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 12;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+  }
+  .brain-overlay.open { opacity: 1; pointer-events: auto; }
+  .brain-panel {
+    position: fixed; z-index: 13;
+    left: 50%; top: 50%; transform: translate(-50%, -46%);
+    width: min(1100px, 96vw); height: min(760px, 92vh);
+    background: rgba(5,10,12,0.98); border: 1px solid rgba(79,216,232,0.35);
+    border-radius: 16px; padding: 1rem;
+    display: flex; flex-direction: column;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .brain-panel.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); }
+  .brain-layout { display: flex; flex-direction: row; gap: 1rem; flex: 1 1 auto; min-height: 0; }
+  @media (max-width: 899px) { .brain-layout { flex-direction: column; } }
+  .brain-graph { flex: 1.6 1 0; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+  /* Wrapper único que recibe el zoom/pan de cámara — SVG y canvas de
+     partículas se mueven siempre juntos, nunca por separado, para que el
+     enfoque hacia un nodo activo se sienta como una sola escena y no dos
+     capas independientes. */
+  .brain-graph-inner { position: absolute; inset: 0; will-change: transform; }
+  .brain-graph-inner svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #brainParticles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .brain-feed { flex: 1 1 0; min-width: 0; overflow-y: auto; border-top: 1px solid rgba(255,255,255,0.06); }
+  @media (min-width: 900px) { .brain-feed { border-top: none; border-left: 1px solid rgba(255,255,255,0.06); padding-left: 0.8rem; } }
+  .brain-feed-row {
+    display: flex; align-items: baseline; gap: 0.5rem; padding: 0.3rem 0.2rem; font-size: 0.75rem;
+    color: var(--text); border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .brain-feed-row .dash-dot { align-self: center; }
+  .brain-feed-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .brain-feed-time { flex-shrink: 0; font-size: 0.68rem; color: var(--text-dim); }
+  .brain-edge { stroke: var(--glow-dim); stroke-opacity: 0.35; stroke-width: 1; fill: none; }
+  .brain-node-label { fill: var(--text-dim); font-size: 11px; text-anchor: middle; }
+  /* Pulso puntual por evento real — currentColor toma el color propio del
+     nodo de origen (ver brainColorClassFor), salvo que sea un error o un
+     archivo con categoría real conocida, que pisan ese color a propósito. */
+  /* Sin color por defecto, mismo motivo que .brain-node: spawnPulse siempre
+     agrega una clase brain-color-*/brain-pulse-file-*/brain-pulse-error. */
+  .brain-pulse { fill: currentColor; filter: drop-shadow(0 0 4px currentColor); }
+  .brain-pulse-error { fill: var(--brain-red); filter: drop-shadow(0 0 4px var(--brain-red)); }
+  .brain-pulse-file-image { fill: var(--brain-yellow); filter: drop-shadow(0 0 4px var(--brain-yellow)); }
+  .brain-pulse-file-audio { fill: var(--brain-magenta); filter: drop-shadow(0 0 4px var(--brain-magenta)); }
+  .brain-pulse-file-video { fill: var(--brain-green); filter: drop-shadow(0 0 4px var(--brain-green)); }
+  .brain-pulse-file-doc { fill: var(--brain-aqua); filter: drop-shadow(0 0 4px var(--brain-aqua)); }
 
   .dash-btn {
     position: fixed;
@@ -702,6 +826,28 @@
     <div class="settings-list" id="settingsList"></div>
   </div>
 
+  <div class="brain-overlay" id="brainOverlay"></div>
+  <div class="brain-panel" id="brainPanel">
+    <div class="settings-head">
+      <h3>Cerebro de Snarf</h3>
+      <button class="settings-close" id="brainCloseBtn">✕</button>
+    </div>
+    <div class="brain-layout">
+      <div class="brain-graph">
+        <div class="brain-graph-inner" id="brainGraphInner">
+          <svg id="brainSvg" viewBox="0 0 500 500">
+            <g id="brainEdges"></g>
+            <g id="brainEdgeFlows"></g>
+            <g id="pulseLayer"></g>
+            <g id="brainNodes"></g>
+          </svg>
+          <canvas id="brainParticles"></canvas>
+        </div>
+      </div>
+      <div class="brain-feed" id="brainFeedList"></div>
+    </div>
+  </div>
+
   <div id="appRoot">
   <div class="view-chat active" id="viewChat">
     <div class="chat" id="chat"><div class="chat-inner" id="chatInner"></div></div>
@@ -810,6 +956,13 @@ const settingsOverlay = document.getElementById("settingsOverlay");
 const settingsPanel = document.getElementById("settingsPanel");
 const settingsCloseBtn = document.getElementById("settingsCloseBtn");
 const settingsList = document.getElementById("settingsList");
+const brainOverlay = document.getElementById("brainOverlay");
+const brainPanel = document.getElementById("brainPanel");
+const brainCloseBtn = document.getElementById("brainCloseBtn");
+const brainSvg = document.getElementById("brainSvg");
+const brainFeedList = document.getElementById("brainFeedList");
+const brainGraphInner = document.getElementById("brainGraphInner");
+const brainParticlesCanvas = document.getElementById("brainParticles");
 
 for (let i = 0; i < 14; i++) {
   const p = document.createElement("div");
@@ -1080,7 +1233,7 @@ document.addEventListener("click", (e) => {
 });
 
 /* ---------- dashboard ---------- */
-const WIDGET_IDS = ["system", "conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube"];
+const WIDGET_IDS = ["system", "conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube", "brain"];
 const WIDGET_LABELS = {
   system: "Estado del sistema",
   conversations: "Conversaciones",
@@ -1090,13 +1243,14 @@ const WIDGET_LABELS = {
   gmail: "Gmail",
   calendar: "Calendar",
   youtube: "YouTube",
+  brain: "Cerebro",
 };
 const LEFT_ZONE = ["system"];
 // El resto de los widgets (menos "system", que siempre queda a la izquierda
 // del chat) forman un solo grupo reordenable: el primero en el orden ocupa
 // la franja de arriba (ancho completo), el resto cae en la columna derecha.
 // Ningún widget está fijo ahí — arrastrar cualquiera al frente lo promueve.
-const TOP_AND_RIGHT_ZONE = ["conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube"];
+const TOP_AND_RIGHT_ZONE = ["conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube", "brain"];
 const GOOGLE_WIDGETS = ["drive", "gmail", "calendar", "youtube"];
 const GMAIL_MAX_RESULTS_CHOICES = [5, 10, 20];
 
@@ -1118,6 +1272,7 @@ function showChat() {
   dashBtn.innerHTML = ICONS.dashboard;
   applyJarvisMode();
   stopGmailDigestPolling();
+  closeBrainFullscreen();
 }
 function showDashboard() {
   currentView = "dashboard";
@@ -1147,6 +1302,7 @@ const WIDGET_SUBTITLES = {
   gmail: "últimos mensajes recibidos en tu Gmail",
   calendar: "tus próximos eventos de Google Calendar",
   youtube: "canales de YouTube a los que estás suscripto",
+  brain: "actividad del sistema en vivo — tocá para expandir",
 };
 function widgetShell(id, bodyHTML, draggable) {
   const handle = draggable ? `<span class="dash-drag-handle" data-drag-handle>${ICONS.drag}</span>` : "";
@@ -1300,6 +1456,7 @@ function widgetBodyHTML(id, summary) {
   if (id === "memory") return memoryBodyHTML(summary);
   if (id === "cost") return costBodyHTML(summary);
   if (GOOGLE_WIDGETS.includes(id)) return summary.capabilities.google_connected ? loadingBody() : notConnectedBody();
+  if (id === "brain") return loadingBody();
   return "";
 }
 
@@ -1429,6 +1586,584 @@ async function loadGoogleWidgetsInto(root, visibleIds) {
   });
 }
 
+/* ---------- cerebro de Snarf ---------- */
+// Tres anillos, reflejando la arquitectura real (COGNITION.md, ADR 0003) y
+// el punto de entrada real de la información: Entrada (texto/voz/archivo,
+// el anillo más interno — lo primero que pasa antes de que el Orchestrator
+// haga nada), Especialistas Cognitivos (hoy solo el digest de Gmail — se
+// suman más a medida que se construyan, ver Roadmaps), Capacidades en el
+// anillo externo. `stt`/`tts` están separados (antes un solo nodo "voz")
+// porque usage_log ya distingue el modelo real de cada llamada a
+// ElevenLabs.
+const BRAIN_INPUT_ORDER = ["input_text", "input_voice", "input_file"];
+const BRAIN_SPECIALIST_ORDER = ["specialist_gmail"];
+const BRAIN_CAPABILITY_ORDER = ["memory", "drive", "knowledge", "documents", "gmail", "calendar", "youtube", "llm", "stt", "tts"];
+const BRAIN_NODE_LABELS = {
+  input_text: "Texto",
+  input_voice: "Voz",
+  input_file: "Archivo",
+  specialist_gmail: "Especialista Gmail",
+  memory: "Memoria",
+  drive: "Drive",
+  knowledge: "Conocimiento",
+  documents: "Documentos",
+  gmail: "Gmail",
+  calendar: "Calendar",
+  youtube: "YouTube",
+  llm: "Razonamiento",
+  stt: "Escucha",
+  tts: "Habla",
+  orchestrator: "Orchestrator",
+};
+// Color real por nodo (paleta de la marca del fundador, ver CSS) — cada
+// tier tiene su propio color base; currentColor lo propaga a fill/stroke/
+// resplandor de nodo, edge y pulso sin repetir la lógica en tres lugares.
+const BRAIN_NODE_COLOR_CLASS = {
+  orchestrator: "brain-color-white",
+  input_text: "brain-color-aqua",
+  input_voice: "brain-color-violet",
+  input_file: "brain-color-grey",
+  specialist_gmail: "brain-color-magenta",
+};
+// Categoría real de archivo (categorize_mime, snarf/knowledge/extraction.py)
+// → color del pulso puntual cuando ese archivo específico entra — la
+// distinción "una imagen es distinta a una canción" que pidió el fundador,
+// sin inventar una clasificación semántica que el sistema no tiene.
+const BRAIN_FILE_CATEGORY_PULSE_CLASS = {
+  image: "brain-pulse-file-image",
+  audio: "brain-pulse-file-audio",
+  video: "brain-pulse-file-video",
+  pdf: "brain-pulse-file-doc",
+  docx: "brain-pulse-file-doc",
+  pptx: "brain-pulse-file-doc",
+  xlsx: "brain-pulse-file-doc",
+  text: "brain-pulse-file-doc",
+  google_doc: "brain-pulse-file-doc",
+};
+function brainColorClassFor(id) {
+  return BRAIN_NODE_COLOR_CLASS[id] || "brain-color-aqua"; // Capacidades: aqua por defecto
+}
+const BRAIN_POLL_MS = 3500;
+// Una neurona se considera "activa" (latido rápido, flujo de luz en su edge)
+// si tuvo un evento real en los últimos N segundos — más allá de eso, cae al
+// latido lento de espera. No es un estado inventado: viene de
+// nodes[id].last_timestamp, real, del backend.
+const BRAIN_ACTIVE_WINDOW_S = 60;
+const SVG_NS = "http://www.w3.org/2000/svg";
+const XLINK_NS = "http://www.w3.org/1999/xlink";
+
+function brainLayoutRing(ids, cx, cy, ringRadius) {
+  return ids.map((id, i) => {
+    const angle = -Math.PI / 2 + i * ((2 * Math.PI) / ids.length);
+    return { id, x: cx + ringRadius * Math.cos(angle), y: cy + ringRadius * Math.sin(angle) };
+  });
+}
+function brainLayoutAllNodes(cx, cy, inputRadius, specialistRadius, capabilityRadius) {
+  const inputs = brainLayoutRing(BRAIN_INPUT_ORDER, cx, cy, inputRadius);
+  const specialists = brainLayoutRing(BRAIN_SPECIALIST_ORDER, cx, cy, specialistRadius);
+  const capabilities = brainLayoutRing(BRAIN_CAPABILITY_ORDER, cx, cy, capabilityRadius);
+  return inputs.concat(specialists, capabilities);
+}
+function brainNodeRadius(count, min, max, k) {
+  return Math.min(max, Math.max(min, min + Math.log2(1 + (count || 0)) * k));
+}
+function brainTotalEvents(nodes) {
+  const n = (id) => (nodes[id] ? nodes[id].count : 0);
+  return n("orchestrator") + n("llm") + n("stt") + n("tts");
+}
+function brainRelativeLabel(ts) {
+  const diff = Date.now() / 1000 - ts;
+  return diff < 60 ? "recién" : "hace " + relativeTime(ts);
+}
+function brainIsActive(node) {
+  if (!node || node.last_timestamp == null) return false;
+  return Date.now() / 1000 - node.last_timestamp <= BRAIN_ACTIVE_WINDOW_S;
+}
+// Ghost: nunca tuvo NINGUNA actividad real registrada (distinto de "idle",
+// que sí tiene historia real pero no reciente) — potencial sin usar, no un
+// estado inventado.
+function brainStateClass(node) {
+  if (!node || !node.count) return "brain-node-ghost";
+  return brainIsActive(node) ? "brain-node-active" : "brain-node-idle";
+}
+
+// Widget colapsado: mini-grafo estático (una sola carga, sin polling propio
+// — se refresca junto con el resto del dashboard, igual que Drive/Calendar).
+// El estado activo/idle/fantasma de cada nodo se calcula igual que en
+// pantalla completa, así el widget ya se ve "vivo" en vez de una foto muerta.
+function brainMiniBodyHTML(data) {
+  const nodes = data.nodes;
+  const cx = 80, cy = 80;
+  const layout = brainLayoutAllNodes(cx, cy, 20, 38, 64);
+  const rendered = layout.map((p) => {
+    const node = nodes[p.id] || { count: 0, last_timestamp: null };
+    const isSpecialist = BRAIN_SPECIALIST_ORDER.includes(p.id);
+    const isInput = BRAIN_INPUT_ORDER.includes(p.id);
+    const stateCls = brainStateClass(node);
+    const r = brainNodeRadius(node.count, isSpecialist || isInput ? 3.5 : 3, isSpecialist || isInput ? 11 : 9, isSpecialist || isInput ? 2 : 1.7);
+    const nodeCls = `brain-node ${brainColorClassFor(p.id)}${isSpecialist ? " brain-node-specialist" : ""} ${stateCls}`;
+    const edgeCls = `brain-edge ${brainColorClassFor(p.id)}${stateCls === "brain-node-active" ? " brain-edge-flow" : ""}`;
+    return {
+      edge: `<line x1="${cx}" y1="${cy}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}" class="${edgeCls}" />`,
+      node: `<circle class="${nodeCls}" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" />`,
+    };
+  });
+  const centerNode = nodes.orchestrator || { count: 0, last_timestamp: null };
+  const centerStateCls = brainStateClass(centerNode);
+  const centerR = brainNodeRadius(centerNode.count, 8, 14, 2);
+  const total = brainTotalEvents(nodes);
+  const lastEvent = data.events.length ? data.events[data.events.length - 1] : null;
+  return `
+    <div class="brain-mini">
+      <svg viewBox="0 0 160 160">
+        ${rendered.map((r) => r.edge).join("")}
+        ${rendered.map((r) => r.node).join("")}
+        <circle class="brain-node-center brain-mini-center brain-color-white ${centerStateCls}" cx="${cx}" cy="${cy}" r="${centerR.toFixed(1)}" />
+      </svg>
+      <div class="brain-mini-stat">${total} evento${total === 1 ? "" : "s"} registrado${total === 1 ? "" : "s"}</div>
+      <div class="brain-mini-stat-sub">${lastEvent ? "última actividad: " + brainRelativeLabel(lastEvent.timestamp) : "todavía sin actividad registrada"}</div>
+    </div>`;
+}
+async function loadBrainWidgetInto(root) {
+  const body = root.querySelector('[data-widget-id="brain"] .dash-widget-body');
+  if (!body) return;
+  try {
+    const res = await apiFetch("/dashboard/brain");
+    const data = await res.json();
+    body.innerHTML = brainMiniBodyHTML(data);
+  } catch (e) {
+    body.innerHTML = errorBody(e.message || e);
+  }
+  // En el body, no en el head — así el asa de arrastre (que vive en el head)
+  // nunca dispara la apertura de pantalla completa al reordenar el widget.
+  body.addEventListener("click", openBrainFullscreen);
+}
+
+// Pantalla completa: grafo grande construido una sola vez (buildBrainGraphSkeleton)
+// y actualizado en cada poll (applyBrainSnapshot) — solo mientras está abierta
+// corre el polling en vivo, mismo criterio que el auto-refresh del digest de Gmail.
+let brainGraphBuilt = false;
+let brainNodeEls = {};
+let brainEdgePaths = {};
+let brainEdgeFlowPaths = {};
+let brainPollTimer = null;
+let brainSince = null;
+
+function buildBrainGraphSkeleton() {
+  const cx = 250, cy = 250, inputR = 65, specialistR = 125, capabilityR = 195;
+  const layout = brainLayoutAllNodes(cx, cy, inputR, specialistR, capabilityR);
+  const edgesG = document.getElementById("brainEdges");
+  const flowsG = document.getElementById("brainEdgeFlows");
+  const nodesG = document.getElementById("brainNodes");
+  edgesG.innerHTML = "";
+  flowsG.innerHTML = "";
+  nodesG.innerHTML = "";
+  brainNodeEls = {};
+  brainEdgePaths = {};
+  brainEdgeFlowPaths = {};
+
+  // Anillos guía, puramente visuales: separan Entrada / Especialistas
+  // Cognitivos / Capacidades, como los anillos concéntricos de un HUD tipo
+  // Jarvis — más niveles, más profundidad.
+  [inputR, specialistR, capabilityR].forEach((r) => {
+    const ring = document.createElementNS(SVG_NS, "circle");
+    ring.setAttribute("cx", cx);
+    ring.setAttribute("cy", cy);
+    ring.setAttribute("r", r);
+    ring.setAttribute("class", "brain-ring");
+    edgesG.appendChild(ring);
+  });
+
+  const centerCircle = document.createElementNS(SVG_NS, "circle");
+  centerCircle.setAttribute("cx", cx);
+  centerCircle.setAttribute("cy", cy);
+  centerCircle.setAttribute("r", 30);
+  centerCircle.setAttribute("class", "brain-node-center brain-color-white");
+  nodesG.appendChild(centerCircle);
+  brainNodeEls.orchestrator = centerCircle;
+
+  const centerLabel = document.createElementNS(SVG_NS, "text");
+  centerLabel.setAttribute("x", cx);
+  centerLabel.setAttribute("y", cy + 48);
+  centerLabel.setAttribute("class", "brain-node-label");
+  centerLabel.textContent = "Orchestrator";
+  nodesG.appendChild(centerLabel);
+
+  layout.forEach((p) => {
+    const isSpecialist = BRAIN_SPECIALIST_ORDER.includes(p.id);
+    const isInput = BRAIN_INPUT_ORDER.includes(p.id);
+    const colorCls = brainColorClassFor(p.id);
+    const d = `M ${cx} ${cy} L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("id", `edge-${p.id}`);
+    path.setAttribute("d", d);
+    path.setAttribute("class", `brain-edge ${colorCls}`);
+    edgesG.appendChild(path);
+    brainEdgePaths[p.id] = path;
+
+    // Path hermano, mismo trazado: la base de arriba nunca cambia de clase
+    // (la referencia el <mpath> de cada pulso puntual); este overlay es el
+    // que prende/apaga el flujo continuo según el nodo esté activo o no.
+    const flowPath = document.createElementNS(SVG_NS, "path");
+    flowPath.setAttribute("d", d);
+    flowPath.setAttribute("class", `brain-edge ${colorCls}`);
+    flowsG.appendChild(flowPath);
+    brainEdgeFlowPaths[p.id] = flowPath;
+
+    const circle = document.createElementNS(SVG_NS, "circle");
+    circle.setAttribute("cx", p.x.toFixed(1));
+    circle.setAttribute("cy", p.y.toFixed(1));
+    circle.setAttribute("r", isSpecialist || isInput ? 14 : 11);
+    circle.setAttribute("class", `brain-node ${colorCls}${isSpecialist ? " brain-node-specialist" : ""}`);
+    nodesG.appendChild(circle);
+    brainNodeEls[p.id] = circle;
+
+    const label = document.createElementNS(SVG_NS, "text");
+    label.setAttribute("x", p.x.toFixed(1));
+    label.setAttribute("y", (p.y + (p.y > cy ? 24 : -18)).toFixed(1));
+    label.setAttribute("class", "brain-node-label");
+    label.textContent = BRAIN_NODE_LABELS[p.id];
+    nodesG.appendChild(label);
+  });
+
+  resizeBrainCanvas();
+  initBrainParticles();
+}
+
+function brainFeedRowHTML(ev) {
+  const isError = ev.status !== "ok";
+  const label = BRAIN_NODE_LABELS[ev.node] || ev.node;
+  return `<div class="brain-feed-row">
+    <span class="dash-dot ${isError ? "off" : "ok"}"></span>
+    <span class="brain-feed-label">${escapeHtml(label)} · ${escapeHtml(ev.label || "")}</span>
+    <span class="brain-feed-time">${relativeTime(ev.timestamp)}</span>
+  </div>`;
+}
+function renderBrainFeed(events, replace) {
+  const rowsHtml = events
+    .slice()
+    .reverse()
+    .map(brainFeedRowHTML)
+    .join("");
+  if (replace) brainFeedList.innerHTML = rowsHtml;
+  else brainFeedList.insertAdjacentHTML("afterbegin", rowsHtml);
+  while (brainFeedList.children.length > 60) brainFeedList.lastElementChild.remove();
+}
+
+function spawnPulse(ev) {
+  const isError = ev.status !== "ok";
+  // Cámara y partículas reaccionan a CUALQUIER evento real, incluido
+  // unknown_tool en el centro — es la parte que realmente "actúa" ante lo
+  // que pasa, aunque no haya un edge que recorrer.
+  triggerBrainCameraFocus(ev.node);
+  spawnBrainBurst(ev.node, isError);
+  // unknown_tool: la falla es del modelo, no de una Capacidad — nunca viaja
+  // por ningún edge, el centro ya se ve activo por su propio latido.
+  if (ev.node === "orchestrator" || !brainEdgePaths[ev.node]) return;
+  // Prioridad de color del pulso: error > categoría real de archivo > color
+  // propio del nodo de origen. Un archivo real (imagen/audio/video/doc) se
+  // ve distinto porque categorize_mime ya conoce su tipo real — nunca se
+  // inventa una subcategoría (ej. "canción" vs "podcast") que el sistema no
+  // puede saber.
+  let colorCls;
+  if (isError) colorCls = "brain-pulse-error";
+  else if (ev.node === "input_file" && BRAIN_FILE_CATEGORY_PULSE_CLASS[ev.label]) colorCls = BRAIN_FILE_CATEGORY_PULSE_CLASS[ev.label];
+  else colorCls = brainColorClassFor(ev.node);
+
+  const circle = document.createElementNS(SVG_NS, "circle");
+  circle.setAttribute("r", "4");
+  circle.setAttribute("class", `brain-pulse ${colorCls}`);
+  const anim = document.createElementNS(SVG_NS, "animateMotion");
+  anim.setAttribute("dur", "0.9s");
+  anim.setAttribute("fill", "freeze");
+  const mpath = document.createElementNS(SVG_NS, "mpath");
+  mpath.setAttributeNS(XLINK_NS, "href", `#edge-${ev.node}`);
+  anim.appendChild(mpath);
+  circle.appendChild(anim);
+  document.getElementById("pulseLayer").appendChild(circle);
+  try { anim.beginElement(); } catch (e) {}
+
+  const cleanup = () => circle.remove();
+  anim.addEventListener("endEvent", cleanup);
+  setTimeout(cleanup, 1300); // defensivo, por si endEvent no dispara en algún motor
+}
+
+function applyBrainSnapshot(snap, spawnPulses) {
+  const nodes = snap.nodes;
+  const lastStatusByNode = {};
+  snap.events.forEach((ev) => { lastStatusByNode[ev.node] = ev.status; });
+
+  Object.keys(brainNodeEls).forEach((id) => {
+    const node = nodes[id] || { count: 0, last_timestamp: null };
+    const isSpecialist = BRAIN_SPECIALIST_ORDER.includes(id);
+    const isInput = BRAIN_INPUT_ORDER.includes(id);
+    const r = id === "orchestrator"
+      ? brainNodeRadius(node.count, 24, 40, 5)
+      : isSpecialist || isInput
+        ? brainNodeRadius(node.count, 12, 24, 3)
+        : brainNodeRadius(node.count, 9, 24, 4);
+    brainNodeEls[id].setAttribute("r", r.toFixed(1));
+
+    const stateCls = brainStateClass(node);
+    brainNodeEls[id].classList.remove("brain-node-active", "brain-node-idle", "brain-node-ghost");
+    brainNodeEls[id].classList.add(stateCls);
+
+    const flowPath = brainEdgeFlowPaths[id];
+    if (flowPath) {
+      const active = stateCls === "brain-node-active";
+      const isError = active && lastStatusByNode[id] && lastStatusByNode[id] !== "ok";
+      flowPath.classList.toggle("brain-edge-flow", active);
+      flowPath.classList.toggle("brain-edge-flow-error", isError);
+    }
+  });
+  renderBrainFeed(snap.events, !spawnPulses);
+  if (spawnPulses) {
+    // Si un lote trae una ráfaga real (ej. una corrida de indexación), se
+    // anima solo lo último para no disparar una tormenta de pulsos — el
+    // resto igual queda reflejado en los conteos y en el feed.
+    snap.events.slice(-12).forEach(spawnPulse);
+  }
+}
+
+// ---- capa de partículas/resplandor/cámara (canvas, sobre el SVG ya construido) ----
+// Nunca reemplaza la lógica de nodos/edges/colores de arriba — es pura
+// atmósfera y foco de cámara sobre datos ya reales (qué nodo se enciende,
+// cuándo). #brainGraphInner (SVG + canvas) se mueve siempre junto vía un
+// único transform CSS, así el zoom hacia un nodo nunca desalinea las dos capas.
+const BRAIN_VIEWBOX_SIZE = 500;
+const BRAIN_AMBIENT_COLOR_NAMES = ["aqua", "violet", "magenta", "white", "grey"];
+const BRAIN_MAX_PARTICLES = 400;
+let brainParticles = [];
+let brainCanvasTransform = { scale: 1, offsetX: 0, offsetY: 0 };
+let brainAnimFrameId = null;
+let brainLastFrameTs = null;
+let brainFocusResetTimer = null;
+const brainCamera = { x: 250, y: 250, zoom: 1, targetX: 250, targetY: 250, targetZoom: 1, driftPhase: Math.random() * Math.PI * 2 };
+
+function brainCssColor(name) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(`--brain-${name}`).trim();
+  return v || "#ffffff";
+}
+function resizeBrainCanvas() {
+  const rect = brainGraphInner.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const dpr = window.devicePixelRatio || 1;
+  brainParticlesCanvas.width = Math.round(rect.width * dpr);
+  brainParticlesCanvas.height = Math.round(rect.height * dpr);
+  const contentSize = Math.min(rect.width, rect.height);
+  brainCanvasTransform = {
+    scale: contentSize / BRAIN_VIEWBOX_SIZE,
+    offsetX: (rect.width - contentSize) / 2,
+    offsetY: (rect.height - contentSize) / 2,
+  };
+}
+function brainViewboxToCanvas(x, y) {
+  return {
+    x: brainCanvasTransform.offsetX + x * brainCanvasTransform.scale,
+    y: brainCanvasTransform.offsetY + y * brainCanvasTransform.scale,
+  };
+}
+function spawnAmbientParticle() {
+  const depth = 0.3 + Math.random() * 0.7; // 0=lejos/tenue/lento, 1=cerca/brillante/rápido — profundidad real, no decorativa al azar puro
+  return {
+    kind: "ambient",
+    x: Math.random() * BRAIN_VIEWBOX_SIZE,
+    y: Math.random() * BRAIN_VIEWBOX_SIZE,
+    vx: (Math.random() - 0.5) * 22 * depth,
+    vy: (Math.random() - 0.5) * 22 * depth,
+    r: (0.7 + Math.random() * 1.8) * (0.5 + depth * 0.7),
+    depth,
+    color: brainCssColor(BRAIN_AMBIENT_COLOR_NAMES[Math.floor(Math.random() * BRAIN_AMBIENT_COLOR_NAMES.length)]),
+    alpha: 0.1 + Math.random() * 0.3,
+  };
+}
+function initBrainParticles() {
+  const count = isDesktopDashboard() ? 90 : 45;
+  brainParticles = Array.from({ length: count }, spawnAmbientParticle);
+}
+function spawnBrainBurst(nodeId, isError) {
+  const node = brainNodeEls[nodeId];
+  if (!node) return;
+  const cx = parseFloat(node.getAttribute("cx"));
+  const cy = parseFloat(node.getAttribute("cy"));
+  if (Number.isNaN(cx) || Number.isNaN(cy)) return;
+  const color = isError ? brainCssColor("red") : getComputedStyle(node).color;
+  for (let i = 0; i < 16; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 30 + Math.random() * 90;
+    brainParticles.push({
+      kind: "burst",
+      x: cx, y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      r: 1.2 + Math.random() * 2.4,
+      color,
+      alpha: 1,
+      life: 0,
+      maxLife: 0.8 + Math.random() * 0.7,
+    });
+  }
+  if (brainParticles.length > BRAIN_MAX_PARTICLES) {
+    const overflow = brainParticles.length - BRAIN_MAX_PARTICLES;
+    let removed = 0;
+    brainParticles = brainParticles.filter((p) => {
+      if (p.kind === "burst" && removed < overflow) { removed++; return false; }
+      return true;
+    });
+  }
+}
+function triggerBrainCameraFocus(nodeId) {
+  const node = brainNodeEls[nodeId];
+  if (!node) return;
+  const cx = parseFloat(node.getAttribute("cx"));
+  const cy = parseFloat(node.getAttribute("cy"));
+  if (Number.isNaN(cx) || Number.isNaN(cy)) return;
+  brainCamera.targetX = cx;
+  brainCamera.targetY = cy;
+  brainCamera.targetZoom = 1.55;
+  if (brainFocusResetTimer) clearTimeout(brainFocusResetTimer);
+  brainFocusResetTimer = setTimeout(() => {
+    brainCamera.targetX = 250;
+    brainCamera.targetY = 250;
+    brainCamera.targetZoom = 1;
+  }, 2400);
+}
+function drawGlowDot(ctx, x, y, r, color, alpha) {
+  if (alpha <= 0 || r <= 0) return;
+  ctx.globalAlpha = alpha;
+  const halo = ctx.createRadialGradient(x, y, 0, x, y, r * 4);
+  halo.addColorStop(0, color);
+  halo.addColorStop(1, "transparent");
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(x, y, r * 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = Math.min(1, alpha * 1.6);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+function updateAndDrawParticle(ctx, p, dt) {
+  if (p.kind === "ambient") {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.x < -15) p.x = BRAIN_VIEWBOX_SIZE + 15; else if (p.x > BRAIN_VIEWBOX_SIZE + 15) p.x = -15;
+    if (p.y < -15) p.y = BRAIN_VIEWBOX_SIZE + 15; else if (p.y > BRAIN_VIEWBOX_SIZE + 15) p.y = -15;
+  } else {
+    p.life += dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= 0.94;
+    p.vy *= 0.94;
+    p.alpha = Math.max(0, 1 - p.life / p.maxLife);
+  }
+  const pos = brainViewboxToCanvas(p.x, p.y);
+  const radiusPx = p.r * brainCanvasTransform.scale;
+  drawGlowDot(ctx, pos.x, pos.y, radiusPx, p.color, p.alpha);
+}
+function updateBrainCamera(dt) {
+  const ease = 1 - Math.pow(0.0005, dt);
+  brainCamera.x += (brainCamera.targetX - brainCamera.x) * ease;
+  brainCamera.y += (brainCamera.targetY - brainCamera.y) * ease;
+  brainCamera.zoom += (brainCamera.targetZoom - brainCamera.zoom) * ease;
+
+  // Deriva ambiental sutil, siempre presente — la sensación de flotar en el
+  // espacio digital pedida, nunca del todo estática ni cuando no hay foco.
+  brainCamera.driftPhase += dt * 0.12;
+  const driftX = Math.sin(brainCamera.driftPhase) * 3;
+  const driftY = Math.cos(brainCamera.driftPhase * 0.83) * 3;
+  const wobble = 1 + Math.sin(brainCamera.driftPhase) * 0.012;
+
+  const origin = brainViewboxToCanvas(brainCamera.x + driftX, brainCamera.y + driftY);
+  brainGraphInner.style.transformOrigin = `${origin.x}px ${origin.y}px`;
+  brainGraphInner.style.transform = `scale(${(brainCamera.zoom * wobble).toFixed(4)})`;
+}
+function renderBrainFrame(ts) {
+  if (brainLastFrameTs == null) brainLastFrameTs = ts;
+  const dt = Math.min(0.05, (ts - brainLastFrameTs) / 1000); // tope: evita saltos si la pestaña estuvo pausada
+  brainLastFrameTs = ts;
+
+  const ctx = brainParticlesCanvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, brainParticlesCanvas.width / dpr, brainParticlesCanvas.height / dpr);
+  ctx.globalCompositeOperation = "lighter"; // aditivo — el resplandor es real, no un blur simulado
+
+  brainParticles = brainParticles.filter((p) => p.kind !== "burst" || p.alpha > 0.02);
+  brainParticles.forEach((p) => updateAndDrawParticle(ctx, p, dt));
+
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+  updateBrainCamera(dt);
+  brainAnimFrameId = requestAnimationFrame(renderBrainFrame);
+}
+function startBrainAnimationLoop() {
+  stopBrainAnimationLoop();
+  brainLastFrameTs = null;
+  brainAnimFrameId = requestAnimationFrame(renderBrainFrame);
+}
+function stopBrainAnimationLoop() {
+  if (brainAnimFrameId) { cancelAnimationFrame(brainAnimFrameId); brainAnimFrameId = null; }
+}
+window.addEventListener("resize", () => { if (isBrainOpen()) resizeBrainCanvas(); });
+
+function isBrainOpen() { return brainOverlay.classList.contains("open"); }
+function stopBrainPolling() {
+  if (brainPollTimer) { clearInterval(brainPollTimer); brainPollTimer = null; }
+}
+function startBrainPolling() {
+  stopBrainPolling();
+  brainPollTimer = setInterval(pollBrain, BRAIN_POLL_MS);
+}
+async function pollBrain() {
+  try {
+    const url = brainSince === null ? "/dashboard/brain" : `/dashboard/brain?since=${brainSince}`;
+    const res = await apiFetch(url);
+    const data = await res.json();
+    applyBrainSnapshot(data, brainSince !== null);
+    brainSince = data.server_time;
+  } catch (e) {
+    // fallo silencioso: se reintenta en el próximo ciclo, mismo criterio que Gmail
+  }
+}
+async function openBrainFullscreen() {
+  brainOverlay.classList.add("open");
+  brainPanel.classList.add("open");
+  if (!brainGraphBuilt) {
+    buildBrainGraphSkeleton();
+    brainGraphBuilt = true;
+  }
+  resizeBrainCanvas(); // el tamaño real del panel puede haber cambiado desde el último cierre
+  startBrainAnimationLoop();
+  brainSince = null;
+  await pollBrain(); // primera carga: historia completa, sin animar pulsos
+  startBrainPolling();
+}
+function closeBrainFullscreen() {
+  brainOverlay.classList.remove("open");
+  brainPanel.classList.remove("open");
+  stopBrainPolling();
+  stopBrainAnimationLoop();
+  document.getElementById("pulseLayer").innerHTML = "";
+  // Frena las animaciones de latido/flujo mientras el panel está oculto —
+  // sin esto siguen corriendo en un elemento invisible sin motivo.
+  Object.values(brainNodeEls).forEach((el) => el.classList.remove("brain-node-active", "brain-node-idle"));
+  Object.values(brainEdgeFlowPaths).forEach((el) => el.classList.remove("brain-edge-flow", "brain-edge-flow-error"));
+  brainGraphInner.style.transform = "";
+  brainCamera.x = brainCamera.targetX = 250;
+  brainCamera.y = brainCamera.targetY = 250;
+  brainCamera.zoom = brainCamera.targetZoom = 1;
+  brainSince = null;
+}
+brainOverlay.addEventListener("click", closeBrainFullscreen);
+brainCloseBtn.addEventListener("click", closeBrainFullscreen);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { stopBrainPolling(); stopBrainAnimationLoop(); return; }
+  if (isBrainOpen()) { pollBrain(); startBrainPolling(); startBrainAnimationLoop(); }
+});
+
 function makeReorderable(containerOrContainers, onReorder) {
   const containers = Array.isArray(containerOrContainers) ? containerOrContainers : [containerOrContainers];
   const allCards = () => containers.flatMap((c) => [...c.querySelectorAll("[data-widget-id]")]);
@@ -1530,6 +2265,7 @@ function renderMobileDashboard(summary) {
     persistPrefs();
   });
   loadGoogleWidgetsInto(dashboardInner, ids);
+  if (ids.includes("brain")) loadBrainWidgetInto(dashboardInner);
 }
 
 function renderDesktopDashboard(summary) {
@@ -1553,6 +2289,8 @@ function renderDesktopDashboard(summary) {
 
   loadGoogleWidgetsInto(dashZoneTop, topIds);
   loadGoogleWidgetsInto(dashZoneRight, rightIds);
+  if (topIds.includes("brain")) loadBrainWidgetInto(dashZoneTop);
+  if (rightIds.includes("brain")) loadBrainWidgetInto(dashZoneRight);
   refreshConvLists();
 }
 

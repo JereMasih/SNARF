@@ -3,7 +3,7 @@ from pathlib import Path
 
 PREFS_DIR = Path("data/dashboard_prefs")
 
-WIDGET_IDS = ["system", "conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube"]
+WIDGET_IDS = ["system", "conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube", "brain"]
 GMAIL_MAX_RESULTS_CHOICES = [5, 10, 20]
 
 
