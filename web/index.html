@@ -209,6 +209,11 @@
      una sola grilla de 12 columnas donde todo bloque —incluidos el chat y
      el historial, antes fijos— es igual de movible y redimensionable. */
   @media (min-width: 900px) {
+    /* rem es siempre relativo al <html> raíz, nunca al ancestro más cercano
+       — por eso el aumento de legibilidad va acá (gatillado solo por ancho
+       de pantalla, no por body.jarvis-mode, que no es seleccionable desde
+       html) y no en cada clase suelta. Pensado para 1920×1080 real. */
+    html { font-size: 18px; }
     body.jarvis-mode .menu-btn { display: none; }
     /* Ya no hay una vista "solo chat" separada en desktop — el chat vive
        siempre dentro de la grilla (ver reparentChatIntoDashboard); el modo
@@ -356,7 +361,7 @@
     fill: currentColor; fill-opacity: 0.2; stroke: currentColor; stroke-width: 1.5;
     transform-origin: center; transform-box: fill-box;
   }
-  .brain-node-center { fill-opacity: 0.25; stroke-width: 2.2; filter: drop-shadow(0 0 9px var(--brain-violet)); }
+  .brain-node-center { fill-opacity: 0.25; stroke-width: 2.2; filter: drop-shadow(0 0 14px var(--brain-violet)); }
   .brain-node-specialist { stroke-dasharray: 2 2; }
   /* Nunca tuvo actividad real registrada — ni activo ni en espera, un nodo
      "fantasma": potencial todavía sin usar, no un estado inventado. */
@@ -375,10 +380,10 @@
      distinto a propósito del latido de espera de arriba. currentColor hace
      que el resplandor tome el color propio de cada nodo/tier. */
   @keyframes brain-heartbeat {
-    0%, 100% { opacity: 0.85; transform: scale(1); filter: drop-shadow(0 0 2px currentColor); }
-    12% { opacity: 1; transform: scale(1.2); filter: drop-shadow(0 0 11px currentColor); }
+    0%, 100% { opacity: 0.85; transform: scale(1); filter: drop-shadow(0 0 3px currentColor); }
+    12% { opacity: 1; transform: scale(1.2); filter: drop-shadow(0 0 16px currentColor); }
     24% { opacity: 0.9; transform: scale(1.02); }
-    36% { opacity: 1; transform: scale(1.16); filter: drop-shadow(0 0 11px currentColor); }
+    36% { opacity: 1; transform: scale(1.16); filter: drop-shadow(0 0 16px currentColor); }
     50%, 100% { opacity: 0.85; transform: scale(1); }
   }
   .brain-node-active { animation: brain-heartbeat 1.3s ease-in-out infinite; }
@@ -435,7 +440,13 @@
   .brain-panel.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); }
   .brain-layout { display: flex; flex-direction: row; gap: 1rem; flex: 1 1 auto; min-height: 0; }
   @media (max-width: 899px) { .brain-layout { flex-direction: column; } }
-  .brain-graph { flex: 1.6 1 0; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+  .brain-graph {
+    flex: 1.6 1 0; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+    /* Viñeta radial: el grafo se lee como un objeto flotando en un volumen
+       oscuro, no como un diagrama plano sobre el fondo del panel. */
+    background: radial-gradient(ellipse at center, rgba(22,0,62,0.5) 0%, rgba(0,0,0,0.7) 78%);
+  }
   /* Wrapper único que recibe el zoom/pan de cámara — SVG y canvas de
      partículas se mueven siempre juntos, nunca por separado, para que el
      enfoque hacia un nodo activo se sienta como una sola escena y no dos
@@ -1309,7 +1320,7 @@ document.addEventListener("click", (e) => {
 // lo que usa el panel de configuración (así chat/historial nunca aparecen
 // ahí, sin filtrado extra) y renderMobileDashboard (así mobile los sigue
 // excluyendo, sin filtrado extra).
-const WIDGET_IDS = ["system", "conversations", "memory", "cost", "drive", "gmail", "calendar", "youtube", "brain"];
+const WIDGET_IDS = ["brain", "system", "cost", "conversations", "memory", "drive", "gmail", "calendar", "youtube"];
 // La grilla de escritorio unificada suma "history" y "chat" — antes vivían
 // fuera del sistema de widgets, fijos, sin poder moverse ni redimensionar.
 // Deben mantenerse en el mismo orden que WIDGET_IDS del backend
@@ -1339,17 +1350,17 @@ const GRID_COLUMNS = 12;
 const MIN_COL_SPAN = 1, MAX_COL_SPAN = GRID_COLUMNS;
 const MIN_ROW_SPAN = 3, MAX_ROW_SPAN = 30;
 const DEFAULT_SPANS = {
-  history: { col_span: 3, row_span: 16 },
+  history: { col_span: 3, row_span: 28 },
+  brain: { col_span: 6, row_span: 12 },
+  system: { col_span: 3, row_span: 7 },
+  cost: { col_span: 3, row_span: 7 },
   chat: { col_span: 6, row_span: 16 },
-  system: { col_span: 3, row_span: 8 },
-  cost: { col_span: 3, row_span: 8 },
-  conversations: { col_span: 6, row_span: 8 },
-  memory: { col_span: 6, row_span: 8 },
-  drive: { col_span: 4, row_span: 8 },
-  gmail: { col_span: 4, row_span: 8 },
-  calendar: { col_span: 4, row_span: 8 },
-  youtube: { col_span: 4, row_span: 8 },
-  brain: { col_span: 4, row_span: 8 },
+  conversations: { col_span: 3, row_span: 9 },
+  memory: { col_span: 3, row_span: 9 },
+  drive: { col_span: 3, row_span: 8 },
+  gmail: { col_span: 3, row_span: 8 },
+  calendar: { col_span: 3, row_span: 8 },
+  youtube: { col_span: 3, row_span: 8 },
 };
 function clamp(n, min, max) { return Math.min(max, Math.max(min, Number(n) || min)); }
 function blockSpan(id) {
@@ -1961,6 +1972,7 @@ function buildBrainGraphSkeleton() {
 
   resizeBrainCanvas();
   initBrainParticles();
+  initBrainMesh();
 }
 
 function brainFeedRowHTML(ev) {
@@ -2114,6 +2126,98 @@ function initBrainParticles() {
   const count = isDesktopDashboard() ? 90 : 45;
   brainParticles = Array.from({ length: count }, spawnAmbientParticle);
 }
+
+// ---- malla de filamentos (referencia real: capturas de Jarvis/Ultron
+// pasadas por el fundador — una masa volumétrica de líneas finas tipo
+// sinapsis, no un diagrama de nodos prolijo). Puramente atmósfera, igual
+// que las partículas ambiente: no representa ningún dato propio, solo hace
+// que el grafo real (nodos/edges/colores, sin tocar) se sienta como una
+// entidad de luz densa en vez de un esquema plano. Generada una sola vez al
+// construir el grafo — se anima con jitter por frame, no se recalcula.
+const BRAIN_MESH_LINK_DIST = 78;
+const BRAIN_MESH_SATELLITES_PER_NODE = 9;
+const BRAIN_MESH_NEIGHBORS = 4;
+let brainMeshPoints = [];
+let brainMeshLinks = [];
+
+function initBrainMesh() {
+  brainMeshPoints = [];
+  brainMeshLinks = [];
+  Object.entries(brainNodeEls).forEach(([id, el]) => {
+    const cx = parseFloat(el.getAttribute("cx")) || 250;
+    const cy = parseFloat(el.getAttribute("cy")) || 250;
+    const color = getComputedStyle(el).color;
+    for (let i = 0; i < BRAIN_MESH_SATELLITES_PER_NODE; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 10 + Math.random() * 46;
+      brainMeshPoints.push({
+        x: cx + Math.cos(angle) * dist,
+        y: cy + Math.sin(angle) * dist,
+        color,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  });
+  // Enlaza cada punto con sus ~3 vecinos reales más cercanos dentro de un
+  // radio — así la malla queda densa cerca de cada nodo y rala entre
+  // regiones distintas, en vez de una nube uniforme sin forma.
+  for (let i = 0; i < brainMeshPoints.length; i++) {
+    const candidates = [];
+    for (let j = 0; j < brainMeshPoints.length; j++) {
+      if (i === j) continue;
+      const dx = brainMeshPoints[i].x - brainMeshPoints[j].x;
+      const dy = brainMeshPoints[i].y - brainMeshPoints[j].y;
+      const d = Math.hypot(dx, dy);
+      if (d < BRAIN_MESH_LINK_DIST) candidates.push({ j, d });
+    }
+    candidates.sort((a, b) => a.d - b.d);
+    candidates.slice(0, BRAIN_MESH_NEIGHBORS).forEach(({ j }) => {
+      const key = i < j ? `${i}_${j}` : `${j}_${i}`;
+      if (!brainMeshLinks.some((l) => l.key === key)) brainMeshLinks.push({ key, a: i, b: j });
+    });
+  }
+}
+function drawBrainAura(ctx, ts) {
+  const t = ts / 1000;
+  const breathe = 0.85 + Math.sin(t * 0.25) * 0.15; // nunca del todo estática, ni en reposo
+  const center = brainViewboxToCanvas(250, 250);
+  const radius = 235 * brainCanvasTransform.scale;
+  const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, radius);
+  grad.addColorStop(0, `rgba(161,36,255,${(0.11 * breathe).toFixed(3)})`);
+  grad.addColorStop(0.55, `rgba(0,255,222,${(0.07 * breathe).toFixed(3)})`);
+  grad.addColorStop(1, "transparent");
+  ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+}
+function drawBrainMesh(ctx, ts) {
+  const t = ts / 1000;
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineWidth = Math.max(0.5, 0.9 * brainCanvasTransform.scale);
+  brainMeshLinks.forEach(({ a, b }) => {
+    const pa = brainMeshPoints[a];
+    const pb = brainMeshPoints[b];
+    const ax = pa.x + Math.sin(t * 0.6 + pa.phase) * 2.4;
+    const ay = pa.y + Math.cos(t * 0.5 + pa.phase) * 2.4;
+    const bx = pb.x + Math.sin(t * 0.6 + pb.phase) * 2.4;
+    const by = pb.y + Math.cos(t * 0.5 + pb.phase) * 2.4;
+    const posA = brainViewboxToCanvas(ax, ay);
+    const posB = brainViewboxToCanvas(bx, by);
+    const jitter = Math.sin(t * 0.8 + pa.phase + pb.phase) * 5 * brainCanvasTransform.scale;
+    const midX = (posA.x + posB.x) / 2 + jitter;
+    const midY = (posA.y + posB.y) / 2 - jitter;
+    ctx.strokeStyle = pa.color;
+    ctx.globalAlpha = 0.19;
+    ctx.beginPath();
+    ctx.moveTo(posA.x, posA.y);
+    ctx.quadraticCurveTo(midX, midY, posB.x, posB.y);
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+}
 function spawnBrainBurst(nodeId, isError) {
   const node = brainNodeEls[nodeId];
   if (!node) return;
@@ -2222,6 +2326,11 @@ function renderBrainFrame(ts) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, brainParticlesCanvas.width / dpr, brainParticlesCanvas.height / dpr);
   ctx.globalCompositeOperation = "lighter"; // aditivo — el resplandor es real, no un blur simulado
+
+  // Orden de dibujo: aura y malla primero (fondo volumétrico), partículas
+  // encima — nodos y etiquetas (SVG, capa aparte) siguen siempre legibles.
+  drawBrainAura(ctx, ts);
+  drawBrainMesh(ctx, ts);
 
   brainParticles = brainParticles.filter((p) => p.kind !== "burst" || p.alpha > 0.02);
   brainParticles.forEach((p) => updateAndDrawParticle(ctx, p, dt));

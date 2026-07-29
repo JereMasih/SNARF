@@ -186,8 +186,8 @@ def test_dashboard_preferences_defaults_before_any_save(client, tmp_path, monkey
     assert res.status_code == 200
     data = res.json()
     assert data["panel_order"] == [
-        "history", "chat", "system", "conversations", "memory", "cost",
-        "drive", "gmail", "calendar", "youtube", "brain",
+        "history", "brain", "system", "cost", "chat",
+        "conversations", "memory", "drive", "gmail", "calendar", "youtube",
     ]
     assert all(data["visible_widgets"].values())
 

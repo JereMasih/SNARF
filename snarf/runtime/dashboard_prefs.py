@@ -6,9 +6,18 @@ PREFS_DIR = Path("data/dashboard_prefs")
 # "history" (historial de conversaciones) y "chat" (el chat con Snarf en sí)
 # se suman a la lista unificada de bloques de la grilla de escritorio — antes
 # vivían fuera del sistema de widgets, fijos y sin poder moverse/redimensionar.
+#
+# Orden por defecto (pantalla ancha de escritorio, ver ADR 0037): historial a
+# la izquierda (columna angosta, alto completo); cerebro arriba centrado, con
+# sistema/costo a su lado (misma fila); chat debajo del cerebro, centrado;
+# conversaciones/memoria/drive/gmail/calendar/youtube forman una columna a la
+# derecha que sigue bajando. El auto-flow disperso de la grilla logra esto
+# solo con el orden de esta lista + los anchos de columna de DEFAULT_SPANS
+# (todo lo de la derecha en col_span=3, para que quede en su propia columna
+# en vez de desparramarse a lo ancho).
 WIDGET_IDS = [
-    "history", "chat", "system", "conversations", "memory", "cost",
-    "drive", "gmail", "calendar", "youtube", "brain",
+    "history", "brain", "system", "cost", "chat",
+    "conversations", "memory", "drive", "gmail", "calendar", "youtube",
 ]
 # Nunca se pueden ocultar, ni siquiera con un payload directo a la API — son
 # el núcleo de la app, no un widget más que el fundador pueda apagar sin querer.
@@ -20,21 +29,24 @@ MIN_COL_SPAN, MAX_COL_SPAN = 1, GRID_COLUMNS
 MIN_ROW_SPAN, MAX_ROW_SPAN = 3, 30
 
 # Tamaño por defecto de cada bloque en la grilla de 12 columnas (filas de
-# 28px) — elegido para que la primera carga, sin nada guardado todavía, se
-# parezca a la proporción de columnas fija que existía antes (280px / ~500px
-# / resto), no para que se vea desordenada.
+# 28px). Historial (3 columnas) + cerebro/chat (6 columnas, centro) sobre 9
+# columnas; las 3 columnas restantes son la columna derecha (sistema/costo
+# arriba, junto al cerebro; conversaciones/memoria/capacidades de Google
+# bajando debajo) — mismo col_span=3 en todos para que el auto-flow disperso
+# los apile en una sola columna en vez de desparramarlos a lo ancho. Ver ADR
+# 0037.
 DEFAULT_SPANS = {
-    "history": {"col_span": 3, "row_span": 16},
+    "history": {"col_span": 3, "row_span": 28},
+    "brain": {"col_span": 6, "row_span": 12},
+    "system": {"col_span": 3, "row_span": 7},
+    "cost": {"col_span": 3, "row_span": 7},
     "chat": {"col_span": 6, "row_span": 16},
-    "system": {"col_span": 3, "row_span": 8},
-    "cost": {"col_span": 3, "row_span": 8},
-    "conversations": {"col_span": 6, "row_span": 8},
-    "memory": {"col_span": 6, "row_span": 8},
-    "drive": {"col_span": 4, "row_span": 8},
-    "gmail": {"col_span": 4, "row_span": 8},
-    "calendar": {"col_span": 4, "row_span": 8},
-    "youtube": {"col_span": 4, "row_span": 8},
-    "brain": {"col_span": 4, "row_span": 8},
+    "conversations": {"col_span": 3, "row_span": 9},
+    "memory": {"col_span": 3, "row_span": 9},
+    "drive": {"col_span": 3, "row_span": 8},
+    "gmail": {"col_span": 3, "row_span": 8},
+    "calendar": {"col_span": 3, "row_span": 8},
+    "youtube": {"col_span": 3, "row_span": 8},
 }
 
 
