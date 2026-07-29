@@ -88,6 +88,24 @@ def test_transcribe_records_a_voice_input_log_entry_for_real_audio(client, monke
     assert entries[0]["channel"] == "voice"
 
 
+def test_transcribe_reports_an_explicit_error_when_stt_itself_fails(client, monkeypatch):
+    """Antes de este fix, un fallo real del servicio (cuota agotada, red)
+    volvía indistinguible de un silencio genuino — la interfaz le decía al
+    usuario "no se escuchó nada" cuando en realidad el micrófono funcionó
+    perfecto y el servicio de voz fue el que falló."""
+    monkeypatch.setattr(app_module.stt, "_api_key", "fake-key-for-test")
+
+    def boom(*a, **kw):
+        raise RuntimeError("ElevenLabs STT 401: quota_exceeded")
+
+    monkeypatch.setattr(app_module.stt, "transcribe", boom)
+    res = client.post("/transcribe", files={"file": ("audio.webm", b"x" * 5000, "audio/webm")})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["transcript"] == ""
+    assert data["error"]
+
+
 def test_transcribe_rejects_too_short_audio(client, monkeypatch):
     # Con credenciales (simuladas) presentes, el guard de tamaño mínimo debe
     # cortar antes de siquiera intentar llamar a la API de ElevenLabs.

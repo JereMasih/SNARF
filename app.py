@@ -123,7 +123,12 @@ async def transcribe(file: UploadFile, user_id: str = Depends(require_user)):
         text = stt.transcribe(audio_bytes, filename=file.filename or "audio.webm")
     except Exception as exc:
         print(f"[transcribe] fallo de STT, degradando a transcript vacío: {exc}")
-        return {"transcript": ""}
+        # Distinto de "no se detectó voz" (audio corto, o Scribe transcribió
+        # silencio real): acá el servicio en sí falló (cuota agotada, red,
+        # etc.) — sin este campo, la interfaz no puede distinguir ambos casos
+        # y termina diciéndole al usuario "no se escuchó nada" cuando en
+        # realidad el micrófono funcionó perfecto.
+        return {"transcript": "", "error": "no se pudo transcribir: el servicio de voz no está disponible ahora"}
     return {"transcript": text}
 
 

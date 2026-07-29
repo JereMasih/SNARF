@@ -2805,7 +2805,11 @@ async function transcribeBlob(blob) {
   const res = await apiFetch("/transcribe", { method: "POST", body: form });
   if (!res.ok) throw new Error("transcribe HTTP " + res.status);
   const data = await res.json();
-  return data.transcript || "";
+  // data.error: el STT en sí falló (cuota, red) — distinto de una
+  // transcripción vacía real (audio corto o silencio genuino), que no trae
+  // este campo. Sin la distinción, un fallo de servicio se mostraba como
+  // "no se escuchó nada" — engañoso, porque reintentar no soluciona nada.
+  return { transcript: data.transcript || "", error: data.error || null };
 }
 
 async function sendText(text) {
@@ -2839,7 +2843,8 @@ async function handleClickMode() {
     setState("thinking", "transcribiendo...");
     try {
       const blob = await stopRecording();
-      const transcript = await transcribeBlob(blob);
+      const { transcript, error } = await transcribeBlob(blob);
+      if (error) { setState("error", error); return; }
       if (!transcript.trim()) { setState("idle", "no se escuchó nada, probá de nuevo"); return; }
       reviewText.value = transcript;
       review.classList.add("visible");
@@ -2884,7 +2889,8 @@ async function handleMicClick() {
     setState("thinking", "transcribiendo...");
     try {
       const blob = await stopRecording();
-      const transcript = await transcribeBlob(blob);
+      const { transcript, error } = await transcribeBlob(blob);
+      if (error) { setState("error", error); return; }
       textInput.value = transcript;
       setState("idle", idleLabel());
       textInput.focus();
