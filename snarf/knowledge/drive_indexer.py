@@ -85,12 +85,14 @@ class DriveIndexer:
                 total_bytes += size
         return {"total_files": total_files, "total_bytes": total_bytes, "by_category": by_category}
 
-    def index_file(self, file: dict) -> dict:
+    def index_file(self, file: dict, extra_metadata: dict | None = None) -> dict:
         """Indexa un único archivo ya conocido (id + mimeType + modifiedTime),
         sin esperar a la próxima corrida de background — para archivos recién
-        creados o subidos, que deben quedar buscables de inmediato."""
+        creados o subidos, que deben quedar buscables de inmediato.
+        `extra_metadata` (ej. {"project_id": ...}) se suma a la metadata de
+        cada chunk, para poder acotar `search()` después."""
         data = self._manifest.load()
-        self._process_file(data, file)
+        self._process_file(data, file, extra_metadata=extra_metadata)
         self._manifest.save(data)
         return data.get(file["id"], {})
 
@@ -172,9 +174,9 @@ class DriveIndexer:
         self._stop_event.set()
         return {"status": "stopping"}
 
-    def search(self, query: str, top_k: int = 5) -> list[dict]:
+    def search(self, query: str, top_k: int = 5, where: dict | None = None) -> list[dict]:
         embedding = self._embeddings.embed([query], input_type="query")[0]
-        return self._vector_store.search(embedding, top_k=top_k)
+        return self._vector_store.search(embedding, top_k=top_k, where=where)
 
     def get_indexed_text(self, file_id: str) -> str:
         """Texto ya indexado de un archivo puntual (ej. la descripción que
@@ -213,7 +215,7 @@ class DriveIndexer:
                 self._status["running"] = False
                 self._status["finished_at"] = time.time()
 
-    def _process_file(self, data: dict, file: dict) -> None:
+    def _process_file(self, data: dict, file: dict, extra_metadata: dict | None = None) -> None:
         file_id = file["id"]
         mime = file.get("mimeType", "") or ""
         modified_time = file.get("modifiedTime", "")
@@ -256,6 +258,7 @@ class DriveIndexer:
                         "webViewLink": file.get("webViewLink", ""),
                         "location": "drive",
                         "chunk_index": i,
+                        **(extra_metadata or {}),
                     }
                     for i in range(len(chunks))
                 ]

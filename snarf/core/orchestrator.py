@@ -23,6 +23,7 @@ from snarf.knowledge.extraction import ContentExtractor
 from snarf.knowledge.vector_store import VectorStore
 from snarf.memory.episodic import EpisodicMemory
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
+from snarf.specialists.project_manager import ProjectManager
 from snarf.telemetry import activity_log
 
 # Único usuario real hoy. El Orchestrator ya recibe un user_id explícito (en
@@ -70,13 +71,15 @@ SYSTEM_PREFIX = (
     "Tenés herramientas de organización que actúan sobre el mundo real pero son "
     "reversibles y no salen de la cuenta del fundador (no requieren confirmación en dos "
     "pasos, pero usalas solo cuando el fundador lo pida): gmail_create_label, "
-    "gmail_modify_message_labels, drive_create_folder, drive_move_file.\n\n"
+    "gmail_modify_message_labels, drive_create_folder, drive_move_file, "
+    "drive_rename_file.\n\n"
     "Además tenés herramientas de alto impacto (Constitution, Artículo VII): "
     "gmail_send_message, calendar_create_event, calendar_create_calendar, "
     "calendar_delete_calendar, calendar_delete_event, calendar_move_event (mover un "
     "evento entre calendarios puede notificar a invitados si el evento tiene invitados, "
     "por eso lleva confirmación igual que borrar), gmail_delete_label, "
-    "drive_delete_file. Su protocolo es "
+    "drive_delete_file, drive_share_file (da acceso real a otra persona o vía link "
+    "público, aunque no borre nada) y project_delete. Su protocolo es "
     "obligatorio, siempre, sin excepción: (1) llamalas primero con confirmed=false (o "
     "sin ese campo) — no van a ejecutar nada, te van a devolver una vista previa; (2) "
     "mostrale esa vista previa al fundador tal cual, con claridad, y preguntale si "
@@ -105,7 +108,7 @@ SYSTEM_PREFIX = (
     "drive_create_presentation (pptx o Google Slides). Todas aceptan tres destinos — "
     "preguntale siempre a quien te lo pidió cuál prefiere antes de crear, salvo que ya "
     "te lo haya dicho explícitamente en este intercambio: "
-    "(1) destination='drive' — se guarda en la carpeta 'Snarf - Archivos' del Drive "
+    "(1) destination='drive' — se guarda en la carpeta 'Snarf/Archivos' del Drive "
     "real de esa persona, usa espacio de su cuota; "
     "(2) destination='device' — se prepara para descargar directo a SU dispositivo "
     "(computadora o celular), con el diálogo nativo de 'Guardar como' del navegador; "
@@ -116,6 +119,16 @@ SYSTEM_PREFIX = (
     "habla no es el fundador, ni se lo ofrezcas como opción. Los tres destinos quedan "
     "indexados al toque, así que después se puede encontrar con drive_search_knowledge "
     "sin importar dónde haya quedado.\n\n"
+    "También tenés 'Proyectos': cada uno es una carpeta propia en el Drive del fundador "
+    "(con subcarpetas propuestas automáticamente), un prompt/instrucciones propias, y sus "
+    "propias listas de tareas y notas — project_create, project_list, project_get, "
+    "project_set_prompt, project_add_task, project_complete_task, project_delete_task, "
+    "project_add_note, project_delete_note, project_search (búsqueda semántica acotada a "
+    "lo que se subió a ESE proyecto vía Snarf, no todo lo que haya en su carpeta de Drive) "
+    "y project_delete (alto impacto, ver arriba). Cuando el fundador te pida trabajar 'en' "
+    "o 'sobre' un Proyecto puntual, llamá project_get primero y seguí el prompt propio de "
+    "ese proyecto para esa respuesta, además de tu personalidad de siempre — el prompt del "
+    "proyecto complementa quién sos, nunca lo reemplaza.\n\n"
 )
 
 TOOLS = [
@@ -441,7 +454,7 @@ TOOLS = [
         "description": (
             "Crea un documento real y devuelve su link o ubicación. format='markdown' o 'pdf' generan el "
             "archivo tal cual; format='google_doc' crea un Google Doc editable nativo (solo con "
-            "destination='drive'). destination='drive' lo sube a la carpeta 'Snarf - Archivos' del Drive "
+            "destination='drive'). destination='drive' lo sube a la carpeta 'Snarf/Archivos' del Drive "
             "del fundador; destination='local' lo guarda en el servidor sin tocar su Drive ni su cuota. "
             "Preguntale al fundador cuál prefiere antes de crearlo, salvo que ya te lo haya dicho. Queda "
             "indexado de inmediato en ambos casos — buscable con drive_search_knowledge sin esperar la "
@@ -463,7 +476,7 @@ TOOLS = [
         "description": (
             "Crea una planilla real. format='xlsx' genera un archivo Excel; format='google_sheet' crea un "
             "Google Sheet editable nativo (solo con destination='drive'). destination='drive' la sube a la "
-            "carpeta 'Snarf - Archivos' del Drive del fundador; destination='local' la guarda en el "
+            "carpeta 'Snarf/Archivos' del Drive del fundador; destination='local' la guarda en el "
             "servidor sin tocar su Drive. Preguntale al fundador cuál prefiere antes de crearla, salvo que "
             "ya te lo haya dicho. Queda indexada de inmediato en ambos casos."
         ),
@@ -487,7 +500,7 @@ TOOLS = [
         "description": (
             "Crea una presentación real. format='pptx' genera un archivo PowerPoint; format='google_slide' "
             "crea un Google Slides editable nativo (solo con destination='drive'). destination='drive' la "
-            "sube a la carpeta 'Snarf - Archivos' del Drive del fundador; destination='local' la guarda en "
+            "sube a la carpeta 'Snarf/Archivos' del Drive del fundador; destination='local' la guarda en "
             "el servidor sin tocar su Drive. Preguntale al fundador cuál prefiere antes de crearla, salvo "
             "que ya te lo haya dicho. Queda indexada de inmediato en ambos casos."
         ),
@@ -507,6 +520,136 @@ TOOLS = [
                 "destination": {"type": "string", "enum": ["drive", "device", "server"], "description": "Por defecto 'drive'. 'server' solo disponible para el fundador."},
             },
             "required": ["title", "slides"],
+        },
+    },
+    {
+        "name": "drive_rename_file",
+        "description": "Renombra un archivo o carpeta real de Drive. Reversible y de bajo riesgo (no expone ni borra nada) — no requiere confirmación en dos pasos.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"file_id": {"type": "string"}, "new_name": {"type": "string"}},
+            "required": ["file_id", "new_name"],
+        },
+    },
+    {
+        "name": "drive_share_file",
+        "description": (
+            "Da acceso real a un archivo de Drive: a una persona puntual (con email) o vía link público "
+            "(sin email). Cambia quién puede ver/editar algo fuera de la cuenta del fundador — herramienta "
+            "de alto impacto, mismo protocolo de confirmación en dos pasos que drive_delete_file."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string"},
+                "role": {"type": "string", "enum": ["reader", "writer", "commenter"], "description": "Por defecto 'reader'."},
+                "email": {"type": "string", "description": "Si se omite, el archivo queda accesible por link público."},
+                "confirmed": {"type": "boolean"},
+            },
+            "required": ["file_id"],
+        },
+    },
+    {
+        "name": "project_create",
+        "description": (
+            "Crea un Proyecto nuevo de Snarf: carpeta propia en Drive (con subcarpetas propuestas "
+            "automáticamente según el tipo de proyecto), prompt propio vacío, listas de tareas y notas "
+            "vacías."
+        ),
+        "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+    },
+    {
+        "name": "project_list",
+        "description": "Lista todos los Proyectos existentes: id, nombre, cantidad de tareas y notas.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "project_get",
+        "description": "Detalle completo de un Proyecto: nombre, prompt propio, carpeta de Drive, tareas y notas.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]},
+    },
+    {
+        "name": "project_set_prompt",
+        "description": "Actualiza el prompt/instrucciones propias de un Proyecto.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}, "prompt": {"type": "string"}},
+            "required": ["project_id", "prompt"],
+        },
+    },
+    {
+        "name": "project_add_task",
+        "description": "Agrega una tarea a un Proyecto.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}, "text": {"type": "string"}},
+            "required": ["project_id", "text"],
+        },
+    },
+    {
+        "name": "project_complete_task",
+        "description": "Marca una tarea de un Proyecto como hecha, o la reabre si ya estaba hecha (alterna el estado).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}, "task_id": {"type": "string"}},
+            "required": ["project_id", "task_id"],
+        },
+    },
+    {
+        "name": "project_delete_task",
+        "description": "Borra una tarea de un Proyecto.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}, "task_id": {"type": "string"}},
+            "required": ["project_id", "task_id"],
+        },
+    },
+    {
+        "name": "project_add_note",
+        "description": "Agrega una nota a un Proyecto.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}, "text": {"type": "string"}},
+            "required": ["project_id", "text"],
+        },
+    },
+    {
+        "name": "project_delete_note",
+        "description": "Borra una nota de un Proyecto.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}, "note_id": {"type": "string"}},
+            "required": ["project_id", "note_id"],
+        },
+    },
+    {
+        "name": "project_search",
+        "description": (
+            "Búsqueda semántica acotada a los archivos de un Proyecto puntual — solo encuentra contenido "
+            "que se subió a ESE proyecto a través de Snarf (drive_create_document/spreadsheet/presentation "
+            "o /files/upload con project_id), no todo lo que haya en su carpeta de Drive."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "query": {"type": "string"},
+                "top_k": {"type": "integer"},
+            },
+            "required": ["project_id", "query"],
+        },
+    },
+    {
+        "name": "project_delete",
+        "description": (
+            "Borra el registro de un Proyecto (nombre, prompt, tareas, notas) — NUNCA borra la carpeta ni "
+            "los archivos reales de Drive de ese proyecto. Herramienta de alto impacto, mismo protocolo de "
+            "confirmación en dos pasos que drive_delete_file."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}, "confirmed": {"type": "boolean"}},
+            "required": ["project_id"],
         },
     },
 ]
@@ -564,6 +707,9 @@ class Orchestrator:
             # exista un segundo usuario real, no debe poder pedirlo.
             allow_server_storage=(user_id == DEFAULT_USER_ID),
         )
+        # Mismo criterio que GmailDigestSpecialist: modelo barato para una
+        # tarea acotada (sugerir 2-4 nombres de subcarpeta por proyecto).
+        self._projects = ProjectManager(self._drive, self._drive_indexer, AnthropicLLM(model=GMAIL_DIGEST_MODEL), user_id)
 
         self._tool_handlers = {
             "list_conversations": lambda i: self._memory.list_conversations(),
@@ -613,6 +759,19 @@ class Orchestrator:
             "drive_create_presentation": lambda i: self._document_publisher.create_presentation(
                 i["title"], i["slides"], format=i.get("format", "pptx"), destination=i.get("destination", "drive")
             ),
+            "drive_rename_file": lambda i: self._drive.rename_file(i["file_id"], i["new_name"]),
+            "drive_share_file": self._tool_drive_share_file,
+            "project_create": lambda i: self._projects.create(i["name"]),
+            "project_list": lambda i: self._projects.list_projects(),
+            "project_get": lambda i: self._projects.get(i["project_id"]),
+            "project_set_prompt": lambda i: self._projects.set_prompt(i["project_id"], i["prompt"]),
+            "project_add_task": lambda i: self._projects.add_task(i["project_id"], i["text"]),
+            "project_complete_task": lambda i: self._projects.complete_task(i["project_id"], i["task_id"]),
+            "project_delete_task": lambda i: self._projects.delete_task(i["project_id"], i["task_id"]),
+            "project_add_note": lambda i: self._projects.add_note(i["project_id"], i["text"]),
+            "project_delete_note": lambda i: self._projects.delete_note(i["project_id"], i["note_id"]),
+            "project_search": lambda i: self._projects.search_within(i["project_id"], i["query"], top_k=i.get("top_k", 5)),
+            "project_delete": self._tool_project_delete,
         }
 
     @property
@@ -650,6 +809,10 @@ class Orchestrator:
     @property
     def document_publisher(self) -> DocumentPublisher:
         return self._document_publisher
+
+    @property
+    def projects(self) -> ProjectManager:
+        return self._projects
 
     def warmup(self) -> None:
         self._llm.warmup()
@@ -754,6 +917,20 @@ class Orchestrator:
             return self._pending({"file_id": i.get("file_id")})
         self._drive.delete_file(i["file_id"])
         return {"status": "deleted", "file_id": i["file_id"]}
+
+    def _tool_drive_share_file(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending({"file_id": i.get("file_id"), "role": i.get("role", "reader"), "email": i.get("email")})
+        result = self._drive.share_file(i["file_id"], role=i.get("role", "reader"), email=i.get("email"))
+        return {"status": "shared", "permission_id": result.get("id")}
+
+    def _tool_project_delete(self, i: dict) -> dict:
+        # A propósito solo borra el registro local de Snarf — ProjectManager.
+        # delete() NUNCA toca la carpeta/archivos reales de Drive, para no
+        # repetir el incidente de datos reales de esta misma sesión.
+        if not i.get("confirmed"):
+            return self._pending({"project_id": i.get("project_id")})
+        return self._projects.delete(i["project_id"])
 
     def _handle_tool(self, name: str, tool_input: dict) -> object:
         handler = self._tool_handlers.get(name)

@@ -63,3 +63,11 @@ def test_restore_latest_with_no_backups_returns_none(tmp_path):
 
 def test_list_backups_with_no_backup_dir_is_empty(tmp_path):
     assert data_backup.list_backups(tmp_path / "does_not_exist") == []
+
+
+def test_backup_targets_includes_projects():
+    # Regresión: "projects" (data/projects, registros de cada Proyecto de
+    # Snarf) es justo el dato nuevo más irremplazable — sin esta guardia, un
+    # refactor futuro podría sacarlo de la lista en silencio y nadie lo notaría
+    # hasta perderlo de verdad.
+    assert "projects" in data_backup.BACKUP_TARGETS

@@ -26,7 +26,11 @@ PRESENTATION_FORMATS = {"pptx", "google_slide"}
 # Drive — no tienen sentido como archivo local.
 GOOGLE_NATIVE_FORMATS = {"google_doc", "google_sheet", "google_slide"}
 
-FOLDER_NAME = "Snarf - Archivos"
+# Anidada bajo una única carpeta raíz "Snarf" en Drive (separada de las
+# carpetas propias del fundador) desde que se sumó "Proyectos" — antes vivía
+# suelta como "Snarf - Archivos" en la raíz del Drive.
+ROOT_FOLDER_NAME = "Snarf"
+FOLDER_NAME = "Archivos"
 
 
 def _flatten_rows(rows: list[list]) -> str:
@@ -65,11 +69,12 @@ class DocumentPublisher:
         self._folder_id = None
 
     def folder_id(self) -> str:
-        """Id de la carpeta 'Snarf - Archivos' del Drive del fundador, donde
+        """Id de la carpeta 'Snarf/Archivos' del Drive del fundador, donde
         viven tanto los archivos que Snarf genera como los que el fundador le
         sube — se crea la primera vez que hace falta, se cachea después."""
         if self._folder_id is None:
-            self._folder_id = self._drive.get_or_create_folder(FOLDER_NAME)
+            root_id = self._drive.get_or_create_folder(ROOT_FOLDER_NAME)
+            self._folder_id = self._drive.get_or_create_folder(FOLDER_NAME, parent_id=root_id)
         return self._folder_id
 
     def _publish(self, name: str, content_bytes: bytes, format_key: str, destination: str, index_text: str) -> dict:

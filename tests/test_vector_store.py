@@ -18,6 +18,31 @@ def test_add_and_search_returns_the_closest_match(tmp_path):
     assert results[0]["metadata"]["file_id"] == "a"
 
 
+def test_search_with_where_filters_by_metadata(tmp_path):
+    store = make_store(tmp_path)
+    store.add(
+        ids=["a:0", "b:0"],
+        embeddings=[[1.0, 0.0], [1.0, 0.0]],
+        documents=["contenido de proyecto A", "contenido de proyecto B"],
+        metadatas=[{"file_id": "a", "project_id": "proj-a"}, {"file_id": "b", "project_id": "proj-b"}],
+    )
+    results = store.search([1.0, 0.0], top_k=5, where={"project_id": "proj-a"})
+    assert len(results) == 1
+    assert results[0]["metadata"]["project_id"] == "proj-a"
+
+
+def test_search_without_where_behaves_exactly_as_before(tmp_path):
+    store = make_store(tmp_path)
+    store.add(
+        ids=["a:0", "b:0"],
+        embeddings=[[1.0, 0.0], [0.0, 1.0]],
+        documents=["contenido A", "contenido B"],
+        metadatas=[{"file_id": "a"}, {"file_id": "b"}],
+    )
+    results = store.search([1.0, 0.0], top_k=1)
+    assert results[0]["text"] == "contenido A"
+
+
 def test_delete_by_file_id_removes_only_that_files_chunks(tmp_path):
     store = make_store(tmp_path)
     store.add(

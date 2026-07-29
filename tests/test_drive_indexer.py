@@ -47,8 +47,8 @@ class FakeVectorStore:
     def delete_by_file_id(self, file_id):
         self.deleted.append(file_id)
 
-    def search(self, query_embedding, top_k=5):
-        return [{"text": "resultado", "embedding": query_embedding, "top_k": top_k}]
+    def search(self, query_embedding, top_k=5, where=None):
+        return [{"text": "resultado", "embedding": query_embedding, "top_k": top_k, "where": where}]
 
     def get_by_file_id(self, file_id):
         chunks = []
@@ -175,6 +175,13 @@ def test_search_embeds_the_query_and_delegates_to_the_vector_store(tmp_path):
     results = indexer.search("una pregunta", top_k=3)
     assert embeddings.calls == [(["una pregunta"], "query")]
     assert results[0]["top_k"] == 3
+    assert results[0]["where"] is None
+
+
+def test_search_passes_the_where_filter_through_to_the_vector_store(tmp_path):
+    indexer, _, _ = make_indexer(tmp_path, [], {})
+    results = indexer.search("impuestos", where={"project_id": "proj-1"})
+    assert results[0]["where"] == {"project_id": "proj-1"}
 
 
 def test_index_file_indexes_a_single_file_immediately_without_a_background_run(tmp_path):
@@ -187,6 +194,29 @@ def test_index_file_indexes_a_single_file_immediately_without_a_background_run(t
     assert result["status"] == "indexed"
     assert len(vector_store.added) == 1
     assert indexer.status()["running"] is False
+
+
+def test_index_file_merges_extra_metadata_into_every_chunk(tmp_path):
+    file = {"id": "1", "mimeType": "application/pdf", "name": "a.pdf", "modifiedTime": "t1"}
+    results = {"1": ExtractionResult(text="contenido de un archivo de proyecto")}
+    indexer, _, vector_store = make_indexer(tmp_path, [], results)
+
+    indexer.index_file(file, extra_metadata={"project_id": "proj-1"})
+
+    _ids, _embeds, _docs, metadatas = vector_store.added[0]
+    assert all(m["project_id"] == "proj-1" for m in metadatas)
+    assert metadatas[0]["file_id"] == "1"  # la metadata original sigue intacta
+
+
+def test_index_file_without_extra_metadata_behaves_exactly_as_before(tmp_path):
+    file = {"id": "1", "mimeType": "application/pdf", "name": "a.pdf", "modifiedTime": "t1"}
+    results = {"1": ExtractionResult(text="contenido sin proyecto")}
+    indexer, _, vector_store = make_indexer(tmp_path, [], results)
+
+    indexer.index_file(file)
+
+    _ids, _embeds, _docs, metadatas = vector_store.added[0]
+    assert "project_id" not in metadatas[0]
 
 
 def test_get_indexed_text_returns_the_text_stored_for_that_file(tmp_path):

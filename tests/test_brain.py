@@ -33,6 +33,14 @@ def test_snapshot_routes_gmail_digest_to_the_specialist_node_not_gmail():
     assert result["nodes"]["gmail"]["count"] == 0
 
 
+def test_snapshot_routes_project_tools_to_the_specialist_node_not_drive_or_knowledge():
+    entries = [{"timestamp": 1.0, "tool_name": "project_create", "status": "ok"}]
+    result = brain.snapshot(entries, [], [], {})
+    assert result["nodes"]["specialist_projects"]["count"] == 1
+    assert result["nodes"]["drive"]["count"] == 0
+    assert result["nodes"]["knowledge"]["count"] == 0
+
+
 def test_snapshot_counts_errors_per_node():
     entries = [
         {"timestamp": 1.0, "tool_name": "drive_list_files", "status": "ok"},

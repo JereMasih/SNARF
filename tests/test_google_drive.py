@@ -2,11 +2,13 @@ from snarf.capabilities.google_drive import GoogleDrive
 
 
 class FakeFilesResource:
-    def __init__(self, pages, media_bytes=None, create_response=None):
+    def __init__(self, pages, media_bytes=None, create_response=None, update_response=None):
         self._pages = pages
         self._media_bytes = media_bytes or {}
         self._create_response = create_response
+        self._update_response = update_response
         self.create_calls = []
+        self.update_calls = []
 
     def list(self, **params):
         page_token = params.get("pageToken")
@@ -15,6 +17,20 @@ class FakeFilesResource:
 
     def get_media(self, fileId):
         return SimpleExecutable(self._media_bytes[fileId])
+
+    def create(self, **kwargs):
+        self.create_calls.append(kwargs)
+        return SimpleExecutable(self._create_response)
+
+    def update(self, **kwargs):
+        self.update_calls.append(kwargs)
+        return SimpleExecutable(self._update_response)
+
+
+class FakePermissionsResource:
+    def __init__(self, create_response=None):
+        self._create_response = create_response
+        self.create_calls = []
 
     def create(self, **kwargs):
         self.create_calls.append(kwargs)
@@ -30,16 +46,20 @@ class SimpleExecutable:
 
 
 class FakeService:
-    def __init__(self, pages, media_bytes=None, create_response=None):
-        self._files = FakeFilesResource(pages, media_bytes, create_response)
+    def __init__(self, pages, media_bytes=None, create_response=None, update_response=None, permission_response=None):
+        self._files = FakeFilesResource(pages, media_bytes, create_response, update_response)
+        self._permissions = FakePermissionsResource(permission_response)
 
     def files(self):
         return self._files
 
+    def permissions(self):
+        return self._permissions
 
-def make_drive(pages=None, media_bytes=None, create_response=None):
+
+def make_drive(pages=None, media_bytes=None, create_response=None, update_response=None, permission_response=None):
     drive = GoogleDrive.__new__(GoogleDrive)
-    drive._service = FakeService(pages or {}, media_bytes, create_response)
+    drive._service = FakeService(pages or {}, media_bytes, create_response, update_response, permission_response)
     return drive
 
 
@@ -101,3 +121,27 @@ def test_upload_file_without_convert_to_uses_the_content_mime_type():
     sent_body = drive._service._files.create_calls[0]["body"]
     assert sent_body["mimeType"] == "application/pdf"
     assert "parents" not in sent_body
+
+
+def test_rename_file_sends_the_new_name_in_the_update_body():
+    drive = make_drive(update_response={"id": "f1", "name": "Archivos"})
+    result = drive.rename_file("f1", "Archivos")
+    assert result["name"] == "Archivos"
+    call = drive._service._files.update_calls[0]
+    assert call["fileId"] == "f1"
+    assert call["body"] == {"name": "Archivos"}
+
+
+def test_share_file_with_email_creates_a_user_permission():
+    drive = make_drive(permission_response={"id": "p1", "type": "user", "role": "reader"})
+    drive.share_file("f1", role="reader", email="alguien@example.com")
+    call = drive._service._permissions.create_calls[0]
+    assert call["fileId"] == "f1"
+    assert call["body"] == {"type": "user", "role": "reader", "emailAddress": "alguien@example.com"}
+
+
+def test_share_file_without_email_creates_an_anyone_permission():
+    drive = make_drive(permission_response={"id": "p2", "type": "anyone", "role": "reader"})
+    drive.share_file("f1", role="reader")
+    call = drive._service._permissions.create_calls[0]
+    assert call["body"] == {"type": "anyone", "role": "reader"}

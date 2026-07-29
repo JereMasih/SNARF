@@ -426,7 +426,7 @@ def test_upload_file_saves_to_drive_and_indexes_it(client, connected_google_toke
         "upload_file",
         lambda *a, **kw: {"id": "f1", "name": "a.txt", "mimeType": "text/plain", "modifiedTime": "t1", "webViewLink": "http://x"},
     )
-    monkeypatch.setattr(app_module.orchestrator.drive_indexer, "index_file", lambda file: {"status": "indexed"})
+    monkeypatch.setattr(app_module.orchestrator.drive_indexer, "index_file", lambda file, extra_metadata=None: {"status": "indexed"})
 
     res = client.post("/files/upload", files={"file": ("a.txt", b"contenido", "text/plain")})
 
@@ -444,7 +444,7 @@ def test_upload_file_records_a_file_input_log_entry_with_its_real_category(clien
         "upload_file",
         lambda *a, **kw: {"id": "f1", "name": "a.png", "mimeType": "image/png", "modifiedTime": "t1", "webViewLink": "http://x"},
     )
-    monkeypatch.setattr(app_module.orchestrator.drive_indexer, "index_file", lambda file: {"status": "indexed"})
+    monkeypatch.setattr(app_module.orchestrator.drive_indexer, "index_file", lambda file, extra_metadata=None: {"status": "indexed"})
 
     client.post("/files/upload", files={"file": ("a.png", b"contenido", "image/png")})
 
@@ -461,7 +461,7 @@ def test_upload_image_returns_the_stored_analysis_text(client, connected_google_
         "upload_file",
         lambda *a, **kw: {"id": "img1", "name": "foto.png", "mimeType": "image/png", "modifiedTime": "t1", "webViewLink": "http://x"},
     )
-    monkeypatch.setattr(app_module.orchestrator.drive_indexer, "index_file", lambda file: {"status": "indexed"})
+    monkeypatch.setattr(app_module.orchestrator.drive_indexer, "index_file", lambda file, extra_metadata=None: {"status": "indexed"})
     monkeypatch.setattr(app_module.orchestrator.drive_indexer, "get_indexed_text", lambda file_id: "una descripción real de la imagen")
 
     res = client.post("/files/upload", files={"file": ("foto.png", b"bytes-de-imagen", "image/png")})
@@ -524,5 +524,127 @@ def test_gmail_digest_refresh_degrades_gracefully_on_error(client, connected_goo
     res = client.post("/dashboard/widgets/gmail/digest/refresh")
     assert res.status_code == 200
     assert res.json() == {"connected": True, "error": "falló la interpretación"}
+
+
+@pytest.fixture
+def projects_fixture(tmp_path, monkeypatch, connected_google_token):
+    from snarf.specialists import project_manager as module
+
+    monkeypatch.setattr(module, "PROJECTS_DIR", tmp_path / "projects")
+    monkeypatch.setattr(app_module.orchestrator.drive, "get_or_create_folder", lambda name, parent_id=None: f"folder-{name}")
+    monkeypatch.setattr(app_module.orchestrator.projects._llm, "_client", None)  # sin costo real en tests
+
+
+def test_list_projects_is_empty_before_any_creation(client, projects_fixture):
+    res = client.get("/projects")
+    assert res.status_code == 200
+    assert res.json() == []
+
+
+def test_create_project_requires_google_connected(client, no_google_token):
+    res = client.post("/projects", json={"name": "Proyecto"})
+    assert res.status_code == 400
+
+
+def test_create_project_degrades_gracefully_on_drive_error(client, tmp_path, monkeypatch, connected_google_token):
+    from snarf.specialists import project_manager as module
+
+    monkeypatch.setattr(module, "PROJECTS_DIR", tmp_path / "projects")
+
+    def boom(name, parent_id=None):
+        raise RuntimeError("Drive no disponible")
+
+    monkeypatch.setattr(app_module.orchestrator.drive, "get_or_create_folder", boom)
+    res = client.post("/projects", json={"name": "Proyecto"})
+    assert res.status_code == 502
+
+
+def test_create_and_get_project_roundtrip(client, projects_fixture):
+    create_res = client.post("/projects", json={"name": "Finanzas"})
+    assert create_res.status_code == 200
+    project_id = create_res.json()["id"]
+
+    get_res = client.get(f"/projects/{project_id}")
+    assert get_res.status_code == 200
+    assert get_res.json()["name"] == "Finanzas"
+
+    list_res = client.get("/projects")
+    assert list_res.json()[0]["id"] == project_id
+
+
+def test_get_project_returns_404_for_a_missing_project(client, projects_fixture):
+    res = client.get("/projects/no-existe")
+    assert res.status_code == 404
+
+
+def test_set_project_prompt(client, projects_fixture):
+    project_id = client.post("/projects", json={"name": "Newsletter"}).json()["id"]
+    res = client.put(f"/projects/{project_id}/prompt", json={"prompt": "sos el asistente de este proyecto"})
+    assert res.status_code == 200
+    assert res.json()["prompt"] == "sos el asistente de este proyecto"
+
+
+def test_project_task_roundtrip(client, projects_fixture):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    added = client.post(f"/projects/{project_id}/tasks", json={"text": "primera tarea"})
+    task_id = added.json()["tasks"][0]["id"]
+
+    toggled = client.patch(f"/projects/{project_id}/tasks/{task_id}")
+    assert toggled.json()["tasks"][0]["done"] is True
+
+    deleted = client.delete(f"/projects/{project_id}/tasks/{task_id}")
+    assert deleted.json()["tasks"] == []
+
+
+def test_project_note_roundtrip(client, projects_fixture):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    added = client.post(f"/projects/{project_id}/notes", json={"text": "una nota"})
+    note_id = added.json()["notes"][0]["id"]
+
+    deleted = client.delete(f"/projects/{project_id}/notes/{note_id}")
+    assert deleted.json()["notes"] == []
+
+
+def test_delete_project_without_confirmed_is_rejected(client, projects_fixture):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    res = client.delete(f"/projects/{project_id}")
+    assert res.status_code == 400
+    assert client.get(f"/projects/{project_id}").status_code == 200  # sigue existiendo
+
+
+def test_delete_project_with_confirmed_removes_it_and_never_touches_drive(client, projects_fixture, monkeypatch):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    delete_calls = []
+    monkeypatch.setattr(app_module.orchestrator.drive, "delete_file", lambda file_id: delete_calls.append(file_id))
+
+    res = client.delete(f"/projects/{project_id}?confirmed=true")
+    assert res.status_code == 200
+    assert client.get(f"/projects/{project_id}").status_code == 404
+    assert delete_calls == []  # nunca se llamó a borrar nada real de Drive
+
+
+def test_upload_with_project_id_uploads_to_the_project_folder_and_tags_the_index(
+    client, connected_google_token, projects_fixture, monkeypatch
+):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+
+    upload_calls = []
+    monkeypatch.setattr(
+        app_module.orchestrator.drive,
+        "upload_file",
+        lambda *a, **kw: upload_calls.append(kw) or {"id": "f1", "name": "a.pdf", "mimeType": "application/pdf", "modifiedTime": "t1", "webViewLink": "http://x"},
+    )
+    index_calls = []
+    monkeypatch.setattr(
+        app_module.orchestrator.drive_indexer,
+        "index_file",
+        lambda file, extra_metadata=None: index_calls.append(extra_metadata) or {"status": "indexed"},
+    )
+
+    res = client.post("/files/upload", files={"file": ("a.pdf", b"contenido", "application/pdf")}, data={"project_id": project_id})
+    assert res.status_code == 200
+    project = client.get(f"/projects/{project_id}").json()
+    assert upload_calls[0]["parent_id"] == project["drive_folder_id"]
+    assert index_calls[0] == {"project_id": project_id}
 
 

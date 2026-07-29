@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, UploadFile
+from fastapi import Cookie, Depends, FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -85,6 +85,18 @@ class DashboardPreferences(BaseModel):
     visible_widgets: dict[str, bool] = {}
     panel_order: list[str] = []
     widget_options: dict[str, dict] = {}
+
+
+class ProjectCreateRequest(BaseModel):
+    name: str
+
+
+class ProjectPromptRequest(BaseModel):
+    prompt: str
+
+
+class ProjectTextRequest(BaseModel):
+    text: str
 
 
 @app.get("/")
@@ -166,16 +178,30 @@ def synthesize_speech(payload: TTSRequest, user_id: str = Depends(require_user))
 
 
 @app.post("/files/upload")
-async def upload_file(file: UploadFile, user_id: str = Depends(require_user)):
+async def upload_file(file: UploadFile, project_id: str | None = Form(None), user_id: str = Depends(require_user)):
     if not _google_connected(user_id):
         raise HTTPException(400, "Google no conectado")
     content = await file.read()
     mime_type = file.content_type or "application/octet-stream"
     input_log.record("file", category=categorize_mime(mime_type))
     try:
-        folder_id = orchestrator.document_publisher.folder_id()
+        # Con project_id: sube a la carpeta real de ESE proyecto e indexa
+        # etiquetado con su id, para que search_within() no quede siempre
+        # vacío. Sin project_id: comportamiento de siempre (carpeta
+        # "Snarf/Archivos" genérica).
+        extra_metadata = None
+        if project_id:
+            project = orchestrator.projects.get(project_id)
+            if project is None:
+                raise HTTPException(404, "proyecto no encontrado")
+            folder_id = project["drive_folder_id"]
+            extra_metadata = {"project_id": project_id}
+        else:
+            folder_id = orchestrator.document_publisher.folder_id()
         created = orchestrator.drive.upload_file(file.filename or "archivo", content, mime_type, parent_id=folder_id)
-        index_result = orchestrator.drive_indexer.index_file(created)
+        index_result = orchestrator.drive_indexer.index_file(created, extra_metadata=extra_metadata)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(502, f"no se pudo subir/indexar el archivo: {exc}")
 
@@ -348,6 +374,96 @@ def list_conversations(user_id: str = Depends(require_user)):
 @app.get("/conversations/{conversation_id}")
 def get_conversation(conversation_id: str, user_id: str = Depends(require_user)):
     return orchestrator.memory.get_conversation(conversation_id)
+
+
+# Igual que /dashboard/widgets/gmail/digest/refresh: estas rutas llaman
+# directo a ProjectManager, sin pasar por _handle_tool — no generan pulso en
+# el cerebro de Snarf (sí lo genera el camino conversacional, project_create
+# etc. dichas en el chat). Misma asimetría ya aceptada para el digest de
+# Gmail, no un problema nuevo.
+@app.get("/projects")
+def list_projects(user_id: str = Depends(require_user)):
+    return orchestrator.projects.list_projects()
+
+
+@app.post("/projects")
+def create_project(payload: ProjectCreateRequest, user_id: str = Depends(require_user)):
+    if not _google_connected(user_id):
+        raise HTTPException(400, "Google no conectado")
+    try:
+        return orchestrator.projects.create(payload.name)
+    except Exception as exc:
+        raise HTTPException(502, f"no se pudo crear el proyecto: {exc}")
+
+
+@app.get("/projects/{project_id}")
+def get_project(project_id: str, user_id: str = Depends(require_user)):
+    project = orchestrator.projects.get(project_id)
+    if project is None:
+        raise HTTPException(404, "proyecto no encontrado")
+    return project
+
+
+@app.put("/projects/{project_id}/prompt")
+def set_project_prompt(project_id: str, payload: ProjectPromptRequest, user_id: str = Depends(require_user)):
+    project = orchestrator.projects.set_prompt(project_id, payload.prompt)
+    if project is None:
+        raise HTTPException(404, "proyecto no encontrado")
+    return project
+
+
+@app.post("/projects/{project_id}/tasks")
+def add_project_task(project_id: str, payload: ProjectTextRequest, user_id: str = Depends(require_user)):
+    project = orchestrator.projects.add_task(project_id, payload.text)
+    if project is None:
+        raise HTTPException(404, "proyecto no encontrado")
+    return project
+
+
+@app.patch("/projects/{project_id}/tasks/{task_id}")
+def toggle_project_task(project_id: str, task_id: str, user_id: str = Depends(require_user)):
+    project = orchestrator.projects.complete_task(project_id, task_id)
+    if project is None:
+        raise HTTPException(404, "proyecto no encontrado")
+    return project
+
+
+@app.delete("/projects/{project_id}/tasks/{task_id}")
+def delete_project_task(project_id: str, task_id: str, user_id: str = Depends(require_user)):
+    project = orchestrator.projects.delete_task(project_id, task_id)
+    if project is None:
+        raise HTTPException(404, "proyecto no encontrado")
+    return project
+
+
+@app.post("/projects/{project_id}/notes")
+def add_project_note(project_id: str, payload: ProjectTextRequest, user_id: str = Depends(require_user)):
+    project = orchestrator.projects.add_note(project_id, payload.text)
+    if project is None:
+        raise HTTPException(404, "proyecto no encontrado")
+    return project
+
+
+@app.delete("/projects/{project_id}/notes/{note_id}")
+def delete_project_note(project_id: str, note_id: str, user_id: str = Depends(require_user)):
+    project = orchestrator.projects.delete_note(project_id, note_id)
+    if project is None:
+        raise HTTPException(404, "proyecto no encontrado")
+    return project
+
+
+@app.delete("/projects/{project_id}")
+def delete_project(project_id: str, confirmed: bool = False, user_id: str = Depends(require_user)):
+    # El camino conversacional muestra una vista previa y espera el próximo
+    # turno antes de confirmar — una request HTTP no puede replicar eso. El
+    # frontend es responsable de pedir una confirmación real (window.confirm)
+    # antes de mandar ?confirmed=true; sin el flag, se rechaza en vez de
+    # borrar en silencio.
+    if not confirmed:
+        raise HTTPException(400, "falta confirmar (?confirmed=true)")
+    if orchestrator.projects.get(project_id) is None:
+        raise HTTPException(404, "proyecto no encontrado")
+    return orchestrator.projects.delete(project_id)
 
 
 def _lan_ip() -> str:

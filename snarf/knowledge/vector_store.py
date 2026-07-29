@@ -36,8 +36,8 @@ class VectorStore:
         metadatas = result.get("metadatas") or []
         return [{"id": ids[i], "text": documents[i], "metadata": metadatas[i]} for i in range(len(ids))]
 
-    def search(self, query_embedding: list[float], top_k: int = 5) -> list[dict]:
-        result = self._collection().query(query_embeddings=[query_embedding], n_results=top_k)
+    def search(self, query_embedding: list[float], top_k: int = 5, where: dict | None = None) -> list[dict]:
+        result = self._collection().query(query_embeddings=[query_embedding], n_results=top_k, where=where)
         ids = result.get("ids", [[]])[0]
         documents = result.get("documents") or [[]]
         metadatas = result.get("metadatas") or [[]]

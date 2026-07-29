@@ -74,7 +74,7 @@ def test_create_document_uploads_to_the_snarf_folder_and_indexes_it():
     assert result["id"] == "file-1"
     assert result["indexed"] is True
     assert result["location"] == "drive"
-    assert publisher._drive.folder_calls == ["Snarf - Archivos"]
+    assert publisher._drive.folder_calls == ["Snarf", "Archivos"]
     assert publisher._drive.upload_calls[0]["mime_type"] == "application/pdf"
 
 
@@ -143,7 +143,7 @@ def test_folder_is_resolved_only_once_across_multiple_creations():
     publisher = make_publisher()
     publisher.create_document("A", "x", format="markdown")
     publisher.create_document("B", "y", format="markdown")
-    assert publisher._drive.folder_calls == ["Snarf - Archivos"]
+    assert publisher._drive.folder_calls == ["Snarf", "Archivos"]
 
 
 def test_creation_result_reports_not_indexed_when_indexing_fails_but_the_file_still_exists():

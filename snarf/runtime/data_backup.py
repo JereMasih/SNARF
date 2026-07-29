@@ -7,7 +7,8 @@ BACKUP_DIR = Path("data_backups")
 
 # Todo lo que es estado real e irremplazable: memoria episódica, logs de
 # actividad/uso/entrada, preferencias del dashboard, caché del digest de
-# Gmail, archivos locales creados/recibidos por Snarf. Se excluye a propósito
+# Gmail, archivos locales creados/recibidos por Snarf, y los registros de
+# Proyectos (nombre/prompt/tareas/notas de cada uno). Se excluye a propósito
 # `drive_index/` (caché de vectores de Google Drive, cientos de MB): es
 # regenerable desde la fuente real (Drive), respaldarlo sería caro y
 # redundante.
@@ -20,6 +21,7 @@ BACKUP_TARGETS = [
     "dashboard_prefs",
     "gmail_digest",
     "local_files",
+    "projects",
 ]
 KEEP_LAST_N = 14
 SNAPSHOT_TIME_FORMAT = "%Y-%m-%dT%H-%M-%S"

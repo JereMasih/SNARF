@@ -162,3 +162,21 @@ class GoogleDrive(Capability):
     @retry_with_fresh_client
     def delete_file(self, file_id: str) -> None:
         self._client().files().delete(fileId=file_id).execute()
+
+    @retry_with_fresh_client
+    def rename_file(self, file_id: str, new_name: str) -> dict:
+        return self._client().files().update(fileId=file_id, body={"name": new_name}, fields="id, name").execute()
+
+    @retry_with_fresh_client
+    def share_file(self, file_id: str, role: str = "reader", email: str | None = None) -> dict:
+        """Da acceso real a un archivo real: a una persona puntual si se pasa
+        `email`, o vía link público (`type: "anyone"`) si no. Cambia quién
+        puede ver/editar algo fuera de la cuenta del fundador — el Orchestrator
+        lo trata como acción de alto impacto, igual que borrar un archivo."""
+        permission = {"type": "user", "role": role, "emailAddress": email} if email else {"type": "anyone", "role": role}
+        return (
+            self._client()
+            .permissions()
+            .create(fileId=file_id, body=permission, fields="id, type, role")
+            .execute()
+        )

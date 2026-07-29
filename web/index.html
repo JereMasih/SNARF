@@ -354,6 +354,45 @@
   .settings-toggle.on { background: rgba(79,216,232,0.25); border-color: var(--glow); }
   .settings-toggle.on::after { transform: translateX(15px); background: var(--glow); }
 
+  /* --- barra lateral: Conversaciones / Proyectos ---
+     .conv-list ya es flex:1 1 auto dentro de #sidebar — dos listas con el
+     mismo flex competirían por el espacio, así que el switcher alterna cuál
+     panel está montado en ese mismo lugar, nunca ambos a la vez. */
+  .sidebar-tabs { display: flex; gap: 0.4rem; margin: 0 14px 10px; }
+  .sidebar-tab {
+    flex: 1 1 auto; background: none; border: 1px solid rgba(79,216,232,0.25);
+    color: var(--text-dim); font-family: inherit; font-size: 0.68rem;
+    padding: 0.4rem 0.3rem; border-radius: 8px; cursor: pointer;
+  }
+  .sidebar-tab.active { background: rgba(79,216,232,0.12); color: var(--text); border-color: var(--glow); }
+  .sidebar-tab-panel { display: none; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+  .sidebar-tab-panel.active { display: flex; }
+
+  /* --- panel de detalle de Proyecto (mismo overlay que .settings-panel) --- */
+  .project-panel { width: min(440px, 90vw); max-height: 82vh; display: flex; flex-direction: column; gap: 0.8rem; }
+  .project-field { display: flex; flex-direction: column; gap: 0.4rem; }
+  .project-field-label { font-size: 0.66rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+  .project-field textarea {
+    width: 100%; min-height: 4.5rem; max-height: 9rem; resize: vertical; overflow-y: auto;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(79,216,232,0.25);
+    border-radius: 10px; color: var(--text); font-family: inherit; font-size: 0.78rem; padding: 0.6rem;
+  }
+  .project-section { border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.6rem; }
+  .project-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.4rem; }
+  .project-section-head h4 { margin: 0; font-size: 0.72rem; color: var(--glow-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+  .project-item-row {
+    display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.2rem;
+    font-size: 0.76rem; color: var(--text); border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .project-item-row:last-child { border-bottom: none; }
+  .project-item-row .task-text { flex: 1 1 auto; cursor: pointer; }
+  .project-item-row .task-text.done { text-decoration: line-through; color: var(--text-dim); }
+  .project-item-row .project-item-delete {
+    background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 0.75rem; flex-shrink: 0;
+  }
+  .project-item-row .project-item-delete:hover { color: var(--error); }
+  .project-empty { padding: 0.5rem 0.2rem; font-size: 0.72rem; color: var(--text-dim); opacity: 0.7; }
+
   /* --- cerebro de Snarf --- */
   .brain-mini { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
   .brain-mini svg { width: 100%; max-width: 160px; height: auto; }
@@ -887,8 +926,18 @@
   </div>
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
   <div class="sidebar" id="sidebar">
-    <button class="new-conv-btn" id="newConvBtn">+ nueva conversación</button>
-    <div class="conv-list" id="convList"></div>
+    <div class="sidebar-tabs">
+      <button class="sidebar-tab active" data-tab="conversations">Conversaciones</button>
+      <button class="sidebar-tab" data-tab="projects">Proyectos</button>
+    </div>
+    <div class="sidebar-tab-panel active" data-tab-panel="conversations">
+      <button class="new-conv-btn" id="newConvBtn">+ nueva conversación</button>
+      <div class="conv-list" id="convList"></div>
+    </div>
+    <div class="sidebar-tab-panel" data-tab-panel="projects">
+      <button class="new-conv-btn" id="newProjectBtn">+ nuevo proyecto</button>
+      <div class="conv-list" id="projectList"></div>
+    </div>
     <div class="user-menu" id="userMenu">
       <button class="user-menu-btn" id="userMenuBtn">
         <span class="user-avatar" id="userAvatar">?</span>
@@ -922,6 +971,37 @@
       <button class="settings-close" id="settingsCloseBtn">✕</button>
     </div>
     <div class="settings-list" id="settingsList"></div>
+  </div>
+
+  <div class="settings-overlay" id="projectOverlay"></div>
+  <div class="settings-panel project-panel" id="projectPanel">
+    <div class="settings-head">
+      <h3 id="projectPanelName">Proyecto</h3>
+      <button class="settings-close" id="projectCloseBtn">✕</button>
+    </div>
+    <div class="project-field">
+      <label class="project-field-label">prompt del proyecto</label>
+      <textarea id="projectPromptInput" placeholder="Instrucciones propias de este proyecto..."></textarea>
+      <button class="dash-mini-btn" id="projectPromptSaveBtn">guardar prompt</button>
+    </div>
+    <div class="project-field">
+      <a href="#" target="_blank" rel="noopener" id="projectDriveLink">abrir carpeta en Drive ↗</a>
+    </div>
+    <div class="project-section">
+      <div class="project-section-head">
+        <h4>Tareas</h4>
+        <button class="dash-mini-btn" id="projectAddTaskBtn">+ tarea</button>
+      </div>
+      <div id="projectTaskList"></div>
+    </div>
+    <div class="project-section">
+      <div class="project-section-head">
+        <h4>Notas</h4>
+        <button class="dash-mini-btn" id="projectAddNoteBtn">+ nota</button>
+      </div>
+      <div id="projectNoteList"></div>
+    </div>
+    <button class="user-menu-item danger" id="projectDeleteBtn">borrar proyecto</button>
   </div>
 
   <div class="brain-overlay" id="brainOverlay"></div>
@@ -1035,6 +1115,20 @@ const sidebar = document.getElementById("sidebar");
 const sidebarOverlay = document.getElementById("sidebarOverlay");
 const newConvBtn = document.getElementById("newConvBtn");
 const convList = document.getElementById("convList");
+const newProjectBtn = document.getElementById("newProjectBtn");
+const projectList = document.getElementById("projectList");
+const projectOverlay = document.getElementById("projectOverlay");
+const projectPanel = document.getElementById("projectPanel");
+const projectPanelName = document.getElementById("projectPanelName");
+const projectCloseBtn = document.getElementById("projectCloseBtn");
+const projectPromptInput = document.getElementById("projectPromptInput");
+const projectPromptSaveBtn = document.getElementById("projectPromptSaveBtn");
+const projectDriveLink = document.getElementById("projectDriveLink");
+const projectTaskList = document.getElementById("projectTaskList");
+const projectAddTaskBtn = document.getElementById("projectAddTaskBtn");
+const projectNoteList = document.getElementById("projectNoteList");
+const projectAddNoteBtn = document.getElementById("projectAddNoteBtn");
+const projectDeleteBtn = document.getElementById("projectDeleteBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 const textRow = document.getElementById("textRow");
 const textInput = document.getElementById("textInput");
@@ -1287,7 +1381,7 @@ function relativeTime(ts) {
   if (diff < 86400) return Math.floor(diff / 3600) + " h";
   return Math.floor(diff / 86400) + " d";
 }
-function openSidebar() { sidebar.classList.add("open"); sidebarOverlay.classList.add("open"); refreshConvLists(); }
+function openSidebar() { sidebar.classList.add("open"); sidebarOverlay.classList.add("open"); refreshConvLists(); refreshProjectList(); }
 function closeSidebar() { sidebar.classList.remove("open"); sidebarOverlay.classList.remove("open"); }
 menuBtn.addEventListener("click", openSidebar);
 sidebarOverlay.addEventListener("click", closeSidebar);
@@ -1344,6 +1438,196 @@ function startNewConversation() {
 }
 newConvBtn.addEventListener("click", startNewConversation);
 dashNewConvBtn.addEventListener("click", startNewConversation);
+
+/* ---------- Proyectos ---------- */
+function renderProjectListInto(container, projects) {
+  container.innerHTML = "";
+  if (!projects.length) {
+    container.innerHTML = '<div class="conv-empty">sin proyectos todavía</div>';
+    return;
+  }
+  projects.forEach((p) => {
+    const div = document.createElement("div");
+    div.className = "conv-item";
+    div.innerHTML = `${escapeHtml(p.name)}<span class="conv-date">${p.task_count} tarea(s) · ${p.note_count} nota(s)</span>`;
+    div.addEventListener("click", () => openProjectPanel(p.id));
+    container.appendChild(div);
+  });
+}
+async function refreshProjectList() {
+  if (!projectList || !projectList.isConnected) return;
+  try {
+    const res = await apiFetch("/projects");
+    renderProjectListInto(projectList, await res.json());
+  } catch (e) {
+    projectList.innerHTML = '<div class="conv-empty">error cargando proyectos</div>';
+  }
+}
+
+let currentProjectId = null;
+
+function renderProjectTasks(tasks) {
+  projectTaskList.innerHTML = tasks.length
+    ? tasks
+        .map(
+          (t) => `
+      <div class="project-item-row" data-task-id="${t.id}">
+        <span class="task-text${t.done ? " done" : ""}" data-action="toggle">${escapeHtml(t.text)}</span>
+        <button class="project-item-delete" data-action="delete" title="borrar">✕</button>
+      </div>`
+        )
+        .join("")
+    : '<div class="project-empty">sin tareas todavía</div>';
+}
+
+function renderProjectNotes(notes) {
+  projectNoteList.innerHTML = notes.length
+    ? notes
+        .map(
+          (n) => `
+      <div class="project-item-row" data-note-id="${n.id}">
+        <span class="task-text">${escapeHtml(n.text)}</span>
+        <button class="project-item-delete" data-action="delete" title="borrar">✕</button>
+      </div>`
+        )
+        .join("")
+    : '<div class="project-empty">sin notas todavía</div>';
+}
+
+function fillProjectPanel(project) {
+  projectPanelName.textContent = project.name;
+  projectPromptInput.value = project.prompt || "";
+  projectDriveLink.href = `https://drive.google.com/drive/folders/${encodeURIComponent(project.drive_folder_id || "")}`;
+  renderProjectTasks(project.tasks || []);
+  renderProjectNotes(project.notes || []);
+}
+
+async function openProjectPanel(id) {
+  currentProjectId = id;
+  try {
+    const res = await apiFetch(`/projects/${id}`);
+    if (!res.ok) throw new Error("no encontrado");
+    fillProjectPanel(await res.json());
+    projectOverlay.classList.add("open");
+    projectPanel.classList.add("open");
+  } catch (e) {
+    alert("no se pudo abrir el proyecto: " + (e.message || e));
+  }
+}
+function closeProjectPanel() {
+  projectOverlay.classList.remove("open");
+  projectPanel.classList.remove("open");
+  currentProjectId = null;
+}
+projectOverlay.addEventListener("click", closeProjectPanel);
+projectCloseBtn.addEventListener("click", closeProjectPanel);
+
+projectPromptSaveBtn.addEventListener("click", async () => {
+  if (!currentProjectId) return;
+  const res = await apiFetch(`/projects/${currentProjectId}/prompt`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: projectPromptInput.value }),
+  });
+  if (res.ok) fillProjectPanel(await res.json());
+});
+
+projectAddTaskBtn.addEventListener("click", async () => {
+  if (!currentProjectId) return;
+  const text = prompt("¿Qué tarea agregamos?");
+  if (!text || !text.trim()) return;
+  const res = await apiFetch(`/projects/${currentProjectId}/tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: text.trim() }),
+  });
+  if (res.ok) {
+    fillProjectPanel(await res.json());
+    refreshProjectList();
+  }
+});
+
+projectTaskList.addEventListener("click", async (e) => {
+  const row = e.target.closest("[data-task-id]");
+  if (!row || !currentProjectId) return;
+  const taskId = row.dataset.taskId;
+  const action = e.target.dataset.action;
+  let res;
+  if (action === "toggle") {
+    res = await apiFetch(`/projects/${currentProjectId}/tasks/${taskId}`, { method: "PATCH" });
+  } else if (action === "delete") {
+    res = await apiFetch(`/projects/${currentProjectId}/tasks/${taskId}`, { method: "DELETE" });
+  }
+  if (res && res.ok) {
+    fillProjectPanel(await res.json());
+    refreshProjectList();
+  }
+});
+
+projectAddNoteBtn.addEventListener("click", async () => {
+  if (!currentProjectId) return;
+  const text = prompt("¿Qué anotamos?");
+  if (!text || !text.trim()) return;
+  const res = await apiFetch(`/projects/${currentProjectId}/notes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: text.trim() }),
+  });
+  if (res.ok) {
+    fillProjectPanel(await res.json());
+    refreshProjectList();
+  }
+});
+
+projectNoteList.addEventListener("click", async (e) => {
+  const row = e.target.closest("[data-note-id]");
+  if (!row || !currentProjectId || e.target.dataset.action !== "delete") return;
+  const res = await apiFetch(`/projects/${currentProjectId}/notes/${row.dataset.noteId}`, { method: "DELETE" });
+  if (res.ok) {
+    fillProjectPanel(await res.json());
+    refreshProjectList();
+  }
+});
+
+projectDeleteBtn.addEventListener("click", async () => {
+  if (!currentProjectId) return;
+  // No hay forma de replicar el protocolo de vista-previa-en-dos-turnos del
+  // camino conversacional en un click — window.confirm es la confirmación
+  // real que exige el backend (?confirmed=true), nunca se manda sin ella.
+  if (!confirm("¿Borrar este proyecto? Esto NO borra su carpeta ni sus archivos reales de Drive, solo el registro en Snarf.")) return;
+  const res = await apiFetch(`/projects/${currentProjectId}?confirmed=true`, { method: "DELETE" });
+  if (res.ok) {
+    closeProjectPanel();
+    refreshProjectList();
+  }
+});
+
+newProjectBtn.addEventListener("click", async () => {
+  const name = prompt("Nombre del proyecto nuevo:");
+  if (!name || !name.trim()) return;
+  const res = await apiFetch("/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name.trim() }),
+  });
+  if (res.ok) {
+    const project = await res.json();
+    await refreshProjectList();
+    openProjectPanel(project.id);
+  }
+});
+
+// Switcher Conversaciones/Proyectos: un solo slot flex compartido en el
+// sidebar (ver CSS), nunca las dos listas montadas a la vez.
+document.querySelectorAll(".sidebar-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".sidebar-tab").forEach((t) => t.classList.toggle("active", t === tab));
+    document
+      .querySelectorAll(".sidebar-tab-panel")
+      .forEach((p) => p.classList.toggle("active", p.dataset.tabPanel === tab.dataset.tab));
+    if (tab.dataset.tab === "projects") refreshProjectList();
+  });
+});
 
 logoutBtn.addEventListener("click", async () => {
   try { await fetch("/logout", { method: "POST" }); } catch (e) {}
@@ -1869,13 +2153,14 @@ async function loadUsageWidgetInto(root) {
 // porque usage_log ya distingue el modelo real de cada llamada a
 // ElevenLabs.
 const BRAIN_INPUT_ORDER = ["input_text", "input_voice", "input_file"];
-const BRAIN_SPECIALIST_ORDER = ["specialist_gmail"];
+const BRAIN_SPECIALIST_ORDER = ["specialist_gmail", "specialist_projects"];
 const BRAIN_CAPABILITY_ORDER = ["memory", "drive", "knowledge", "documents", "gmail", "calendar", "youtube", "llm", "stt", "tts"];
 const BRAIN_NODE_LABELS = {
   input_text: "Texto",
   input_voice: "Voz",
   input_file: "Archivo",
   specialist_gmail: "Especialista Gmail",
+  specialist_projects: "Proyectos",
   memory: "Memoria",
   drive: "Drive",
   knowledge: "Conocimiento",
@@ -1897,6 +2182,11 @@ const BRAIN_NODE_COLOR_CLASS = {
   input_voice: "brain-color-violet",
   input_file: "brain-color-grey",
   specialist_gmail: "brain-color-magenta",
+  // Mismo color que specialist_gmail: no queda un color de marca sin usar
+  // (aqua/magenta/violeta/gris/blanco ya están asignados por tier), y ambos
+  // comparten el mismo tier "specialist" — se distinguen por posición/label
+  // en el anillo, no por color individual.
+  specialist_projects: "brain-color-magenta",
 };
 // Categoría real de archivo (categorize_mime, snarf/knowledge/extraction.py)
 // → color del pulso puntual cuando ese archivo específico entra — la
@@ -2780,6 +3070,7 @@ function openChatFocus() {
   chatFocusOverlay.classList.add("open");
   chatFocusPanel.classList.add("open");
   refreshConvLists();
+  refreshProjectList();
 }
 function closeChatFocus() {
   if (!chatFocusOpen) return;
