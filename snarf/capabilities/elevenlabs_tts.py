@@ -6,7 +6,7 @@ from snarf.capabilities.base import Capability
 from snarf.telemetry import usage_tracker
 
 API_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-DEFAULT_MODEL = "eleven_multilingual_v2"
+DEFAULT_MODEL = "eleven_turbo_v2_5"
 
 
 class ElevenLabsTTS(Capability):
