@@ -639,7 +639,10 @@
     top: calc(env(safe-area-inset-top, 0px) + 14px);
     left: 50%;
     transform: translateX(-50%) translateY(-140%);
-    z-index: 9;
+    /* Por encima de cualquier overlay (config 10/11, cerebro 12/13, modo
+       enfoque 14/15) — antes quedaba tapado e inaccesible detrás de
+       cualquiera de esos paneles mientras reproducía. */
+    z-index: 20;
     display: flex; align-items: center; gap: 0.6rem;
     background: rgba(5,10,12,0.9);
     border: 1px solid rgba(79,216,232,0.4);
@@ -880,7 +883,8 @@
   </div>
 
   <div class="audio-player" id="audioPlayer">
-    <div class="label"><span class="dot"></span> reproduciendo</div>
+    <div class="label"><span class="dot" id="audioPlayerDot"></span> <span id="audioPlayerLabel">reproduciendo</span></div>
+    <button id="pausePlayerBtn" title="Pausar">⏸</button>
     <button id="speedBtn">1.25x</button>
     <button id="closePlayerBtn" class="close-btn">✕</button>
   </div>
@@ -1001,6 +1005,8 @@ const modePopover = document.getElementById("modePopover");
 const modeOptions = document.querySelectorAll(".mode-option");
 const MODE_ICONS = { click: ICONS.tap, text: ICONS.keyboard };
 const audioPlayer = document.getElementById("audioPlayer");
+const audioPlayerLabel = document.getElementById("audioPlayerLabel");
+const pausePlayerBtn = document.getElementById("pausePlayerBtn");
 const speedBtn = document.getElementById("speedBtn");
 const closePlayerBtn = document.getElementById("closePlayerBtn");
 const particlesEl = document.getElementById("particles");
@@ -1233,6 +1239,20 @@ speedBtn.addEventListener("click", () => {
   sharedAudio.playbackRate = currentSpeed;
   speedBtn.textContent = currentSpeed + "x";
 });
+// Refleja el estado real de sharedAudio (no solo el click de este botón) —
+// así se mantiene en sync sin importar qué haya disparado play/pause.
+function updatePausePlayerBtn() {
+  const paused = sharedAudio.paused;
+  pausePlayerBtn.textContent = paused ? "▶" : "⏸";
+  pausePlayerBtn.title = paused ? "Reanudar" : "Pausar";
+  audioPlayerLabel.textContent = paused ? "en pausa" : "reproduciendo";
+}
+pausePlayerBtn.addEventListener("click", () => {
+  if (sharedAudio.paused) sharedAudio.play().catch(() => {});
+  else sharedAudio.pause();
+});
+sharedAudio.addEventListener("play", updatePausePlayerBtn);
+sharedAudio.addEventListener("pause", updatePausePlayerBtn);
 closePlayerBtn.addEventListener("click", () => {
   sharedAudio.pause();
   audioPlayer.classList.remove("visible");
@@ -2269,9 +2289,9 @@ function triggerBrainCameraFocus(nodeId) {
   // externo empuja el lado opuesto del grafo (y sus etiquetas) fuera del
   // recorte del contenedor. Bug real reportado por el fundador, corregido
   // acá en vez de solo en el estilo.
-  brainCamera.targetX = 250 + (cx - 250) * 0.32;
-  brainCamera.targetY = 250 + (cy - 250) * 0.32;
-  brainCamera.targetZoom = 1.14;
+  brainCamera.targetX = 250 + (cx - 250) * 0.18;
+  brainCamera.targetY = 250 + (cy - 250) * 0.18;
+  brainCamera.targetZoom = 1.07;
   if (brainFocusResetTimer) clearTimeout(brainFocusResetTimer);
   brainFocusResetTimer = setTimeout(() => {
     brainCamera.targetX = 250;

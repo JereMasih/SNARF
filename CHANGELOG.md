@@ -372,3 +372,10 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Deliberadamente no incorporados los marcos de tipificación del prompt original (MBTI/Eneagrama) — etiquetas decorativas para rasgos ya cubiertos de forma conductual, inconsistentes con la voz ya establecida del documento.
 - 289/289 tests (cambio de documento, no de código — aplica al reiniciar el servidor real, `load_identity()` lee `CHARACTER.md` de disco al construir el Orchestrator).
 - Ver ADR 0039.
+
+## [2026-07-29] Cerebro sin ningún recorte real, reproductor con pausa y siempre visible
+
+- **Bug real, persistente**: el fundador seguía viendo la primera letra de algunas etiquetas del cerebro (Memoria, Conocimiento, Documentos, Orchestrator, Voz, Texto) cortada "en algunos casos". El fix de ADR 0038 (zoom 1.14x) reducía el recorte pero no lo eliminaba del todo — verificado con el mismo barrido automatizado sobre los 15 nodos reales, esta vez exigiendo cero recorte (no solo <50%): quedaban ~15-20 casos de recorte chico, concentrados en las etiquetas más largas de los nodos cercanos al eje horizontal del anillo externo. Zoom bajado a 1.07x, mezcla de cámara a 18% — verificado: cero recorte, ni parcial, en ningún foco.
+- **Bug real, causa encontrada con Playwright**: el reproductor de audio flotante tenía `z-index: 9`, por debajo del panel de configuración, el cerebro a pantalla completa y el modo enfoque (10 a 15) — quedaba literalmente tapado e inaccesible detrás de cualquiera de esos paneles mientras el audio sonaba. Subido a `z-index: 20` (por encima de todo lo demás). Confirmado con `elementFromPoint` que el botón ahora sí recibe el click estando el modo enfoque abierto encima.
+- **Pausa/reanudar**: nuevo botón en el reproductor, sincronizado con los eventos reales `play`/`pause` del audio (no solo con su propio click) — la etiqueta también pasa a decir "en pausa" en vez de seguir diciendo "reproduciendo" cuando está pausado.
+- 289/289 tests. Ver ADR 0040.
