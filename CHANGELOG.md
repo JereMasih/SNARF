@@ -548,3 +548,9 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - System prompt releído en cada turno: si hay nombre guardado, Snarf se dirige siempre por ese nombre; si no, tiene instrucción explícita de nunca inventar uno y preguntarlo si surge naturalmente. Tool nueva `profile_set_name` (sin gate de confirmación) para que lo guarde en cuanto la persona lo diga.
 - Endpoints `GET`/`PUT /profile` + campo de nombre en el panel de configuración del frontend.
 - 459/459 tests (7 nuevos de `user_profile`, 5 de `orchestrator`, 2 de endpoints REST). Verificado con Playwright: persistencia real vía HTTP y reflejada en la UI tras un reload. Ver ADR 0061.
+
+## [2026-07-30] Entrada en remolino del mini-cerebro, coherente con los tres puntitos
+
+- El mini-cerebro clickeable durante "pensando" (ADR 0060) ahora aparece al lado de los tres puntitos (mismo renglón, antes quedaba debajo) con una entrada en remolino real (escala + rotación, 0.7s) en vez de aparecer de golpe.
+- Los tres puntitos se mantienen sin cambios — señal inmediata sin depender de la red; el cerebro se materializa al lado apenas llegan sus datos reales, ambas señales conviven en vez de reemplazarse.
+- 459/459 tests (sin cambios de backend). Verificado con Playwright: orden de aparición correcto, animación aplicada (`brain-swirl-in`), click sigue abriendo el cerebro completo. Ver ADR 0062.
