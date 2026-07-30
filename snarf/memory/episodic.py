@@ -18,11 +18,13 @@ class EpisodicMemory:
         user_input: str,
         response: str,
         conversation_id: str | None = None,
+        project_id: str | None = None,
     ) -> None:
         entry = {
             "timestamp": time.time(),
             "channel": channel,
             "conversation_id": conversation_id,
+            "project_id": project_id,
             "input": user_input,
             "response": response,
         }
@@ -41,9 +43,11 @@ class EpisodicMemory:
             entries = [e for e in entries if e.get("conversation_id") == conversation_id]
         return entries[-n:]
 
-    def list_conversations(self) -> list[dict]:
+    def list_conversations(self, project_id: str | None = None) -> list[dict]:
         by_id: dict[str, dict] = {}
         for entry in self._read_all():
+            if project_id is not None and entry.get("project_id") != project_id:
+                continue
             cid = entry.get("conversation_id")
             if not cid:
                 continue

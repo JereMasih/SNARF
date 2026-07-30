@@ -49,6 +49,12 @@ def test_send_echo_mode_roundtrip(client):
     assert "hola" in res.json()["response"]
 
 
+def test_send_with_project_id_tags_the_memory_entry(client):
+    client.post("/send", json={"text": "hola", "conversation_id": "conv-proj", "project_id": "proj-1"})
+    entry = app_module.orchestrator.memory.get_conversation("conv-proj")[0]
+    assert entry["project_id"] == "proj-1"
+
+
 def test_send_records_a_text_input_log_entry(client):
     client.post("/send", json={"text": "hola", "conversation_id": "abc"})
     entries = input_log.recent()
@@ -253,6 +259,27 @@ def test_dashboard_preferences_http_cannot_hide_chat_or_history(client, tmp_path
     assert put_res.status_code == 200
     assert put_res.json()["visible_widgets"]["chat"] is True
     assert put_res.json()["visible_widgets"]["history"] is True
+
+
+def test_personality_preferences_defaults_before_any_save(client, tmp_path, monkeypatch):
+    from snarf.runtime import personality_prefs
+
+    monkeypatch.setattr(personality_prefs, "PREFS_DIR", tmp_path / "personality_prefs")
+    res = client.get("/personality/preferences")
+    assert res.status_code == 200
+    assert res.json() == {"sarcasm_level": 7.5}
+
+
+def test_personality_preferences_put_then_get_roundtrip(client, tmp_path, monkeypatch):
+    from snarf.runtime import personality_prefs
+
+    monkeypatch.setattr(personality_prefs, "PREFS_DIR", tmp_path / "personality_prefs")
+    put_res = client.put("/personality/preferences", json={"sarcasm_level": 3})
+    assert put_res.status_code == 200
+    assert put_res.json()["sarcasm_level"] == 3.0
+
+    get_res = client.get("/personality/preferences")
+    assert get_res.json() == put_res.json()
 
 
 @pytest.fixture

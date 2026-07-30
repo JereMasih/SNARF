@@ -22,6 +22,7 @@ from snarf.knowledge.drive_indexer import DriveIndexer
 from snarf.knowledge.extraction import ContentExtractor
 from snarf.knowledge.vector_store import VectorStore
 from snarf.memory.episodic import EpisodicMemory
+from snarf.runtime import personality_prefs
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
 from snarf.telemetry import activity_log
@@ -652,7 +653,46 @@ TOOLS = [
             "required": ["project_id"],
         },
     },
+    {
+        "name": "personality_set_sarcasm",
+        "description": (
+            "Ajusta el nivel de ingenio seco/sarcasmo de Snarf (0-10, en pasos de 0.5) a pedido "
+            "explícito del fundador en la conversación — ej. 'subime el sarcasmo', 'bajalo un toque', "
+            "'poné el humor en 9'. Persiste como la preferencia guardada (mismo efecto que mover el "
+            "control en configuración) hasta el próximo cambio, explícito o por configuración. No usar "
+            "esto para bajar el tono ante una situación crítica o de peso emocional — eso es criterio "
+            "de comportamiento en el momento (ver CHARACTER.md), no un cambio de configuración."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"level": {"type": "number", "minimum": 0, "maximum": 10}},
+            "required": ["level"],
+        },
+    },
 ]
+
+
+def sarcasm_instruction(level: float) -> str:
+    """Traduce el dial 0-10 de "Ingenio seco" (CHARACTER.md v0.3) a una
+    instrucción de sistema concreta. En 0 no agrega nada — comportamiento de
+    siempre, sin intensificar."""
+    if level <= 0:
+        return ""
+    if level <= 3:
+        tone = "un ingenio seco apenas perceptible, casi siempre implícito"
+    elif level <= 6:
+        tone = "un ingenio seco notorio, con comentarios irónicos frecuentes"
+    elif level <= 8.5:
+        tone = "sarcasmo filoso y frecuente, con comentarios directos e ingeniosos"
+    else:
+        tone = "sarcasmo al límite, mordaz y constante, sin perder nunca el respeto de fondo"
+    return (
+        f"\n\nNivel de ingenio seco/sarcasmo configurado: {level}/10 — mostrá {tone}. "
+        "Esto NUNCA reemplaza la utilidad ni la honestidad, y NUNCA aplica ante una decisión "
+        "crítica, un riesgo de alto impacto o una corrección importante — ahí prevalece siempre "
+        "el registro serio de CHARACTER.md, sin importar este número, y sin que eso signifique "
+        "bajarlo: es una excepción de comportamiento en el momento, no un cambio de configuración.\n"
+    )
 
 
 class Orchestrator:
@@ -772,6 +812,7 @@ class Orchestrator:
             "project_delete_note": lambda i: self._projects.delete_note(i["project_id"], i["note_id"]),
             "project_search": lambda i: self._projects.search_within(i["project_id"], i["query"], top_k=i.get("top_k", 5)),
             "project_delete": self._tool_project_delete,
+            "personality_set_sarcasm": self._tool_personality_set_sarcasm,
         }
 
     @property
@@ -932,6 +973,14 @@ class Orchestrator:
             return self._pending({"project_id": i.get("project_id")})
         return self._projects.delete(i["project_id"])
 
+    def _tool_personality_set_sarcasm(self, i: dict) -> dict:
+        # Cambio de configuración explícito y deliberado (el fundador lo pidió
+        # por mensaje) — mismo peso que tocar el slider a mano, así que
+        # persiste de una. Distinto del damping en situación crítica, que es
+        # puro criterio del modelo y nunca toca este valor guardado.
+        prefs = personality_prefs.save_prefs(self._user_id, {"sarcasm_level": i["level"]})
+        return {"status": "updated", "sarcasm_level": prefs["sarcasm_level"]}
+
     def _handle_tool(self, name: str, tool_input: dict) -> object:
         handler = self._tool_handlers.get(name)
         if not handler:
@@ -946,7 +995,13 @@ class Orchestrator:
             activity_log.record(name, "error", duration_ms=(time.monotonic() - started) * 1000, error=str(exc))
             return {"error": str(exc)}
 
-    def handle(self, channel_name: str, user_input: str, conversation_id: str | None = None) -> str:
+    def handle(
+        self,
+        channel_name: str,
+        user_input: str,
+        conversation_id: str | None = None,
+        project_id: str | None = None,
+    ) -> str:
         if not self._llm.available:
             response = (
                 "[modo eco - ANTHROPIC_API_KEY no configurada, ver .env.example] "
@@ -954,6 +1009,26 @@ class Orchestrator:
             )
         else:
             system = SYSTEM_PREFIX + self._identity
+            # Se relee en cada turno (no se cachea en __init__ como
+            # self._identity) — a diferencia de los documentos de identidad,
+            # este valor puede cambiar a mitad de una conversación (desde
+            # configuración o por la tool personality_set_sarcasm) y debe
+            # reflejarse sin reiniciar Snarf.
+            sarcasm_level = personality_prefs.load_prefs(self._user_id)["sarcasm_level"]
+            system += sarcasm_instruction(sarcasm_level)
+            if project_id:
+                # Hace real la promesa de que "Snarf trabaja bajo el prompt
+                # del proyecto" — antes dependía de que el LLM decidiera
+                # llamar project_get por su cuenta; acá se inyecta siempre
+                # que la conversación esté explícitamente atada a un
+                # proyecto. Si el proyecto no existe más o no tiene prompt
+                # propio, se degrada en silencio (nunca rompe el turno).
+                project = self._projects.get(project_id)
+                if project and project.get("prompt"):
+                    system += (
+                        f"\n\nEstás trabajando dentro del proyecto '{project['name']}'. "
+                        f"Instrucciones propias de este proyecto:\n{project['prompt']}\n"
+                    )
             messages = []
             for entry in self._memory.recent(10, conversation_id=conversation_id):
                 messages.append({"role": "user", "content": entry["input"]})
@@ -969,5 +1044,5 @@ class Orchestrator:
                 # gracia igual que /transcribe, en vez de romper la request.
                 response = f"[error real del LLM, no pude responder: {exc}]"
 
-        self._memory.append(channel_name, user_input, response, conversation_id=conversation_id)
+        self._memory.append(channel_name, user_input, response, conversation_id=conversation_id, project_id=project_id)
         return response

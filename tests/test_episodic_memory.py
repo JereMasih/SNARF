@@ -57,6 +57,28 @@ def test_list_conversations_ignores_entries_without_conversation_id(tmp_path, mo
     assert memory.list_conversations() == []
 
 
+def test_append_persists_project_id(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "hola", "r", conversation_id="c1", project_id="proj-1")
+    entries = memory.recent(10, conversation_id="c1")
+    assert entries[0]["project_id"] == "proj-1"
+
+
+def test_append_without_project_id_defaults_to_none(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "hola", "r", conversation_id="c1")
+    entries = memory.recent(10, conversation_id="c1")
+    assert entries[0]["project_id"] is None
+
+
+def test_list_conversations_filters_by_project_id(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "del proyecto", "r", conversation_id="c1", project_id="proj-1")
+    memory.append("text", "sin proyecto", "r", conversation_id="c2")
+    convs = memory.list_conversations(project_id="proj-1")
+    assert [c["conversation_id"] for c in convs] == ["c1"]
+
+
 def test_get_conversation_returns_only_its_own_entries(tmp_path, monkeypatch):
     memory = make_memory(tmp_path, monkeypatch)
     memory.append("text", "a", "1", conversation_id="c1")

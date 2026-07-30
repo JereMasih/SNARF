@@ -18,6 +18,7 @@ from snarf.capabilities.elevenlabs_tts import ElevenLabsTTS
 from snarf.capabilities.google_auth import TOKENS_DIR as GOOGLE_TOKENS_DIR
 from snarf.core.orchestrator import DEFAULT_USER_ID, LOCAL_FILES_DATA_DIR, Orchestrator
 from snarf.runtime.dashboard_prefs import load_prefs, save_prefs
+from snarf.runtime.personality_prefs import load_prefs as load_personality_prefs, save_prefs as save_personality_prefs
 from snarf.runtime import data_backup
 from snarf.knowledge.extraction import categorize_mime
 from snarf.telemetry import activity_log, brain, input_log, usage_tracker
@@ -63,6 +64,7 @@ async def warmup():
 class SendRequest(BaseModel):
     text: str
     conversation_id: str | None = None
+    project_id: str | None = None
 
 
 class SendResponse(BaseModel):
@@ -85,6 +87,10 @@ class DashboardPreferences(BaseModel):
     visible_widgets: dict[str, bool] = {}
     panel_order: list[str] = []
     widget_options: dict[str, dict] = {}
+
+
+class PersonalityPreferences(BaseModel):
+    sarcasm_level: float = 7.5
 
 
 class ProjectCreateRequest(BaseModel):
@@ -165,7 +171,9 @@ async def transcribe(file: UploadFile, user_id: str = Depends(require_user)):
 @app.post("/send", response_model=SendResponse)
 def send(payload: SendRequest, user_id: str = Depends(require_user)):
     input_log.record("text")
-    response_text = orchestrator.handle("visual", payload.text, conversation_id=payload.conversation_id)
+    response_text = orchestrator.handle(
+        "visual", payload.text, conversation_id=payload.conversation_id, project_id=payload.project_id
+    )
     return SendResponse(response=response_text)
 
 
@@ -285,6 +293,16 @@ def get_dashboard_preferences(user_id: str = Depends(require_user)):
 @app.put("/dashboard/preferences")
 def put_dashboard_preferences(payload: DashboardPreferences, user_id: str = Depends(require_user)):
     return save_prefs(user_id, payload.model_dump())
+
+
+@app.get("/personality/preferences")
+def get_personality_preferences(user_id: str = Depends(require_user)):
+    return load_personality_prefs(user_id)
+
+
+@app.put("/personality/preferences")
+def put_personality_preferences(payload: PersonalityPreferences, user_id: str = Depends(require_user)):
+    return save_personality_prefs(user_id, payload.model_dump())
 
 
 @app.get("/dashboard/widgets/usage")

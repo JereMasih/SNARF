@@ -354,6 +354,15 @@
   .settings-toggle.on { background: rgba(79,216,232,0.25); border-color: var(--glow); }
   .settings-toggle.on::after { transform: translateX(15px); background: var(--glow); }
 
+  .settings-section-head { margin: 1rem 0 0.6rem; padding-top: 0.8rem; border-top: 1px solid rgba(255,255,255,0.08); }
+  .settings-section-head h3 { margin: 0; font-size: 0.85rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--glow-soft); }
+  .settings-slider-row { padding: 0.3rem 0.2rem 0.4rem; }
+  .settings-slider-labels {
+    display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-dim); margin-bottom: 0.5rem;
+  }
+  .settings-slider-labels #sarcasmValue { color: var(--glow); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .settings-slider-row input[type="range"] { width: 100%; accent-color: var(--glow); cursor: pointer; }
+
   /* --- barra lateral: Conversaciones / Proyectos ---
      .conv-list ya es flex:1 1 auto dentro de #sidebar — dos listas con el
      mismo flex competirían por el espacio, así que el switcher alterna cuál
@@ -369,7 +378,15 @@
   .sidebar-tab-panel.active { display: flex; }
 
   /* --- panel de detalle de Proyecto (mismo overlay que .settings-panel) --- */
-  .project-panel { width: min(440px, 90vw); max-height: 82vh; display: flex; flex-direction: column; gap: 0.8rem; }
+  /* El switcher Conversaciones/Proyectos vive dentro de #sidebar, que se
+     dockea DENTRO del modo enfoque (z-index 14/15) — el panel de detalle de
+     un proyecto tiene que quedar por encima de eso, no al mismo nivel que
+     el panel de configuración (10/11), o se abre tapado detrás. */
+  .project-overlay { z-index: 16; }
+  .project-panel {
+    z-index: 17;
+    width: min(440px, 90vw); max-height: 82vh; display: flex; flex-direction: column; gap: 0.8rem;
+  }
   .project-field { display: flex; flex-direction: column; gap: 0.4rem; }
   .project-field-label { font-size: 0.66rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
   .project-field textarea {
@@ -971,9 +988,19 @@
       <button class="settings-close" id="settingsCloseBtn">✕</button>
     </div>
     <div class="settings-list" id="settingsList"></div>
+
+    <div class="settings-section-head"><h3>Personalidad</h3></div>
+    <div class="settings-slider-row">
+      <div class="settings-slider-labels">
+        <span>Sobrio</span>
+        <span id="sarcasmValue">7.5</span>
+        <span>Filoso</span>
+      </div>
+      <input type="range" id="sarcasmSlider" min="0" max="10" step="0.5" value="7.5">
+    </div>
   </div>
 
-  <div class="settings-overlay" id="projectOverlay"></div>
+  <div class="settings-overlay project-overlay" id="projectOverlay"></div>
   <div class="settings-panel project-panel" id="projectPanel">
     <div class="settings-head">
       <h3 id="projectPanelName">Proyecto</h3>
@@ -1074,8 +1101,18 @@
        sola vez al arrancar en desktop (ver reparentHistoryIntoDashboard) —
        nunca se reconstruye por HTML como los demás widgets. -->
   <div id="dashHistoryParked" hidden>
-    <button class="new-conv-btn" id="dashNewConvBtn">+ nueva conversación</button>
-    <div class="conv-list" id="dashConvList"></div>
+    <div class="sidebar-tabs">
+      <button class="sidebar-tab active" data-tab="conversations">Conversaciones</button>
+      <button class="sidebar-tab" data-tab="projects">Proyectos</button>
+    </div>
+    <div class="sidebar-tab-panel active" data-tab-panel="conversations">
+      <button class="new-conv-btn" id="dashNewConvBtn">+ nueva conversación</button>
+      <div class="conv-list" id="dashConvList"></div>
+    </div>
+    <div class="sidebar-tab-panel" data-tab-panel="projects">
+      <button class="new-conv-btn" id="dashNewProjectBtn">+ nuevo proyecto</button>
+      <div class="conv-list" id="dashProjectList"></div>
+    </div>
   </div>
 
 <script>
@@ -1117,6 +1154,8 @@ const newConvBtn = document.getElementById("newConvBtn");
 const convList = document.getElementById("convList");
 const newProjectBtn = document.getElementById("newProjectBtn");
 const projectList = document.getElementById("projectList");
+const dashProjectList = document.getElementById("dashProjectList");
+const dashNewProjectBtn = document.getElementById("dashNewProjectBtn");
 const projectOverlay = document.getElementById("projectOverlay");
 const projectPanel = document.getElementById("projectPanel");
 const projectPanelName = document.getElementById("projectPanelName");
@@ -1156,6 +1195,8 @@ const settingsOverlay = document.getElementById("settingsOverlay");
 const settingsPanel = document.getElementById("settingsPanel");
 const settingsCloseBtn = document.getElementById("settingsCloseBtn");
 const settingsList = document.getElementById("settingsList");
+const sarcasmSlider = document.getElementById("sarcasmSlider");
+const sarcasmValue = document.getElementById("sarcasmValue");
 const brainOverlay = document.getElementById("brainOverlay");
 const brainPanel = document.getElementById("brainPanel");
 const brainCloseBtn = document.getElementById("brainCloseBtn");
@@ -1455,12 +1496,14 @@ function renderProjectListInto(container, projects) {
   });
 }
 async function refreshProjectList() {
-  if (!projectList || !projectList.isConnected) return;
+  const targets = [projectList, dashProjectList].filter((el) => el && el.isConnected);
+  if (!targets.length) return;
   try {
     const res = await apiFetch("/projects");
-    renderProjectListInto(projectList, await res.json());
+    const projects = await res.json();
+    targets.forEach((t) => renderProjectListInto(t, projects));
   } catch (e) {
-    projectList.innerHTML = '<div class="conv-empty">error cargando proyectos</div>';
+    targets.forEach((t) => { t.innerHTML = '<div class="conv-empty">error cargando proyectos</div>'; });
   }
 }
 
@@ -1602,7 +1645,7 @@ projectDeleteBtn.addEventListener("click", async () => {
   }
 });
 
-newProjectBtn.addEventListener("click", async () => {
+async function createProject() {
   const name = prompt("Nombre del proyecto nuevo:");
   if (!name || !name.trim()) return;
   const res = await apiFetch("/projects", {
@@ -1615,14 +1658,19 @@ newProjectBtn.addEventListener("click", async () => {
     await refreshProjectList();
     openProjectPanel(project.id);
   }
-});
+}
+newProjectBtn.addEventListener("click", createProject);
+dashNewProjectBtn.addEventListener("click", createProject);
 
-// Switcher Conversaciones/Proyectos: un solo slot flex compartido en el
-// sidebar (ver CSS), nunca las dos listas montadas a la vez.
+// Switcher Conversaciones/Proyectos: hay dos instancias independientes (el
+// #sidebar de siempre, y el widget de historial separado del dashboard de
+// escritorio, #dashHistoryParked) — cada click solo afecta a los tabs/paneles
+// DENTRO del mismo contenedor, nunca a los de la otra instancia.
 document.querySelectorAll(".sidebar-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
-    document.querySelectorAll(".sidebar-tab").forEach((t) => t.classList.toggle("active", t === tab));
-    document
+    const scope = tab.closest("#sidebar, #dashHistoryParked") || document;
+    scope.querySelectorAll(".sidebar-tab").forEach((t) => t.classList.toggle("active", t === tab));
+    scope
       .querySelectorAll(".sidebar-tab-panel")
       .forEach((p) => p.classList.toggle("active", p.dataset.tabPanel === tab.dataset.tab));
     if (tab.dataset.tab === "projects") refreshProjectList();
@@ -2154,7 +2202,7 @@ async function loadUsageWidgetInto(root) {
 // ElevenLabs.
 const BRAIN_INPUT_ORDER = ["input_text", "input_voice", "input_file"];
 const BRAIN_SPECIALIST_ORDER = ["specialist_gmail", "specialist_projects"];
-const BRAIN_CAPABILITY_ORDER = ["memory", "drive", "knowledge", "documents", "gmail", "calendar", "youtube", "llm", "stt", "tts"];
+const BRAIN_CAPABILITY_ORDER = ["memory", "drive", "knowledge", "documents", "gmail", "calendar", "youtube", "llm", "stt", "tts", "personality"];
 const BRAIN_NODE_LABELS = {
   input_text: "Texto",
   input_voice: "Voz",
@@ -2171,6 +2219,7 @@ const BRAIN_NODE_LABELS = {
   llm: "Razonamiento",
   stt: "Escucha",
   tts: "Habla",
+  personality: "Personalidad",
   orchestrator: "Orchestrator",
 };
 // Color real por nodo (paleta de la marca del fundador, ver CSS) — cada
@@ -2981,6 +3030,27 @@ async function persistPrefs() {
   } catch (e) {}
 }
 
+let personalityPrefs = null;
+async function renderPersonalitySection() {
+  if (!personalityPrefs) personalityPrefs = await (await apiFetch("/personality/preferences")).json();
+  sarcasmSlider.value = personalityPrefs.sarcasm_level;
+  sarcasmValue.textContent = personalityPrefs.sarcasm_level;
+}
+async function persistPersonalityPrefs() {
+  try {
+    await apiFetch("/personality/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(personalityPrefs),
+    });
+  } catch (e) {}
+}
+sarcasmSlider.addEventListener("input", () => { sarcasmValue.textContent = sarcasmSlider.value; });
+sarcasmSlider.addEventListener("change", () => {
+  personalityPrefs.sarcasm_level = Number(sarcasmSlider.value);
+  persistPersonalityPrefs();
+});
+
 function visibleOrdered(ids) {
   return dashboardPrefs.panel_order.filter((id) => ids.includes(id) && dashboardPrefs.visible_widgets[id]);
 }
@@ -3121,6 +3191,7 @@ function renderDesktopDashboard(summary) {
   if (rest.includes("brain")) loadBrainWidgetInto(dashGridDesktop);
   if (rest.includes("usage")) loadUsageWidgetInto(dashGridDesktop);
   refreshConvLists();
+  refreshProjectList();
 }
 
 async function refreshDashboard() {
@@ -3142,6 +3213,7 @@ function openSettings() {
   settingsOverlay.classList.add("open");
   settingsPanel.classList.add("open");
   renderSettingsList();
+  renderPersonalitySection();
 }
 function closeSettings() {
   settingsOverlay.classList.remove("open");

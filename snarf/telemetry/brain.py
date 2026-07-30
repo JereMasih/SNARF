@@ -59,6 +59,7 @@ TOOL_TO_NODE: dict[str, str] = {
     "calendar_move_event": "calendar",
     "youtube_list_subscriptions": "youtube",
     "youtube_list_liked_videos": "youtube",
+    "personality_set_sarcasm": "personality",
 }
 
 VENDOR_TO_NODE: dict[str, str] = {"anthropic": "llm", "voyage": "knowledge"}
@@ -96,6 +97,7 @@ NODE_TIER: dict[str, str] = {
     "llm": "capability",
     "stt": "capability",
     "tts": "capability",
+    "personality": "capability",
 }
 
 NODE_IDS = list(NODE_TIER.keys())

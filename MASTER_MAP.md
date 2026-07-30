@@ -33,7 +33,7 @@ Documentos:
 
 - FOUNDATION (vigente)
 - PROJECT_CONTEXT (vigente)
-- CHARACTER (vigente, v0.2 desde el 2026-07-29 — ver ADR 0039: ingenio seco, responsabilidad propia y registro/cercanía, manteniendo explícitamente la regla anti-imitación de personajes de ficción de v0.1)
+- CHARACTER (vigente, v0.3 desde el 2026-07-29 — ver ADR 0046: el rasgo "ingenio seco" (v0.2, ADR 0039) suma un eje de intensidad configurable por el fundador, 0-10, con el invariante de siempre — nunca reemplaza la seriedad ante crisis o corrección importante — intacto en cualquier nivel)
 - CONSTITUTION — nota: constitucionalmente pertenece a Governance (define autoridad, no identidad), pero vive en Identity por ahora al no existir todavía una carpeta propia; ver nota de Governance.
 
 Documentos previstos, sin crear todavía:

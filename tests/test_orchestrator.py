@@ -34,6 +34,121 @@ def test_handle_degrades_gracefully_when_the_llm_call_fails(orchestrator, monkey
     assert orchestrator.memory.get_conversation("c1")[0]["response"] == response
 
 
+def test_handle_injects_project_prompt_as_additional_system_context(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    captured = {}
+
+    def fake_generate(system, messages, tools=None, tool_handler=None):
+        captured["system"] = system
+        return "respuesta"
+
+    monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
+    monkeypatch.setattr(
+        orchestrator._projects, "get", lambda pid: {"id": pid, "name": "Newsletter", "prompt": "sos el asistente de este proyecto"}
+    )
+    orchestrator.handle("text", "hola", conversation_id="c1", project_id="proj-1")
+    assert "Newsletter" in captured["system"]
+    assert "sos el asistente de este proyecto" in captured["system"]
+
+
+def test_handle_with_a_missing_project_degrades_gracefully(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    monkeypatch.setattr(orchestrator._llm, "generate", lambda **kwargs: "respuesta")
+    monkeypatch.setattr(orchestrator._projects, "get", lambda pid: None)  # proyecto borrado/inexistente
+    response = orchestrator.handle("text", "hola", conversation_id="c1", project_id="no-existe")
+    assert response == "respuesta"
+
+
+def test_handle_persists_project_id_on_the_memory_entry(orchestrator):
+    orchestrator.handle("text", "hola", conversation_id="c1", project_id="proj-1")
+    entry = orchestrator.memory.get_conversation("c1")[0]
+    assert entry["project_id"] == "proj-1"
+
+
+def test_handle_without_project_id_never_touches_projects(orchestrator):
+    calls = []
+    orchestrator._projects.get = lambda pid: calls.append(pid)
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    assert calls == []
+
+
+def test_handle_injects_sarcasm_instruction_at_the_default_level(orchestrator, monkeypatch):
+    # Default real (7.5, pedido explícito del fundador) ya debe notarse en el
+    # system prompt sin tocar ninguna configuración.
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    captured = {}
+
+    def fake_generate(system, messages, tools=None, tool_handler=None):
+        captured["system"] = system
+        return "respuesta"
+
+    monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    assert "7.5/10" in captured["system"]
+    assert "NUNCA aplica ante una decisión" in captured["system"]
+
+
+def test_handle_omits_sarcasm_instruction_at_level_zero(orchestrator, monkeypatch):
+    from snarf.runtime import personality_prefs
+
+    personality_prefs.save_prefs(orchestrator._user_id, {"sarcasm_level": 0})
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    captured = {}
+
+    def fake_generate(system, messages, tools=None, tool_handler=None):
+        captured["system"] = system
+        return "respuesta"
+
+    monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    # CHARACTER.md siempre menciona "Ingenio seco" (es un rasgo permanente,
+    # ver ADR de esta feature) — lo que en nivel 0 no debe aparecer es la
+    # instrucción de intensidad inyectada por turno.
+    assert "Nivel de ingenio seco/sarcasmo configurado" not in captured["system"]
+
+
+def test_handle_rereads_sarcasm_level_on_every_turn(orchestrator, monkeypatch):
+    # No se cachea en __init__ como self._identity — un cambio a mitad de
+    # conversación (por config o por la tool) debe reflejarse sin reiniciar.
+    from snarf.runtime import personality_prefs
+
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    captured = []
+    monkeypatch.setattr(
+        orchestrator._llm, "generate", lambda system, messages, tools=None, tool_handler=None: captured.append(system) or "ok"
+    )
+
+    orchestrator.handle("text", "primero", conversation_id="c1")
+    personality_prefs.save_prefs(orchestrator._user_id, {"sarcasm_level": 2})
+    orchestrator.handle("text", "segundo", conversation_id="c1")
+
+    assert "7.5/10" in captured[0]
+    assert "2.0/10" in captured[1] or "2/10" in captured[1]
+
+
+def test_personality_set_sarcasm_tool_persists_and_is_reflected_next_turn(orchestrator, monkeypatch):
+    result = orchestrator._handle_tool("personality_set_sarcasm", {"level": 9})
+    assert result == {"status": "updated", "sarcasm_level": 9.0}
+
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    captured = {}
+    monkeypatch.setattr(
+        orchestrator._llm,
+        "generate",
+        lambda system, messages, tools=None, tool_handler=None: captured.update(system=system) or "ok",
+    )
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    assert "9.0/10" in captured["system"]
+
+
+def test_personality_set_sarcasm_tool_never_requires_confirmation(orchestrator):
+    # A diferencia de las tools de alto impacto (drive_delete_file, etc.), un
+    # ajuste de personalidad es reversible al instante y no toca datos de
+    # terceros ni archivos — no debe pasar por el gate _pending().
+    result = orchestrator._handle_tool("personality_set_sarcasm", {"level": 4})
+    assert result.get("status") != "pending_confirmation"
+
+
 def test_handle_tool_reports_unknown_tool(orchestrator):
     result = orchestrator._handle_tool("herramienta_inexistente", {})
     assert result == {"error": "herramienta desconocida: herramienta_inexistente"}

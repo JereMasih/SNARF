@@ -14,6 +14,13 @@ SUBFOLDER_SUGGESTION_SYSTEM_PROMPT = (
     "sin numeración ni explicación."
 )
 
+SUMMARY_SYSTEM_PROMPT = (
+    "Sos un asistente que escribe resúmenes breves, profesionales y útiles del estado actual "
+    "de un proyecto personal, a partir únicamente de los datos reales que se te dan — nunca "
+    "inventes tareas, notas o avances que no estén en esa información. Escribí en español, en "
+    "3 a 5 oraciones, priorizando qué está pendiente y qué es lo más relevante ahora mismo."
+)
+
 
 def _slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
