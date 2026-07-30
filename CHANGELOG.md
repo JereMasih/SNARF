@@ -521,3 +521,8 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - El botón de grabar y el de enviar estaban siempre los dos visibles, sin ningún criterio — se leía como dos botones sueltos en vez de uno. Ahora se muestran según el estado real: solo mic si no hay nada escrito, mic+flecha si hay un borrador (a propósito: permite grabar una nota de voz encima de texto ya escrito), solo mic mientras se graba sin bloquear, tachito+flecha si la grabación quedó bloqueada en manos libres.
 - Si había texto escrito antes de grabar, se perdía en silencio al enviar la nota de voz — ahora se manda todo junto, texto + transcripción, como un solo mensaje.
 - 444/444 tests (sin cambios de backend). Verificado con Playwright simulando el gesto completo (mantener presionado, deslizar arriba para bloquear, soltar el dedo, tocar enviar) y el envío combinado con una transcripción de prueba. Ver ADR 0057.
+
+## [2026-07-30] Cerebro: flujo de partículas en ambos sentidos, dos colores
+
+- El flujo de partículas entre nodos viajaba en un solo sentido (orquestador → nodo). Ahora hay partículas en ambas direcciones a la vez mientras un nodo está activo: las que van usan el color propio del nodo, las que vuelven son blancas — se lee como ida y vuelta real de información, no un solo flujo.
+- 444/444 tests (sin cambios de backend). Verificado con Playwright: partículas en ambas direcciones, exactamente 2 colores distintos en pantalla, confirmado también visualmente. Ver ADR 0058.

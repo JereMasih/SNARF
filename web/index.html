@@ -3472,7 +3472,15 @@ function drawBrainMesh(ctx, ts) {
 // no como un tren sobre rieles) — la línea del edge en sí queda estática y
 // tenue (ver .brain-edge-flow en el CSS); el movimiento lo llevan estas
 // partículas.
-function spawnFlowParticle(nodeId) {
+// direction "out": el orquestador delega en el nodo (color propio del nodo,
+// mismo criterio que antes). direction "in": el nodo devuelve información
+// al orquestador (color blanco del centro, ver .brain-node-center) — dos
+// colores distintos para que se lea como ida y vuelta real, no un solo
+// sentido. Ambas conviven en el mismo período de actividad de un nodo: no
+// hay una señal real de "cuándo vuelve" el dato (el activity_log ya llega
+// completo), así que se aproxima con flujo simultáneo en los dos sentidos
+// mientras el nodo está activo.
+function spawnFlowParticle(nodeId, direction) {
   const node = brainNodeEls[nodeId];
   if (!node) return null;
   const nx = parseFloat(node.getAttribute("cx"));
@@ -3481,12 +3489,13 @@ function spawnFlowParticle(nodeId) {
   return {
     kind: "flow",
     nodeId,
+    direction,
     t: 0,
     speed: 0.28 + Math.random() * 0.32, // nunca la misma velocidad — evita el efecto "todas en fila" mecánico
     jitterPhase: Math.random() * Math.PI * 2,
     jitterAmp: 2.5 + Math.random() * 6,
     r: 0.9 + Math.random() * 2,
-    color: getComputedStyle(node).color,
+    color: direction === "in" ? brainCssColor("white") : getComputedStyle(node).color,
   };
 }
 function updateAndDrawFlowParticle(ctx, p, dt) {
@@ -3500,12 +3509,16 @@ function updateAndDrawFlowParticle(ctx, p, dt) {
   const dx = nx - cx, dy = ny - cy;
   const len = Math.hypot(dx, dy) || 1;
   const perpX = -dy / len, perpY = dx / len;
+  // "out" recorre 0->1 (centro->nodo); "in" recorre 1->0 (nodo->centro) —
+  // mismo reloj p.t (fade in/out simétrico en ambas puntas), solo cambia
+  // dónde cae la posición visible en ese instante.
+  const travel = p.direction === "in" ? 1 - p.t : p.t;
   // La deriva se atenúa cerca de las puntas (0 y 1) para que el haz siga
   // reconociéndose como "hacia ese nodo", no una nube difusa sin dirección.
   const taper = 1 - Math.pow(Math.abs(p.t - 0.5) * 2, 2);
   const wobble = Math.sin(p.t * 11 + p.jitterPhase) * p.jitterAmp * taper;
-  const baseX = cx + dx * p.t;
-  const baseY = cy + dy * p.t;
+  const baseX = cx + dx * travel;
+  const baseY = cy + dy * travel;
   const x = baseX + perpX * wobble;
   const y = baseY + perpY * wobble;
   const alpha = Math.min(1, p.t * 7, (1 - p.t) * 5) * 0.85;
@@ -3607,12 +3620,17 @@ function updateAndDrawParticle(ctx, p, dt) {
   drawGlowDot(ctx, pos.x, pos.y, radiusPx, p.color, p.alpha);
 }
 // Tasa orgánica (no uniforme) de nacimiento de partículas por nodo activo —
-// cada uno tira ~7/seg en promedio, pero al azar, nunca todas sincronizadas.
-const BRAIN_FLOW_SPAWN_RATE = 7;
+// cada dirección tira ~3.5/seg en promedio (mitad de la tasa total de
+// antes, repartida entre ida y vuelta) al azar, nunca todas sincronizadas.
+const BRAIN_FLOW_SPAWN_RATE = 3.5;
 function spawnActiveFlowParticles(dt) {
   activeBrainNodeIds.forEach((nodeId) => {
     if (Math.random() < dt * BRAIN_FLOW_SPAWN_RATE) {
-      const p = spawnFlowParticle(nodeId);
+      const p = spawnFlowParticle(nodeId, "out");
+      if (p) brainParticles.push(p);
+    }
+    if (Math.random() < dt * BRAIN_FLOW_SPAWN_RATE) {
+      const p = spawnFlowParticle(nodeId, "in");
       if (p) brainParticles.push(p);
     }
   });
