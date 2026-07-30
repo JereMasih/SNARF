@@ -479,3 +479,10 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - **Bug real encontrado en el camino**: el grosor de esos haces nunca se aplicaba de verdad — una regla de CSS declarada en el orden equivocado lo pisaba en silencio desde que existe el efecto.
 - El feed de eventos del cerebro ahora muestra el mismo ícono real de cada nodo junto al texto de cada fila (había quedado sin ninguno tras retirar los emoji).
 - 414/414 tests (sin cambios de backend). Verificado con Playwright. Ver ADR 0052.
+
+## [2026-07-29] Cerebro: flujo de partículas orgánico y más niebla volumétrica
+
+- El "haz de luz" entre nodos era una línea de guiones en movimiento — mecánico, "tac tac tac" según el fundador. Reemplazado por un flujo real de partículas que viajan del orquestador a cada nodo activo, con velocidad y deriva propias (nunca sincronizadas entre sí, nunca sobre rieles).
+- Más niebla de luz volumétrica (partículas grandes, lentas y tenues, distintas de las puntuales de siempre) y más partículas en general.
+- El zoom de cámara al enfocar un nodo activo ya no es siempre el mismo valor exacto — varía dentro de un rango en cada evento.
+- 414/414 tests (sin cambios de backend). Verificado con Playwright: el edge activo ya no anima guiones, y dos capturas separadas por 600ms muestran las partículas de flujo en posiciones distintas. Ver ADR 0053.
