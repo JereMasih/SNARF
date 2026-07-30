@@ -35,6 +35,20 @@ def test_append_defaults_input_audio_id_to_none(tmp_path, monkeypatch):
     assert entries[0]["input_audio_id"] is None
 
 
+def test_append_persists_speech(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "hola", "respuesta completa", conversation_id="c1", speech="versión hablada")
+    entries = memory.recent(10, conversation_id="c1")
+    assert entries[0]["speech"] == "versión hablada"
+
+
+def test_append_defaults_speech_to_none(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "hola", "respuesta", conversation_id="c1")
+    entries = memory.recent(10, conversation_id="c1")
+    assert entries[0]["speech"] is None
+
+
 def test_recent_filters_by_conversation_id(tmp_path, monkeypatch):
     memory = make_memory(tmp_path, monkeypatch)
     memory.append("text", "de c1", "r1", conversation_id="c1")

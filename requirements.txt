@@ -18,3 +18,5 @@ python-docx==1.2.0
 python-pptx==1.0.2
 openpyxl==3.1.5
 fpdf2==2.8.7
+pyyaml==6.0.3
+faster-whisper==1.2.1

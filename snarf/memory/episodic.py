@@ -55,6 +55,7 @@ class EpisodicMemory:
         conversation_id: str | None = None,
         project_id: str | None = None,
         input_audio_id: str | None = None,
+        speech: str | None = None,
     ) -> None:
         entry = {
             "timestamp": time.time(),
@@ -64,6 +65,7 @@ class EpisodicMemory:
             "input": user_input,
             "response": response,
             "input_audio_id": input_audio_id,
+            "speech": speech,
         }
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")

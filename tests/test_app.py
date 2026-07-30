@@ -5,6 +5,8 @@ import app as app_module
 from snarf.memory.audio_store import AudioStore
 from snarf.memory.episodic import EpisodicMemory
 from snarf.telemetry import activity_log, input_log, usage_tracker
+from snarf.voice.providers.kokoro_tts import KokoroTTS
+from snarf.voice.providers.local_stt import LocalWhisperSTT
 
 TEST_PASSWORD = "test-password-for-pytest"
 
@@ -20,8 +22,15 @@ def client(tmp_path, monkeypatch):
         EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json"),
     )
     monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
-    monkeypatch.setattr(app_module.stt, "_api_key", None)
-    monkeypatch.setattr(app_module.tts, "_api_key", None)
+    # Fuerza TODA la capa de voz a "nada disponible" sin importar credenciales
+    # reales del .env ni si el contenedor Docker de Kokoro está corriendo en
+    # esta máquina — los tests nunca deben depender de un servicio externo
+    # real (ver KokoroTTS.available, que sí hace una request HTTP real).
+    monkeypatch.setattr(app_module.voice_router._stt("groq"), "_api_key", None)
+    monkeypatch.setattr(LocalWhisperSTT, "available", property(lambda self: False))
+    monkeypatch.setattr(KokoroTTS, "available", property(lambda self: False))
+    monkeypatch.setattr(app_module.voice_router._tts("elevenlabs_premium")._capability, "_api_key", None)
+    monkeypatch.setattr(app_module._elevenlabs_for_dashboard, "_api_key", None)
     monkeypatch.setattr(app_module, "audio_store", AudioStore(directory=tmp_path / "audio"))
     monkeypatch.setattr(usage_tracker, "DEFAULT_PATH", tmp_path / "usage_log.jsonl")
     monkeypatch.setattr(activity_log, "DEFAULT_PATH", tmp_path / "activity_log.jsonl")
@@ -95,8 +104,9 @@ def test_transcribe_without_credentials_returns_empty_transcript(client):
 
 
 def test_transcribe_records_a_voice_input_log_entry_for_real_audio(client, monkeypatch):
-    monkeypatch.setattr(app_module.stt, "_api_key", "fake-key-for-test")
-    monkeypatch.setattr(app_module.stt, "transcribe", lambda *a, **kw: "texto transcripto")
+    groq = app_module.voice_router._stt("groq")
+    monkeypatch.setattr(groq, "_api_key", "fake-key-for-test")
+    monkeypatch.setattr(groq, "transcribe", lambda *a, **kw: "texto transcripto")
     client.post("/transcribe", files={"file": ("audio.webm", b"x" * 5000, "audio/webm")})
     entries = input_log.recent()
     assert len(entries) == 1
@@ -108,12 +118,13 @@ def test_transcribe_reports_an_explicit_error_when_stt_itself_fails(client, monk
     volvía indistinguible de un silencio genuino — la interfaz le decía al
     usuario "no se escuchó nada" cuando en realidad el micrófono funcionó
     perfecto y el servicio de voz fue el que falló."""
-    monkeypatch.setattr(app_module.stt, "_api_key", "fake-key-for-test")
+    groq = app_module.voice_router._stt("groq")
+    monkeypatch.setattr(groq, "_api_key", "fake-key-for-test")
 
     def boom(*a, **kw):
-        raise RuntimeError("ElevenLabs STT 401: quota_exceeded")
+        raise RuntimeError("Groq STT 401: quota_exceeded")
 
-    monkeypatch.setattr(app_module.stt, "transcribe", boom)
+    monkeypatch.setattr(groq, "transcribe", boom)
     res = client.post("/transcribe", files={"file": ("audio.webm", b"x" * 5000, "audio/webm")})
     assert res.status_code == 200
     data = res.json()
@@ -123,22 +134,23 @@ def test_transcribe_reports_an_explicit_error_when_stt_itself_fails(client, monk
 
 def test_transcribe_rejects_too_short_audio(client, monkeypatch):
     # Con credenciales (simuladas) presentes, el guard de tamaño mínimo debe
-    # cortar antes de siquiera intentar llamar a la API de ElevenLabs.
-    monkeypatch.setattr(app_module.stt, "_api_key", "fake-key-for-test")
+    # cortar antes de siquiera intentar llamar a la API de Groq.
+    monkeypatch.setattr(app_module.voice_router._stt("groq"), "_api_key", "fake-key-for-test")
     res = client.post("/transcribe", files={"file": ("audio.webm", b"short", "audio/webm")})
     assert res.status_code == 200
     assert res.json() == {"transcript": ""}
 
 
 def test_transcribe_does_not_record_input_log_entry_for_too_short_audio(client, monkeypatch):
-    monkeypatch.setattr(app_module.stt, "_api_key", "fake-key-for-test")
+    monkeypatch.setattr(app_module.voice_router._stt("groq"), "_api_key", "fake-key-for-test")
     client.post("/transcribe", files={"file": ("audio.webm", b"short", "audio/webm")})
     assert input_log.recent() == []
 
 
 def test_transcribe_stores_the_real_audio_and_returns_its_id(client, monkeypatch):
-    monkeypatch.setattr(app_module.stt, "_api_key", "fake-key-for-test")
-    monkeypatch.setattr(app_module.stt, "transcribe", lambda *a, **kw: "texto transcripto")
+    groq = app_module.voice_router._stt("groq")
+    monkeypatch.setattr(groq, "_api_key", "fake-key-for-test")
+    monkeypatch.setattr(groq, "transcribe", lambda *a, **kw: "texto transcripto")
     res = client.post("/transcribe", files={"file": ("audio.webm", b"x" * 5000, "audio/webm")})
     audio_id = res.json()["audio_id"]
     assert audio_id.endswith(".webm")
@@ -149,12 +161,13 @@ def test_transcribe_stores_the_audio_even_when_stt_itself_fails(client, monkeypa
     # La nota de voz real sigue siendo reproducible en el chat aunque el
     # servicio de transcripción falle — solo se pierde la transcripción, no
     # el audio en sí.
-    monkeypatch.setattr(app_module.stt, "_api_key", "fake-key-for-test")
+    groq = app_module.voice_router._stt("groq")
+    monkeypatch.setattr(groq, "_api_key", "fake-key-for-test")
 
     def boom(*a, **kw):
-        raise RuntimeError("ElevenLabs STT 401: quota_exceeded")
+        raise RuntimeError("Groq STT 401: quota_exceeded")
 
-    monkeypatch.setattr(app_module.stt, "transcribe", boom)
+    monkeypatch.setattr(groq, "transcribe", boom)
     res = client.post("/transcribe", files={"file": ("audio.webm", b"x" * 5000, "audio/webm")})
     audio_id = res.json()["audio_id"]
     assert app_module.audio_store.path_for(audio_id) is not None
@@ -180,9 +193,12 @@ def test_send_persists_the_input_audio_id_on_the_memory_entry(client):
 
 
 def test_tts_caches_by_content_and_does_not_resynthesize_the_same_text(client, monkeypatch):
-    monkeypatch.setattr(app_module.tts, "_api_key", "fake-key-for-test")
+    # Sin tier explícito, /tts usa el tier 'local' (kokoro) — se fuerza
+    # disponible y se stubea speak() para no depender del contenedor real.
+    kokoro = app_module.voice_router._tts("kokoro")
+    monkeypatch.setattr(type(kokoro), "available", property(lambda self: True))
     calls = []
-    monkeypatch.setattr(app_module.tts, "synthesize", lambda text: calls.append(text) or b"real audio bytes")
+    monkeypatch.setattr(kokoro, "speak", lambda text, voice=None, audio_format="mp3": calls.append(text) or b"real audio bytes")
 
     first = client.post("/tts", json={"text": "hola de nuevo"})
     second = client.post("/tts", json={"text": "hola de nuevo"})
@@ -380,10 +396,10 @@ def test_dashboard_widget_usage_reports_real_metrics_per_vendor(client):
 
 
 def test_dashboard_widget_usage_includes_real_elevenlabs_subscription_when_available(client, monkeypatch):
-    monkeypatch.setattr(app_module.tts, "_api_key", "fake-key")
-    monkeypatch.setattr(app_module.tts, "_voice_id", "fake-voice")
+    monkeypatch.setattr(app_module._elevenlabs_for_dashboard, "_api_key", "fake-key")
+    monkeypatch.setattr(app_module._elevenlabs_for_dashboard, "_voice_id", "fake-voice")
     monkeypatch.setattr(
-        app_module.tts,
+        app_module._elevenlabs_for_dashboard,
         "subscription_info",
         lambda: {"tier": "starter", "character_count": 1234, "character_limit": 30000},
     )
@@ -394,13 +410,13 @@ def test_dashboard_widget_usage_includes_real_elevenlabs_subscription_when_avail
 
 
 def test_dashboard_widget_usage_reports_subscription_error_without_hiding_local_metrics(client, monkeypatch):
-    monkeypatch.setattr(app_module.tts, "_api_key", "fake-key")
-    monkeypatch.setattr(app_module.tts, "_voice_id", "fake-voice")
+    monkeypatch.setattr(app_module._elevenlabs_for_dashboard, "_api_key", "fake-key")
+    monkeypatch.setattr(app_module._elevenlabs_for_dashboard, "_voice_id", "fake-voice")
 
     def boom():
         raise RuntimeError("401 unauthorized")
 
-    monkeypatch.setattr(app_module.tts, "subscription_info", boom)
+    monkeypatch.setattr(app_module._elevenlabs_for_dashboard, "subscription_info", boom)
     usage_tracker.record_elevenlabs_tts_call(50)
     res = client.get("/dashboard/widgets/usage")
     data = res.json()["vendors"]["elevenlabs"]

@@ -1,5 +1,7 @@
 import json
 import os
+import re
+from dataclasses import dataclass
 from typing import Callable
 
 from snarf.capabilities.base import Capability
@@ -9,6 +11,57 @@ DEFAULT_MODEL = "claude-sonnet-5"
 MAX_TOOL_ROUNDS = 5
 MAX_OUTPUT_TOKENS = 4096
 CACHE_TTL = "1h"
+
+# Marcador que separa la respuesta completa (a pantalla) de su versión hablada
+# (a voz) dentro de un mismo texto generado — ver ADR de la capa de voz. El
+# system prompt (orchestrator.SYSTEM_PREFIX) instruye al modelo a usar
+# exactamente estos delimitadores; se definen acá porque este módulo es el
+# único que los parsea, y así queda una sola fuente de verdad.
+SPEECH_START = "---HABLA---"
+SPEECH_END = "---FIN-HABLA---"
+FALLBACK_SPEECH_MAX_CHARS = 400
+
+
+@dataclass(frozen=True)
+class LLMResponse:
+    """Una respuesta generada, separada en su versión completa y su versión hablada.
+
+    text: la respuesta íntegra, con estructura/markdown, para mostrar en pantalla.
+    speech: versión breve para sintetizar en voz — nunca oculta un riesgo o dato
+    faltante presente en `text`, solo recorta la explicación.
+    """
+
+    text: str
+    speech: str
+
+
+def fallback_speech(text: str) -> str:
+    """Versión hablada aproximada cuando el modelo no incluyó el marcador de habla.
+
+    Puramente mecánico (sin otra llamada al modelo): saca marcado Markdown básico
+    y corta en un límite de caracteres razonable, preferentemente en un borde de
+    oración. No es tan bueno como una versión pensada por el modelo, pero evita
+    leer en voz alta encabezados/asteriscos/backticks crudos.
+    """
+    stripped = re.sub(r"[#*`_>]|^-\s+", "", text, flags=re.MULTILINE).strip()
+    stripped = re.sub(r"\s+", " ", stripped)
+    if len(stripped) <= FALLBACK_SPEECH_MAX_CHARS:
+        return stripped
+    truncated = stripped[:FALLBACK_SPEECH_MAX_CHARS]
+    cut = max(truncated.rfind(". "), truncated.rfind("? "), truncated.rfind("! "))
+    return (truncated[: cut + 1] if cut > 0 else truncated).strip()
+
+
+def split_speech(raw_text: str) -> LLMResponse:
+    """Separa el texto crudo del modelo en (text, speech) según los delimitadores."""
+    start = raw_text.find(SPEECH_START)
+    if start == -1:
+        text = raw_text.strip()
+        return LLMResponse(text=text, speech=fallback_speech(text))
+    text = raw_text[:start].rstrip()
+    end = raw_text.find(SPEECH_END, start)
+    speech_block = raw_text[start + len(SPEECH_START) : end if end != -1 else None].strip()
+    return LLMResponse(text=text, speech=speech_block or fallback_speech(text))
 
 
 def _mark_cache_breakpoint(message: dict) -> dict:
@@ -59,7 +112,7 @@ class AnthropicLLM(Capability):
         messages: list[dict],
         tools: list[dict] | None = None,
         tool_handler: Callable[[str, dict], object] | None = None,
-    ) -> str:
+    ) -> LLMResponse:
         if not self._client:
             raise RuntimeError(
                 "ANTHROPIC_API_KEY no configurada. Definila en .env (ver .env.example)."
@@ -111,10 +164,15 @@ class AnthropicLLM(Capability):
 
             text = "".join(block.text for block in response.content if block.type == "text")
             if response.stop_reason == "max_tokens":
+                # El corte pudo haber pasado antes de llegar al marcador de habla
+                # (---HABLA---) — split_speech simplemente no lo va a encontrar y
+                # cae al fallback mecánico sobre el texto ya truncado, que sigue
+                # siendo una degradación razonable.
                 text += "\n\n*(respuesta truncada: llegó al límite de longitud de una respuesta)*"
-            return text
+            return split_speech(text)
 
-        return "[demasiadas consultas a herramientas, no llegué a una respuesta final]"
+        timeout_text = "[demasiadas consultas a herramientas, no llegué a una respuesta final]"
+        return LLMResponse(text=timeout_text, speech=timeout_text)
 
     def _record_usage(self, response) -> None:
         usage = getattr(response, "usage", None)

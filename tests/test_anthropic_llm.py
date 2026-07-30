@@ -1,6 +1,14 @@
 from types import SimpleNamespace
 
-from snarf.capabilities.anthropic_llm import CACHE_TTL, MAX_OUTPUT_TOKENS, AnthropicLLM
+from snarf.capabilities.anthropic_llm import (
+    CACHE_TTL,
+    MAX_OUTPUT_TOKENS,
+    SPEECH_END,
+    SPEECH_START,
+    AnthropicLLM,
+    fallback_speech,
+    split_speech,
+)
 
 
 class FakeTextBlock:
@@ -58,7 +66,7 @@ def make_llm(responses):
 def test_generate_returns_text_unchanged_when_response_completes_normally():
     llm = make_llm([fake_response("end_turn", "respuesta completa")])
     result = llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
-    assert result == "respuesta completa"
+    assert result.text == "respuesta completa"
 
 
 def test_generate_appends_visible_note_when_truncated_by_max_tokens():
@@ -67,8 +75,8 @@ def test_generate_appends_visible_note_when_truncated_by_max_tokens():
     de oración (ver ARCHITECTURE_AUDIT.md, hallazgo 14.1)."""
     llm = make_llm([fake_response("max_tokens", "esto se corta a la mit")])
     result = llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
-    assert result.startswith("esto se corta a la mit")
-    assert "truncada" in result
+    assert result.text.startswith("esto se corta a la mit")
+    assert "truncada" in result.text
 
 
 def test_generate_requests_a_higher_output_limit_than_the_original_1024():
@@ -142,7 +150,7 @@ def test_generate_marks_each_tool_loop_round_without_leaking_cache_control_betwe
         tools=[{"name": "some_tool"}],
         tool_handler=lambda name, input: {"ok": True},
     )
-    assert result == "listo"
+    assert result.text == "listo"
 
     first_call_messages = llm._client.messages.calls[0]["messages"]
     assert first_call_messages[-1]["content"] == [
@@ -184,3 +192,41 @@ def test_generate_does_not_record_usage_when_response_has_no_usage_info(monkeypa
     llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
 
     assert recorded == []
+
+
+def test_split_speech_extracts_the_delimited_block_and_strips_it_from_text():
+    raw = f"Respuesta completa con detalle.\n{SPEECH_START}\nversión hablada corta\n{SPEECH_END}\n"
+    result = split_speech(raw)
+    assert result.text == "Respuesta completa con detalle."
+    assert result.speech == "versión hablada corta"
+
+
+def test_split_speech_falls_back_to_mechanical_speech_when_marker_is_missing():
+    """El modelo no siempre va a incluir el marcador de habla (no es
+    estructurado, solo instruido por prompt) — split_speech nunca debe
+    romper, cae a una versión mecánica en vez de perder el turno."""
+    raw = "# Encabezado\nUna respuesta *con* markdown y sin marcador de habla."
+    result = split_speech(raw)
+    assert result.text == raw
+    assert "#" not in result.speech
+    assert "*" not in result.speech
+
+
+def test_split_speech_handles_an_unterminated_speech_block():
+    # stop_reason == max_tokens puede truncar justo después de SPEECH_START,
+    # antes de que aparezca SPEECH_END.
+    raw = f"Texto completo.\n{SPEECH_START}\nse cortó a mit"
+    result = split_speech(raw)
+    assert result.text == "Texto completo."
+    assert result.speech == "se cortó a mit"
+
+
+def test_fallback_speech_truncates_long_text_at_a_sentence_boundary():
+    long_text = "Primera oración corta. " + ("palabra " * 100) + "Última oración."
+    result = fallback_speech(long_text)
+    assert len(result) <= 400
+    assert result.endswith(".")
+
+
+def test_fallback_speech_returns_short_text_unchanged_aside_from_markdown_stripping():
+    assert fallback_speech("Todo bien, corto y simple.") == "Todo bien, corto y simple."

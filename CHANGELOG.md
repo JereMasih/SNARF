@@ -498,3 +498,12 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Aplicado como segundo caso real: Gmail (7 tools → leer/organizar/enviar) y Calendar (8 tools → ver/editar) se separan igual que Proyectos, usando datos que ya se registraban sin costo nuevo.
 - El cerebro pasa de 17 nodos reales (al empezar esta sesión) a 22.
 - 415/415 tests. Verificado con Playwright contra el snapshot real. Ver ADR 0055.
+
+## [2026-07-30] Capa de voz con proveedores intercambiables (Groq/Kokoro) + split texto/habla
+
+- ElevenLabs quedaba cableado para toda la voz (STT del audio grabado, TTS de cada respuesta completa) — nuevo `snarf/voice/` con `STTProvider`/`TTSProvider` detrás de un router, proveedor activo elegido en `voice/config.yaml`, nunca en código.
+- STT: Groq (`whisper-large-v3-turbo`, ~USD 0.04/hora) como primario, con fallback 100% local y gratis (`faster-whisper`) cuando no hay red o Groq falla.
+- TTS: nuevo tier "local" con Kokoro-FastAPI corriendo en Docker (CPU, gratis) como default de toda conversación cotidiana — ElevenLabs pasa a ser tier "premium" exclusivo, nunca usado en silencio.
+- La optimización de mayor impacto real: cada respuesta ahora se separa en versión completa (a pantalla) y versión hablada breve (a voz, <400 caracteres, sin markdown, nunca oculta un riesgo o dato faltante) — ya no se lee en voz alta la respuesta entera con formato.
+- Docker instalado y usado desde el día uno (Colima) — el mismo contenedor de Kokoro va a correr igual en el futuro VPS.
+- 444/444 tests (30 nuevos). Verificado con Kokoro real en Docker (3 voces en español reales probadas) y con Playwright contra una instancia aislada real: mensaje de chat real, nota de voz generada y reproducida con audio real. Pendiente: `GROQ_API_KEY` real del fundador para verificar calidad de STT en español rioplatense (criterio de aceptación explícito, todavía sin poder evaluarse). Ver ADR 0056.

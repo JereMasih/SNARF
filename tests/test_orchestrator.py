@@ -1,5 +1,6 @@
 import pytest
 
+from snarf.capabilities.anthropic_llm import LLMResponse
 from snarf.core.orchestrator import Orchestrator
 from snarf.knowledge.extraction import ExtractionResult
 
@@ -14,14 +15,28 @@ def orchestrator(tmp_path, monkeypatch):
 
 def test_echo_mode_without_api_key_and_persists_to_memory(orchestrator):
     response = orchestrator.handle("text", "hola snarf", conversation_id="c1")
-    assert "hola snarf" in response
-    assert "modo eco" in response
-    assert orchestrator.memory.get_conversation("c1")[0]["response"] == response
+    assert "hola snarf" in response.text
+    assert "modo eco" in response.text
+    assert orchestrator.memory.get_conversation("c1")[0]["response"] == response.text
 
 
 def test_handle_stores_the_input_audio_id_on_the_memory_entry(orchestrator):
     orchestrator.handle("voice", "hola snarf", conversation_id="c1", input_audio_id="abc123.webm")
     assert orchestrator.memory.get_conversation("c1")[0]["input_audio_id"] == "abc123.webm"
+
+
+def test_handle_stores_the_llm_speech_field_on_the_memory_entry(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(
+        orchestrator._llm,
+        "generate",
+        lambda **kwargs: LLMResponse(text="respuesta completa con detalle", speech="versión hablada corta"),
+    )
+    result = orchestrator.handle("text", "hola", conversation_id="c1")
+    assert result.speech == "versión hablada corta"
+    entry = orchestrator.memory.get_conversation("c1")[0]
+    assert entry["response"] == "respuesta completa con detalle"
+    assert entry["speech"] == "versión hablada corta"
 
 
 def test_handle_degrades_gracefully_when_the_llm_call_fails(orchestrator, monkeypatch):
@@ -34,9 +49,9 @@ def test_handle_degrades_gracefully_when_the_llm_call_fails(orchestrator, monkey
 
     monkeypatch.setattr(orchestrator._llm, "generate", boom)
     response = orchestrator.handle("text", "hola snarf", conversation_id="c1")
-    assert "error real del LLM" in response
-    assert "credit balance" in response
-    assert orchestrator.memory.get_conversation("c1")[0]["response"] == response
+    assert "error real del LLM" in response.text
+    assert "credit balance" in response.text
+    assert orchestrator.memory.get_conversation("c1")[0]["response"] == response.text
 
 
 def test_handle_injects_project_prompt_as_additional_system_context(orchestrator, monkeypatch):
@@ -47,7 +62,7 @@ def test_handle_injects_project_prompt_as_additional_system_context(orchestrator
 
     def fake_generate(system, messages, tools=None, tool_handler=None):
         captured["system"] = system
-        return "respuesta"
+        return LLMResponse(text="respuesta", speech="respuesta")
 
     monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
     monkeypatch.setattr(
@@ -61,11 +76,11 @@ def test_handle_injects_project_prompt_as_additional_system_context(orchestrator
 
 def test_handle_with_a_missing_project_degrades_gracefully(orchestrator, monkeypatch):
     monkeypatch.setattr(orchestrator._llm, "_client", object())
-    monkeypatch.setattr(orchestrator._llm, "generate", lambda **kwargs: "respuesta")
+    monkeypatch.setattr(orchestrator._llm, "generate", lambda **kwargs: LLMResponse(text="respuesta", speech="respuesta"))
     monkeypatch.setattr(orchestrator._projects, "get", lambda pid: None)  # proyecto borrado/inexistente
     orchestrator._memory.assign_conversation("c1", "no-existe")
     response = orchestrator.handle("text", "hola", conversation_id="c1")
-    assert response == "respuesta"
+    assert response.text == "respuesta"
 
 
 def test_handle_persists_project_id_on_the_memory_entry(orchestrator):
@@ -88,7 +103,9 @@ def test_reassigning_a_conversation_changes_the_prompt_used_going_forward_only(o
     monkeypatch.setattr(orchestrator._llm, "_client", object())
     captured = []
     monkeypatch.setattr(
-        orchestrator._llm, "generate", lambda system, messages, tools=None, tool_handler=None: captured.append(system) or "ok"
+        orchestrator._llm,
+        "generate",
+        lambda system, messages, tools=None, tool_handler=None: captured.append(system) or LLMResponse(text="ok", speech="ok"),
     )
     monkeypatch.setattr(
         orchestrator._projects,
@@ -112,7 +129,7 @@ def test_handle_unassigned_conversation_uses_no_project_prompt(orchestrator, mon
     monkeypatch.setattr(
         orchestrator._llm,
         "generate",
-        lambda system, messages, tools=None, tool_handler=None: captured.update(system=system) or "ok",
+        lambda system, messages, tools=None, tool_handler=None: captured.update(system=system) or LLMResponse(text="ok", speech="ok"),
     )
     orchestrator._memory.assign_conversation("c1", "proj-1")
     orchestrator._memory.unassign_conversation("c1")
@@ -148,7 +165,7 @@ def test_handle_injects_sarcasm_instruction_at_the_default_level(orchestrator, m
 
     def fake_generate(system, messages, tools=None, tool_handler=None):
         captured["system"] = system
-        return "respuesta"
+        return LLMResponse(text="respuesta", speech="respuesta")
 
     monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
     orchestrator.handle("text", "hola", conversation_id="c1")
@@ -165,7 +182,7 @@ def test_handle_omits_sarcasm_instruction_at_level_zero(orchestrator, monkeypatc
 
     def fake_generate(system, messages, tools=None, tool_handler=None):
         captured["system"] = system
-        return "respuesta"
+        return LLMResponse(text="respuesta", speech="respuesta")
 
     monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
     orchestrator.handle("text", "hola", conversation_id="c1")
@@ -183,7 +200,9 @@ def test_handle_rereads_sarcasm_level_on_every_turn(orchestrator, monkeypatch):
     monkeypatch.setattr(orchestrator._llm, "_client", object())
     captured = []
     monkeypatch.setattr(
-        orchestrator._llm, "generate", lambda system, messages, tools=None, tool_handler=None: captured.append(system) or "ok"
+        orchestrator._llm,
+        "generate",
+        lambda system, messages, tools=None, tool_handler=None: captured.append(system) or LLMResponse(text="ok", speech="ok"),
     )
 
     orchestrator.handle("text", "primero", conversation_id="c1")
@@ -203,7 +222,7 @@ def test_personality_set_sarcasm_tool_persists_and_is_reflected_next_turn(orches
     monkeypatch.setattr(
         orchestrator._llm,
         "generate",
-        lambda system, messages, tools=None, tool_handler=None: captured.update(system=system) or "ok",
+        lambda system, messages, tools=None, tool_handler=None: captured.update(system=system) or LLMResponse(text="ok", speech="ok"),
     )
     orchestrator.handle("text", "hola", conversation_id="c1")
     assert "9.0/10" in captured["system"]

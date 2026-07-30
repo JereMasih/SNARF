@@ -1,7 +1,13 @@
 import time
 from pathlib import Path
 
-from snarf.capabilities.anthropic_llm import AnthropicLLM
+from snarf.capabilities.anthropic_llm import (
+    SPEECH_END,
+    SPEECH_START,
+    AnthropicLLM,
+    LLMResponse,
+    fallback_speech,
+)
 from snarf.capabilities.docx_extractor import DocxExtractor
 from snarf.capabilities.document_builder import DocumentBuilder
 from snarf.capabilities.ffmpeg_audio import FfmpegAudioExtractor
@@ -53,6 +59,16 @@ SYSTEM_PREFIX = (
     "(#, ##, ###), listas, **negrita**, citas con '>' y bloques de código con ```. Para "
     "respuestas conversacionales cortas, mantené texto simple y fluido, sin forzar "
     "estructura que no aporta.\n\n"
+    f"Al final de CADA respuesta, sin excepción, agregá un bloque delimitado exactamente "
+    f"así:\n{SPEECH_START}\n<versión hablada>\n{SPEECH_END}\n"
+    "La versión hablada es lo que se sintetiza en voz cuando el fundador te escucha en "
+    "vez de leerte: el titular, la decisión, y lo que hace falta para actuar. Menos de "
+    "400 caracteres salvo que te pidan explícitamente el desarrollo completo. Sin "
+    "markdown, sin listas numeradas leídas en voz alta, sin URLs deletreadas. Nunca es "
+    "un resumen que oculte información incómoda — si hay un riesgo o un dato faltante, "
+    "va en la versión hablada. Lo que se recorta es la explicación, nunca la "
+    "advertencia. El bloque de habla nunca aparece en pantalla — se separa antes de "
+    "mostrarte al fundador.\n\n"
     "Tenés herramientas para consultar conversaciones pasadas con el fundador, más allá "
     "de la conversación actual: list_conversations, get_conversation, search_memory. "
     "Usalas cuando te pregunten por algo dicho en otra conversación, cuando necesites "
@@ -1045,7 +1061,7 @@ class Orchestrator:
         user_input: str,
         conversation_id: str | None = None,
         input_audio_id: str | None = None,
-    ) -> str:
+    ) -> LLMResponse:
         # project_id ya no viaja como parámetro por mensaje (eso no alcanzaba:
         # una conversación recién creada sin mensajes no tenía nada que
         # taggear, y reasignarla no tenía dónde guardar "cuál es su proyecto
@@ -1058,10 +1074,11 @@ class Orchestrator:
         project_id = self._memory.get_conversation_project(conversation_id) if conversation_id else None
 
         if not self._llm.available:
-            response = (
+            echo_text = (
                 "[modo eco - ANTHROPIC_API_KEY no configurada, ver .env.example] "
                 f"{user_input}"
             )
+            response = LLMResponse(text=echo_text, speech=fallback_speech(echo_text))
         else:
             system = SYSTEM_PREFIX + self._identity
             # Se relee en cada turno (no se cachea en __init__ como
@@ -1093,10 +1110,12 @@ class Orchestrator:
                 # Antes esto tiraba un 500 crudo hasta /send — un fallo real
                 # del LLM (crédito agotado, rate limit, red) degrada con
                 # gracia igual que /transcribe, en vez de romper la request.
-                response = f"[error real del LLM, no pude responder: {exc}]"
+                error_text = f"[error real del LLM, no pude responder: {exc}]"
+                response = LLMResponse(text=error_text, speech=fallback_speech(error_text))
 
         self._memory.append(
-            channel_name, user_input, response,
+            channel_name, user_input, response.text,
             conversation_id=conversation_id, project_id=project_id, input_audio_id=input_audio_id,
+            speech=response.speech,
         )
         return response

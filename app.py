@@ -13,7 +13,6 @@ from fastapi import Cookie, Depends, FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
-from snarf.capabilities.elevenlabs_stt import ElevenLabsSTT
 from snarf.capabilities.elevenlabs_tts import ElevenLabsTTS
 from snarf.capabilities.google_auth import TOKENS_DIR as GOOGLE_TOKENS_DIR
 from snarf.core.orchestrator import DEFAULT_USER_ID, LOCAL_FILES_DATA_DIR, Orchestrator
@@ -23,6 +22,7 @@ from snarf.runtime.personality_prefs import load_prefs as load_personality_prefs
 from snarf.runtime import data_backup
 from snarf.knowledge.extraction import categorize_mime
 from snarf.telemetry import activity_log, brain, input_log, usage_tracker
+from snarf.voice.router import TierUnavailable, VoiceRouter
 from snarf.runtime.web_auth import (
     SESSION_COOKIE_NAME,
     SESSION_MAX_AGE_SECONDS,
@@ -33,8 +33,11 @@ from snarf.runtime.web_auth import (
 )
 
 app = FastAPI()
-stt = ElevenLabsSTT()
-tts = ElevenLabsTTS()
+voice_router = VoiceRouter()
+# Instancia separada solo para subscription_info() del widget de dashboard
+# (cupo real de la cuenta de ElevenLabs) — ya no es quien sintetiza la voz de
+# cada turno, eso lo decide voice_router según voice/config.yaml.
+_elevenlabs_for_dashboard = ElevenLabsTTS()
 orchestrator = Orchestrator(user_id=DEFAULT_USER_ID)
 audio_store = AudioStore()
 
@@ -85,10 +88,15 @@ class SendRequest(BaseModel):
 
 class SendResponse(BaseModel):
     response: str
+    speech: str
 
 
 class TTSRequest(BaseModel):
     text: str
+    # None = tier 'local' (default de toda conversación, ver voice/config.yaml).
+    # Explícito ('premium', etc.) solo cuando se pide voz de verdad o un asset
+    # publicable — el router nunca escala de tier por su cuenta.
+    tier: str | None = None
 
 
 class TTSResponse(BaseModel):
@@ -162,15 +170,15 @@ def logout():
 @app.get("/status")
 def status():
     return {
-        "stt_available": stt.available,
-        "tts_available": tts.available,
+        "stt_available": voice_router.stt_available,
+        "tts_available": voice_router.tts_status()["available"],
         "llm_available": orchestrator.llm_available,
     }
 
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile, user_id: str = Depends(require_user)):
-    if not stt.available:
+    if not voice_router.stt_available:
         return {"transcript": ""}
     audio_bytes = await file.read()
     if len(audio_bytes) < 2000:
@@ -183,7 +191,7 @@ async def transcribe(file: UploadFile, user_id: str = Depends(require_user)):
     ext = (file.filename or "audio.webm").rsplit(".", 1)[-1] if "." in (file.filename or "") else "webm"
     audio_id = audio_store.save(audio_bytes, ext)
     try:
-        text = stt.transcribe(audio_bytes, filename=file.filename or "audio.webm")
+        text = voice_router.transcribe(audio_bytes, filename=file.filename or "audio.webm")
     except Exception as exc:
         print(f"[transcribe] fallo de STT, degradando a transcript vacío: {exc}")
         # Distinto de "no se detectó voz" (audio corto, o Scribe transcribió
@@ -201,26 +209,34 @@ def send(payload: SendRequest, user_id: str = Depends(require_user)):
     # El proyecto de la conversación (si tiene uno asignado) se resuelve solo
     # dentro de orchestrator.handle() por conversation_id — ver Proyectos
     # Mark II. Ya no viaja como parámetro por mensaje.
-    response_text = orchestrator.handle(
+    result = orchestrator.handle(
         "visual", payload.text, conversation_id=payload.conversation_id, input_audio_id=payload.input_audio_id
     )
-    return SendResponse(response=response_text)
+    return SendResponse(response=result.text, speech=result.speech)
 
 
 @app.post("/tts", response_model=TTSResponse)
 def synthesize_speech(payload: TTSRequest, user_id: str = Depends(require_user)):
-    if not tts.available:
-        return TTSResponse(audio_base64=None)
-    # Caché por contenido: la misma respuesta ya sintetizada antes no vuelve
-    # a pagar una llamada real a ElevenLabs — escuchar varias veces la misma
-    # respuesta reusa siempre el mismo archivo. audio_id se devuelve además
-    # de audio_base64 para que el frontend arme una burbuja de nota de voz
-    # real (GET /audio/{id}), no solo un data-URI de un solo uso.
-    audio_bytes = audio_store.get_cached_tts(payload.text)
+    # Caché por contenido: la misma respuesta ya sintetizada antes (con el
+    # mismo tier) no vuelve a pagar una llamada real al proveedor — escuchar
+    # varias veces la misma respuesta reusa siempre el mismo archivo. audio_id
+    # se devuelve además de audio_base64 para que el frontend arme una
+    # burbuja de nota de voz real (GET /audio/{id}), no solo un data-URI de
+    # un solo uso. La clave de caché incluye el tier para no confundir el
+    # audio local (gratis) con el premium (pago) de la misma frase.
+    cache_key = f"{payload.tier or 'local'}:{payload.text}"
+    audio_bytes = audio_store.get_cached_tts(cache_key)
     if audio_bytes is None:
-        audio_bytes = tts.synthesize(payload.text)
-        audio_store.save_tts(payload.text, audio_bytes)
-    audio_id = audio_store.tts_cache_id(payload.text)
+        try:
+            # Sin `tier` explícito, voice_router.speak() SOLO intenta el tier
+            # 'local' — nunca escala solo a 'premium'/'hosted' (esos cuestan
+            # plata real). Si local está caído, esto tira TierUnavailable en
+            # vez de gastar en silencio.
+            audio_bytes = voice_router.speak(payload.text, tier=payload.tier)
+        except TierUnavailable:
+            return TTSResponse(audio_base64=None)
+        audio_store.save_tts(cache_key, audio_bytes)
+    audio_id = audio_store.tts_cache_id(cache_key)
     return TTSResponse(audio_base64=base64.b64encode(audio_bytes).decode("ascii"), audio_id=audio_id)
 
 
@@ -296,8 +312,8 @@ def dashboard_summary(user_id: str = Depends(require_user)):
         "user_id": user_id,
         "capabilities": {
             "llm": orchestrator.llm_available,
-            "stt": stt.available,
-            "tts": tts.available,
+            "stt": voice_router.stt_available,
+            "tts": voice_router.tts_status()["available"],
             "google_connected": _google_connected(user_id),
         },
         "memory": orchestrator.memory.stats(),
@@ -361,9 +377,9 @@ def dashboard_widget_usage(user_id: str = Depends(require_user)):
         vendor: {**data, "cost_usd": cost_by_vendor.get(vendor)}
         for vendor, data in metrics.items()
     }
-    if tts.available:
+    if _elevenlabs_for_dashboard.available:
         try:
-            result.setdefault("elevenlabs", {})["subscription"] = tts.subscription_info()
+            result.setdefault("elevenlabs", {})["subscription"] = _elevenlabs_for_dashboard.subscription_info()
         except Exception as exc:
             result.setdefault("elevenlabs", {})["subscription_error"] = str(exc)
     return {"vendors": result}

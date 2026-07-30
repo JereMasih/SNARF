@@ -1,0 +1,19 @@
+# Configuración de la capa de voz de Snarf. Cambiar de proveedor, o mover un
+# tier de la Mac a un VPS, es editar este archivo — nunca tocar código (ver
+# Parte 1 / Parte 4 del diseño en el ADR de la capa de voz).
+
+stt:
+  primary: groq
+  fallback: local_whisper
+
+tts:
+  tiers:
+    local: kokoro
+    hosted: hosted_not_configured
+    premium: elevenlabs_premium
+
+# Configuración propia de cada proveedor que la necesita. base_url es lo que
+# cambia al mover Kokoro de la Mac a un VPS (o a otra máquina cualquiera).
+kokoro:
+  base_url: http://localhost:8880
+  voice: em_alex

@@ -55,6 +55,23 @@ def record_elevenlabs_tts_call(characters: int, path: Path | None = None) -> Non
     record("elevenlabs", "tts", None, {"characters": characters}, path=path)
 
 
+def record_groq_stt_call(duration_seconds: float | None, path: Path | None = None) -> None:
+    cost = pricing.estimate_groq_stt_cost(duration_seconds) if duration_seconds is not None else None
+    record("groq", "whisper-large-v3-turbo", cost, {"duration_seconds": duration_seconds}, path=path)
+
+
+def record_local_stt_call(duration_seconds: float | None, path: Path | None = None) -> None:
+    # Costo marginal cero: corre en CPU local, sin llamada a ningún vendor —
+    # se registra igual para que el dashboard muestre el consumo real.
+    record("local", "faster-whisper", 0.0, {"duration_seconds": duration_seconds}, path=path)
+
+
+def record_kokoro_tts_call(characters: int, path: Path | None = None) -> None:
+    # Costo marginal cero: corre en el contenedor Docker local de Snarf, sin
+    # llamada a ningún vendor — el objetivo entero del tier 'local' de voz.
+    record("local", "kokoro", 0.0, {"characters": characters}, path=path)
+
+
 def record_voyage_call(model: str, tokens: int, path: Path | None = None) -> None:
     prior = _cumulative_voyage_tokens(path)
     cost = pricing.estimate_voyage_cost(model, tokens, prior)

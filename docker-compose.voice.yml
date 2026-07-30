@@ -1,0 +1,19 @@
+# Stack de voz de Snarf — corre en Docker desde el día uno, también acá en
+# la Mac, para que la Parte 4 (portabilidad a VPS) sea real desde ahora: si
+# funciona en este contenedor, funciona igual en el VPS (CPU-only, sin
+# asumir nada de macOS ni de GPU). Ver ADR de la capa de voz.
+#
+# Arrancar:   docker compose -f docker-compose.voice.yml up -d
+# Ver logs:   docker compose -f docker-compose.voice.yml logs -f kokoro
+# Apagar:     docker compose -f docker-compose.voice.yml down
+
+services:
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    container_name: snarf-kokoro-tts
+    ports:
+      - "8880:8880"
+    restart: unless-stopped
+    # Kokoro-FastAPI no documenta un endpoint /health real — snarf/voice
+    # verifica disponibilidad a nivel de aplicación contra /v1/audio/voices
+    # (KokoroTTS.available), no con un healthcheck de Docker acá.

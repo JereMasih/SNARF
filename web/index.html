@@ -1506,7 +1506,7 @@ function addCodeBlockCopyButtons(container) {
   });
 }
 
-function addMessage(text, who, withAudio, inputAudioId) {
+function addMessage(text, who, withAudio, inputAudioId, speech) {
   const div = document.createElement("div");
   div.className = "msg " + who;
   if (who === "snarf") {
@@ -1518,7 +1518,11 @@ function addMessage(text, who, withAudio, inputAudioId) {
       const audioBtn = document.createElement("button");
       audioBtn.className = "play-audio-btn";
       audioBtn.textContent = "🎙️ generar nota de voz";
-      audioBtn.addEventListener("click", () => generateVoiceNote(text, audioBtn));
+      // La nota de voz sintetiza la versión hablada breve (speech), no la
+      // respuesta completa a pantalla — el costo/latencia real de la voz
+      // depende de esto. Mensajes viejos (guardados antes de este cambio)
+      // no tienen speech propio: se degrada a la respuesta completa.
+      audioBtn.addEventListener("click", () => generateVoiceNote(speech || text, audioBtn));
       actions.appendChild(audioBtn);
     }
     const copyBtn = document.createElement("button");
@@ -1856,7 +1860,7 @@ async function loadConversation(id) {
     const entries = await res.json();
     entries.forEach(e => {
       addMessage(e.input, "user", false, e.input_audio_id);
-      addMessage(e.response, "snarf", ttsAvailable);
+      addMessage(e.response, "snarf", ttsAvailable, null, e.speech);
     });
   } catch (e) {
     addMessage("no se pudo cargar la conversación: " + (e.message || e), "snarf");
@@ -4082,7 +4086,7 @@ async function sendText(text, inputAudioId) {
     if (!res.ok) throw new Error("send HTTP " + res.status);
     const data = await res.json();
     hideTyping();
-    addMessage(data.response, "snarf", ttsAvailable);
+    addMessage(data.response, "snarf", ttsAvailable, null, data.speech);
     setState("idle", idleLabel());
     // Sin esto, una conversación nueva se queda mostrando el placeholder
     // "(nueva conversación)" en las listas hasta que el usuario navega fuera

@@ -26,11 +26,13 @@ def main():
         if not user_input.strip():
             continue
         try:
-            response = orchestrator.handle(channel.name, user_input)
+            result = orchestrator.handle(channel.name, user_input)
         except Exception as exc:
             channel.send(f"[error de capacidad, no se guardó en memoria] {exc}")
             continue
-        channel.send(response)
+        # El canal de voz habla la versión breve (menos costo, menos espera);
+        # el canal de texto muestra la respuesta completa.
+        channel.send(result.speech if channel.name == "voice" else result.text)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,12 @@ ANTHROPIC_CACHE_READ_DISCOUNT = 0.1
 # verificado 2026-07-28.
 ELEVENLABS_STT_USD_PER_HOUR = 0.22
 
+# Groq, speech-to-text (whisper-large-v3-turbo). Fuente: groq.com/pricing,
+# verificado 2026-07-30. Factura con un piso efectivo de ~10s por request
+# (ver GROQ_STT_MIN_BILLED_SECONDS) — clips más cortos igual pagan el piso.
+GROQ_STT_USD_PER_HOUR = 0.04
+GROQ_STT_MIN_BILLED_SECONDS = 10
+
 # Voyage AI, embeddings. Fuente: docs.voyageai.com/docs/pricing, verificado 2026-07-28.
 VOYAGE_RATES_PER_MILLION_TOKENS = {
     "voyage-4-lite": 0.02,
@@ -48,6 +54,11 @@ def estimate_anthropic_cost(
 def estimate_stt_cost(duration_seconds: float) -> float:
     hours = duration_seconds / 3600
     return hours * ELEVENLABS_STT_USD_PER_HOUR
+
+
+def estimate_groq_stt_cost(duration_seconds: float) -> float:
+    billed_seconds = max(duration_seconds, GROQ_STT_MIN_BILLED_SECONDS)
+    return (billed_seconds / 3600) * GROQ_STT_USD_PER_HOUR
 
 
 def estimate_voyage_cost(model: str, tokens: int, cumulative_tokens_before: int) -> float:
