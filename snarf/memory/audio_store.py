@@ -53,15 +53,15 @@ class AudioStore:
     # vuelve a pagar una síntesis real de ElevenLabs por una respuesta ya
     # sintetizada antes (el fundador lo pidió explícitamente: "posibilidad
     # de escuchar varias veces cada audio" sin repetir el costo/la demora). ---
-    def _tts_cache_id(self, text: str) -> str:
+    def tts_cache_id(self, text: str) -> str:
         return "tts_" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:32] + ".mp3"
 
     def get_cached_tts(self, text: str) -> bytes | None:
-        path = self.directory / self._tts_cache_id(text)
+        path = self.directory / self.tts_cache_id(text)
         return path.read_bytes() if path.is_file() else None
 
     def save_tts(self, text: str, data: bytes) -> str:
-        audio_id = self._tts_cache_id(text)
+        audio_id = self.tts_cache_id(text)
         (self.directory / audio_id).write_bytes(data)
         return audio_id
 

@@ -465,3 +465,9 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Protocolo de limpieza real: las transcripciones y respuestas de texto se guardan para siempre como siempre; los archivos de audio en sí (notas de voz + caché de TTS) se purgan solos a los 7 días — a pedido explícito del fundador, priorizando espacio sobre "replay histórico" de audios viejos.
 - Nuevo endpoint `GET /audio/{id}` (con validación estricta contra path traversal).
 - 414/414 tests (16 nuevos). Verificado con Playwright contra una instancia real aislada: guardado/servido de audio real, 404 ante ids inválidos, render del bubble de nota de voz con su desplegable, y caché de TTS confirmada con un contador real de llamadas a síntesis. Ver ADR 0050.
+
+## [2026-07-29] Reproductor de nota de voz embebido por burbuja (reemplaza el reproductor flotante)
+
+- El reproductor flotante único de siempre (pausa/velocidad/cerrar, pero sin forma real de volver a darle play tras pausarlo) se retira por completo. Reemplazado por un reproductor embebido propio por burbuja — el mismo componente para la nota de voz del usuario y para la de Snarf — con play/pausa real (confirmado que reanudar funciona), progreso seekable, velocidad, y un menú ⋮ con **compartir** (Web Share API, pensado para iPhone) y **descargar**.
+- El botón de las respuestas de Snarf pasa de "▶ escuchar" a "🎙️ generar nota de voz": genera (o recupera de caché, instantáneo) y reemplaza el propio botón por el reproductor real, en vez de reproducir directo en el reproductor flotante de un solo uso.
+- 414/414 tests. Verificado con Playwright: pausar/reanudar de verdad con un audio real de ~16 segundos, seek por click en la barra, ciclo de velocidad, y el menú de descargar. Ver ADR 0051.

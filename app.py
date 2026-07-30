@@ -93,6 +93,7 @@ class TTSRequest(BaseModel):
 
 class TTSResponse(BaseModel):
     audio_base64: str | None = None
+    audio_id: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -211,13 +212,16 @@ def synthesize_speech(payload: TTSRequest, user_id: str = Depends(require_user))
     if not tts.available:
         return TTSResponse(audio_base64=None)
     # Caché por contenido: la misma respuesta ya sintetizada antes no vuelve
-    # a pagar una llamada real a ElevenLabs — "escuchar" varias veces la
-    # misma respuesta es instantáneo después de la primera vez.
+    # a pagar una llamada real a ElevenLabs — escuchar varias veces la misma
+    # respuesta reusa siempre el mismo archivo. audio_id se devuelve además
+    # de audio_base64 para que el frontend arme una burbuja de nota de voz
+    # real (GET /audio/{id}), no solo un data-URI de un solo uso.
     audio_bytes = audio_store.get_cached_tts(payload.text)
     if audio_bytes is None:
         audio_bytes = tts.synthesize(payload.text)
         audio_store.save_tts(payload.text, audio_bytes)
-    return TTSResponse(audio_base64=base64.b64encode(audio_bytes).decode("ascii"))
+    audio_id = audio_store.tts_cache_id(payload.text)
+    return TTSResponse(audio_base64=base64.b64encode(audio_bytes).decode("ascii"), audio_id=audio_id)
 
 
 @app.get("/audio/{audio_id}")

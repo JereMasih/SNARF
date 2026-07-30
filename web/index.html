@@ -760,9 +760,8 @@
   }
   /* Nota de voz estilo WhatsApp: el audio real es el mensaje, la
      transcripción queda disponible pero oculta por default. */
-  .voice-note-row { display: flex; align-items: center; gap: 0.5rem; }
-  .voice-note-row .play-audio-btn { margin-top: 0; }
   .voice-note-toggle {
+    display: block; margin-top: 0.35rem;
     background: none; border: none; color: var(--text-dim);
     font-family: inherit; font-size: 0.68rem; cursor: pointer; padding: 0.2rem 0.3rem;
   }
@@ -850,45 +849,47 @@
     cursor: pointer;
   }
 
-  /* --- floating audio player --- */
-  .audio-player {
-    position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 14px);
-    left: 50%;
-    transform: translateX(-50%) translateY(-140%);
-    /* Por encima de cualquier overlay (config 10/11, cerebro 12/13, modo
-       enfoque 14/15) — antes quedaba tapado e inaccesible detrás de
-       cualquiera de esos paneles mientras reproducía. */
-    z-index: 20;
-    display: flex; align-items: center; gap: 0.6rem;
-    background: rgba(5,10,12,0.9);
-    border: 1px solid rgba(79,216,232,0.4);
-    box-shadow: 0 0 20px rgba(79,216,232,0.25);
+  /* --- reproductor de nota de voz embebido (por burbuja, estilo WhatsApp) ---
+     Reemplaza al reproductor flotante único de antes: cada nota de voz
+     (propia o generada de una respuesta de Snarf) tiene su propio play,
+     progreso, velocidad y menú — replayable las veces que haga falta, sin
+     "cerrar" nada. Un solo <audio> real de fondo (sharedAudio) alimenta a
+     la burbuja activa en cada momento, mismo criterio que cualquier
+     reproductor de medios: solo suena una cosa a la vez. */
+  .voice-note-player {
+    display: flex; align-items: center; gap: 0.5rem;
+    margin-top: 0.5rem;
+    background: rgba(79,216,232,0.08);
+    border: 1px solid rgba(79,216,232,0.3);
     border-radius: 999px;
-    padding: 0.5rem 0.6rem 0.5rem 0.9rem;
-    backdrop-filter: blur(8px);
-    transition: transform 0.3s ease;
+    padding: 0.35rem 0.4rem 0.35rem 0.35rem;
     font-size: 0.7rem;
     color: var(--text);
   }
-  .audio-player.visible { transform: translateX(-50%) translateY(0); }
-  .audio-player .label { display: flex; align-items: center; gap: 0.4rem; color: var(--text-dim); }
-  .audio-player .dot {
-    width: 6px; height: 6px; border-radius: 50%; background: var(--glow);
-    box-shadow: 0 0 6px 2px rgba(79,216,232,0.8);
-    animation: typing-bounce 1s infinite ease-in-out;
+  .vn-play-btn {
+    flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%;
+    background: rgba(79,216,232,0.16); border: 1px solid var(--glow);
+    color: var(--text); font-size: 0.8rem; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
   }
-  .audio-player button {
-    background: rgba(79,216,232,0.12);
-    border: 1px solid rgba(79,216,232,0.3);
-    color: var(--text);
-    font-family: inherit;
-    font-size: 0.68rem;
-    padding: 0.3rem 0.55rem;
-    border-radius: 999px;
-    cursor: pointer;
+  .vn-progress {
+    flex: 1 1 auto; min-width: 40px; height: 4px; border-radius: 999px;
+    background: rgba(79,216,232,0.18); cursor: pointer; position: relative;
   }
-  .audio-player .close-btn { background: rgba(232,90,90,0.12); border-color: rgba(232,90,90,0.4); }
+  .vn-progress-fill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+    background: var(--glow); border-radius: 999px;
+  }
+  .vn-time {
+    flex-shrink: 0; font-variant-numeric: tabular-nums; font-size: 0.64rem; color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .vn-speed-btn {
+    flex-shrink: 0; background: rgba(79,216,232,0.12); border: 1px solid rgba(79,216,232,0.3);
+    color: var(--text); font-family: inherit; font-size: 0.64rem;
+    padding: 0.2rem 0.4rem; border-radius: 999px; cursor: pointer;
+  }
+  .vn-menu .conv-item-menu-btn { color: var(--text-dim); }
 
   .typing { display: flex; gap: 4px; align-items: center; padding: 0.3rem 0; }
   .typing span {
@@ -1156,12 +1157,6 @@
     </div>
   </div>
 
-  <div class="audio-player" id="audioPlayer">
-    <div class="label"><span class="dot" id="audioPlayerDot"></span> <span id="audioPlayerLabel">reproduciendo</span></div>
-    <button id="pausePlayerBtn" title="Pausar">⏸</button>
-    <button id="speedBtn">1.25x</button>
-    <button id="closePlayerBtn" class="close-btn">✕</button>
-  </div>
 
   <div class="chat-focus-overlay" id="chatFocusOverlay"></div>
   <div class="chat-focus-panel" id="chatFocusPanel">
@@ -1305,11 +1300,6 @@ const modeFab = document.getElementById("modeFab");
 const modePopover = document.getElementById("modePopover");
 const modeOptions = document.querySelectorAll(".mode-option");
 const MODE_ICONS = { click: ICONS.tap, text: ICONS.keyboard };
-const audioPlayer = document.getElementById("audioPlayer");
-const audioPlayerLabel = document.getElementById("audioPlayerLabel");
-const pausePlayerBtn = document.getElementById("pausePlayerBtn");
-const speedBtn = document.getElementById("speedBtn");
-const closePlayerBtn = document.getElementById("closePlayerBtn");
 const particlesEl = document.getElementById("particles");
 const menuBtn = document.getElementById("menuBtn");
 const sidebar = document.getElementById("sidebar");
@@ -1375,7 +1365,6 @@ for (let i = 0; i < 14; i++) {
 
 let mode = "text"; // "click" | "text"
 let ttsAvailable = true;
-let currentSpeed = 1.25;
 const SPEEDS = [1.25, 1.5, 1.75, 2, 0.75, 1];
 let state = "idle";
 let mediaRecorder = null;
@@ -1453,10 +1442,14 @@ function setState(next, label) {
   modeFab.classList.toggle("locked", next === "listening" || next === "thinking");
 }
 function clearChat() { chatInner.innerHTML = ""; }
-async function fetchAndPlay(text, btn) {
+// Genera (o recupera de caché, instantáneo) la nota de voz de una
+// respuesta de Snarf y reemplaza el botón por el reproductor embebido real
+// — antes esto reproducía directo en un reproductor flotante de un solo
+// uso, sin forma real de volver a escucharlo después de pausarlo/cerrarlo.
+async function generateVoiceNote(text, btn) {
   const original = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "generando audio...";
+  btn.textContent = "generando nota de voz...";
   try {
     const res = await apiFetch("/tts", {
       method: "POST",
@@ -1464,16 +1457,15 @@ async function fetchAndPlay(text, btn) {
       body: JSON.stringify({ text }),
     });
     const data = await res.json();
-    if (data.audio_base64) {
-      await playAudio("data:audio/mpeg;base64," + data.audio_base64);
+    if (data.audio_id) {
+      btn.replaceWith(buildVoiceNotePlayer(data.audio_id, "respuesta-de-snarf"));
     } else {
       btn.textContent = "no disponible";
+      btn.disabled = false;
     }
   } catch (e) {
     btn.textContent = "error, probá de nuevo";
-  } finally {
     btn.disabled = false;
-    if (btn.textContent === "generando audio...") btn.textContent = original;
   }
 }
 async function copyTextToClipboard(text, btn) {
@@ -1512,8 +1504,8 @@ function addMessage(text, who, withAudio, inputAudioId) {
     if (withAudio) {
       const audioBtn = document.createElement("button");
       audioBtn.className = "play-audio-btn";
-      audioBtn.textContent = "▶ escuchar";
-      audioBtn.addEventListener("click", () => fetchAndPlay(text, audioBtn));
+      audioBtn.textContent = "🎙️ generar nota de voz";
+      audioBtn.addEventListener("click", () => generateVoiceNote(text, audioBtn));
       actions.appendChild(audioBtn);
     }
     const copyBtn = document.createElement("button");
@@ -1524,14 +1516,11 @@ function addMessage(text, who, withAudio, inputAudioId) {
     div.appendChild(actions);
   } else if (inputAudioId) {
     // Nota de voz real, estilo WhatsApp: reproducible las veces que haga
-    // falta (reusa el mismo reproductor flotante que "escuchar" en las
-    // respuestas de Snarf), con la transcripción disponible como
+    // falta (reproductor embebido propio, con progreso/velocidad/menú de
+    // compartir-descargar), con la transcripción disponible como
     // desplegable en vez de mostrarse siempre — el audio es el mensaje.
     div.classList.add("voice-note");
-    const playBtn = document.createElement("button");
-    playBtn.className = "play-audio-btn";
-    playBtn.textContent = "▶ nota de voz";
-    playBtn.addEventListener("click", () => playAudio("/audio/" + inputAudioId).catch(() => { playBtn.textContent = "no se pudo reproducir"; }));
+    const player = buildVoiceNotePlayer(inputAudioId, "nota-de-voz");
     const toggleBtn = document.createElement("button");
     toggleBtn.className = "voice-note-toggle";
     toggleBtn.textContent = "▾ transcripción";
@@ -1543,11 +1532,8 @@ function addMessage(text, who, withAudio, inputAudioId) {
       transcriptEl.hidden = !transcriptEl.hidden;
       toggleBtn.textContent = (transcriptEl.hidden ? "▾" : "▴") + " transcripción";
     });
-    const row = document.createElement("div");
-    row.className = "voice-note-row";
-    row.appendChild(playBtn);
-    row.appendChild(toggleBtn);
-    div.appendChild(row);
+    div.appendChild(player);
+    div.appendChild(toggleBtn);
     div.appendChild(transcriptEl);
   } else {
     div.textContent = text;
@@ -1593,45 +1579,131 @@ document.addEventListener("click", (e) => {
   if (!modePopover.contains(e.target) && !modeFab.contains(e.target)) closeModePopover();
 });
 
-/* ---------- floating audio player (on demand) ---------- */
-function playAudio(dataUrl) {
-  sharedAudio.src = dataUrl;
-  sharedAudio.playbackRate = currentSpeed;
-  speedBtn.textContent = currentSpeed + "x";
-  audioPlayer.classList.add("visible");
-  // Antes el error de reproducción (política de autoplay, o una carga
-  // interrumpida por otro click de "escuchar" mientras esta cargaba) se
-  // tragaba en silencio — el reproductor quedaba visible como si sonara,
-  // pero nunca sonaba nada. Ahora se propaga para que fetchAndPlay lo muestre.
-  return sharedAudio.play().catch((e) => {
-    audioPlayer.classList.remove("visible");
-    throw e;
+/* ---------- reproductor de nota de voz embebido (por burbuja) ----------
+   Un solo <audio> real (sharedAudio) alimenta a la burbuja que esté activa
+   en cada momento — mismo criterio que cualquier reproductor de medios:
+   solo suena una cosa a la vez. Reemplaza al reproductor flotante único de
+   antes: cada nota de voz (propia o generada de una respuesta de Snarf)
+   tiene su play/progreso/velocidad/menú propios, replayable las veces que
+   haga falta sin tener que "cerrar" nada. */
+let activeVoiceNotePlayer = null; // { wrap, playBtn, fill, timeEl } de la burbuja sonando ahora
+
+function formatVoiceNoteTime(seconds) {
+  if (!isFinite(seconds) || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+function refreshActiveVoiceNoteProgress() {
+  if (!activeVoiceNotePlayer) return;
+  const { playBtn, fill, timeEl } = activeVoiceNotePlayer;
+  playBtn.textContent = sharedAudio.paused ? "▶" : "⏸";
+  const pct = sharedAudio.duration ? (sharedAudio.currentTime / sharedAudio.duration) * 100 : 0;
+  fill.style.width = pct.toFixed(1) + "%";
+  timeEl.textContent = formatVoiceNoteTime(sharedAudio.currentTime) + " / " + formatVoiceNoteTime(sharedAudio.duration);
+}
+function deactivateVoiceNotePlayer() {
+  if (!activeVoiceNotePlayer) return;
+  const { playBtn, fill, timeEl } = activeVoiceNotePlayer;
+  playBtn.textContent = "▶";
+  fill.style.width = "0%";
+  timeEl.textContent = "0:00";
+  activeVoiceNotePlayer = null;
+}
+sharedAudio.addEventListener("timeupdate", refreshActiveVoiceNoteProgress);
+sharedAudio.addEventListener("play", refreshActiveVoiceNoteProgress);
+sharedAudio.addEventListener("pause", refreshActiveVoiceNoteProgress);
+sharedAudio.addEventListener("ended", deactivateVoiceNotePlayer);
+
+// audioId: id real servido por GET /audio/{id}. downloadName: nombre de
+// archivo sugerido al descargar/compartir (sin extensión).
+function buildVoiceNotePlayer(audioId, downloadName) {
+  const wrap = document.createElement("div");
+  wrap.className = "voice-note-player";
+  const playBtn = document.createElement("button");
+  playBtn.className = "vn-play-btn";
+  playBtn.textContent = "▶";
+  playBtn.title = "reproducir";
+  const progress = document.createElement("div");
+  progress.className = "vn-progress";
+  const fill = document.createElement("div");
+  fill.className = "vn-progress-fill";
+  progress.appendChild(fill);
+  const timeEl = document.createElement("span");
+  timeEl.className = "vn-time";
+  timeEl.textContent = "0:00";
+  const speedBtn = document.createElement("button");
+  speedBtn.className = "vn-speed-btn";
+  let speedIndex = SPEEDS.indexOf(1.25);
+  speedBtn.textContent = SPEEDS[speedIndex] + "x";
+
+  const isActive = () => activeVoiceNotePlayer && activeVoiceNotePlayer.wrap === wrap;
+  playBtn.addEventListener("click", () => {
+    unlockAudio();
+    if (isActive()) {
+      if (sharedAudio.paused) sharedAudio.play().catch(() => {}); else sharedAudio.pause();
+      return;
+    }
+    deactivateVoiceNotePlayer();
+    activeVoiceNotePlayer = { wrap, playBtn, fill, timeEl };
+    sharedAudio.src = "/audio/" + audioId;
+    sharedAudio.playbackRate = SPEEDS[speedIndex];
+    sharedAudio.currentTime = 0;
+    sharedAudio.play().catch(() => {
+      playBtn.textContent = "no se pudo reproducir";
+      activeVoiceNotePlayer = null;
+    });
   });
+  progress.addEventListener("click", (e) => {
+    if (!isActive() || !sharedAudio.duration) return;
+    const rect = progress.getBoundingClientRect();
+    sharedAudio.currentTime = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * sharedAudio.duration;
+  });
+  speedBtn.addEventListener("click", () => {
+    speedIndex = (speedIndex + 1) % SPEEDS.length;
+    speedBtn.textContent = SPEEDS[speedIndex] + "x";
+    if (isActive()) sharedAudio.playbackRate = SPEEDS[speedIndex];
+  });
+
+  // Menú ⋮: compartir (Web Share API — iPhone/Android y algunos navegadores
+  // de escritorio) y descargar (universal, <a download> real). Reusa el
+  // mismo patrón visual de .conv-item-menu ya existente en la barra lateral.
+  const menu = buildConvMenu([
+    ...(navigator.canShare
+      ? [{
+          label: "compartir",
+          onClick: async () => {
+            try {
+              const res = await apiFetch("/audio/" + audioId);
+              const blob = await res.blob();
+              const file = new File([blob], (downloadName || "nota-de-voz") + ".mp3", { type: blob.type || "audio/mpeg" });
+              if (navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
+            } catch (e) {}
+          },
+        }]
+      : []),
+    {
+      label: "descargar",
+      onClick: async () => {
+        const res = await apiFetch("/audio/" + audioId);
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = (downloadName || "nota-de-voz") + ".mp3";
+        a.click();
+        URL.revokeObjectURL(a.href);
+      },
+    },
+  ]);
+  menu.classList.add("vn-menu");
+
+  wrap.appendChild(playBtn);
+  wrap.appendChild(progress);
+  wrap.appendChild(timeEl);
+  wrap.appendChild(speedBtn);
+  wrap.appendChild(menu);
+  return wrap;
 }
-speedBtn.addEventListener("click", () => {
-  currentSpeed = SPEEDS[(SPEEDS.indexOf(currentSpeed) + 1) % SPEEDS.length];
-  sharedAudio.playbackRate = currentSpeed;
-  speedBtn.textContent = currentSpeed + "x";
-});
-// Refleja el estado real de sharedAudio (no solo el click de este botón) —
-// así se mantiene en sync sin importar qué haya disparado play/pause.
-function updatePausePlayerBtn() {
-  const paused = sharedAudio.paused;
-  pausePlayerBtn.textContent = paused ? "▶" : "⏸";
-  pausePlayerBtn.title = paused ? "Reanudar" : "Pausar";
-  audioPlayerLabel.textContent = paused ? "en pausa" : "reproduciendo";
-}
-pausePlayerBtn.addEventListener("click", () => {
-  if (sharedAudio.paused) sharedAudio.play().catch(() => {});
-  else sharedAudio.pause();
-});
-sharedAudio.addEventListener("play", updatePausePlayerBtn);
-sharedAudio.addEventListener("pause", updatePausePlayerBtn);
-closePlayerBtn.addEventListener("click", () => {
-  sharedAudio.pause();
-  audioPlayer.classList.remove("visible");
-});
-sharedAudio.addEventListener("ended", () => audioPlayer.classList.remove("visible"));
 
 /* ---------- sidebar / conversations ---------- */
 function relativeTime(ts) {

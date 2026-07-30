@@ -194,7 +194,7 @@ def test_tts_caches_by_content_and_does_not_resynthesize_the_same_text(client, m
 def test_tts_without_credentials_returns_no_audio(client):
     res = client.post("/tts", json={"text": "hola"})
     assert res.status_code == 200
-    assert res.json() == {"audio_base64": None}
+    assert res.json() == {"audio_base64": None, "audio_id": None}
 
 
 def test_dashboard_summary_reports_capabilities_and_memory_stats(client, tmp_path, monkeypatch):
