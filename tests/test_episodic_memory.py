@@ -9,7 +9,7 @@ def make_memory(tmp_path, monkeypatch):
     que el orden de las entradas en los asserts sea siempre predecible."""
     counter = itertools.count()
     monkeypatch.setattr(episodic.time, "time", lambda: next(counter))
-    return EpisodicMemory(path=tmp_path / "memory.jsonl")
+    return EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json")
 
 
 def test_append_and_recent_roundtrip(tmp_path, monkeypatch):
@@ -72,11 +72,84 @@ def test_append_without_project_id_defaults_to_none(tmp_path, monkeypatch):
 
 
 def test_list_conversations_filters_by_project_id(tmp_path, monkeypatch):
+    # A diferencia de Mark I.5, el filtro ya no mira el tag histórico
+    # por-entrada — mira la asociación vigente (assign_conversation).
     memory = make_memory(tmp_path, monkeypatch)
-    memory.append("text", "del proyecto", "r", conversation_id="c1", project_id="proj-1")
+    memory.append("text", "del proyecto", "r", conversation_id="c1")
     memory.append("text", "sin proyecto", "r", conversation_id="c2")
+    memory.assign_conversation("c1", "proj-1")
     convs = memory.list_conversations(project_id="proj-1")
     assert [c["conversation_id"] for c in convs] == ["c1"]
+
+
+def test_assign_conversation_persists_and_is_reflected_immediately(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    assert memory.get_conversation_project("c1") is None
+    result = memory.assign_conversation("c1", "proj-1")
+    assert result == {"conversation_id": "c1", "from_project_id": None, "to_project_id": "proj-1"}
+    assert memory.get_conversation_project("c1") == "proj-1"
+
+
+def test_reassign_conversation_reports_from_and_to_for_traceability(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.assign_conversation("c1", "proj-a")
+    result = memory.assign_conversation("c1", "proj-b")
+    assert result == {"conversation_id": "c1", "from_project_id": "proj-a", "to_project_id": "proj-b"}
+    assert memory.get_conversation_project("c1") == "proj-b"
+
+
+def test_reassigning_a_conversation_never_rewrites_past_history(tmp_path, monkeypatch):
+    # Confirmado con el fundador: reasignar A->B nunca reescribe el historial
+    # ya generado — el tag project_id de cada entrada queda tal cual quedó
+    # escrito, solo cambia el comportamiento hacia adelante.
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.assign_conversation("c1", "proj-a")
+    memory.append("text", "bajo proyecto A", "r", conversation_id="c1", project_id="proj-a")
+    memory.assign_conversation("c1", "proj-b")
+    memory.append("text", "bajo proyecto B", "r", conversation_id="c1", project_id="proj-b")
+    entries = memory.get_conversation("c1")
+    assert entries[0]["project_id"] == "proj-a"
+    assert entries[1]["project_id"] == "proj-b"
+
+
+def test_unassign_conversation_clears_the_link(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.assign_conversation("c1", "proj-1")
+    result = memory.unassign_conversation("c1")
+    assert result == {"conversation_id": "c1", "from_project_id": "proj-1", "to_project_id": None}
+    assert memory.get_conversation_project("c1") is None
+
+
+def test_list_conversations_includes_a_freshly_assigned_conversation_with_no_messages_yet(tmp_path, monkeypatch):
+    # Creada desde dentro de la vista de un proyecto, antes del primer
+    # mensaje — no hay nada que escanear en el log, pero ya es una
+    # asociación real y debe aparecer en la lista del proyecto de una.
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.assign_conversation("c-nueva", "proj-1")
+    convs = memory.list_conversations(project_id="proj-1")
+    assert [c["conversation_id"] for c in convs] == ["c-nueva"]
+    assert convs[0]["title"] == "(nueva conversación)"
+
+
+def test_list_conversations_unassigned_only_excludes_project_conversations(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "general", "r", conversation_id="c1")
+    memory.append("text", "de proyecto", "r", conversation_id="c2")
+    memory.assign_conversation("c2", "proj-1")
+    general = memory.list_conversations(unassigned_only=True)
+    assert [c["conversation_id"] for c in general] == ["c1"]
+
+
+def test_list_conversations_without_filters_still_returns_everything(tmp_path, monkeypatch):
+    # El uso conversacional (tool list_conversations, para que Snarf recuerde
+    # todo) no debe perder historial solo porque una conversación tenga
+    # proyecto asignado.
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "general", "r", conversation_id="c1")
+    memory.append("text", "de proyecto", "r", conversation_id="c2")
+    memory.assign_conversation("c2", "proj-1")
+    all_convs = memory.list_conversations()
+    assert {c["conversation_id"] for c in all_convs} == {"c1", "c2"}
 
 
 def test_get_conversation_returns_only_its_own_entries(tmp_path, monkeypatch):
@@ -104,7 +177,7 @@ def test_search_empty_query_returns_nothing(tmp_path, monkeypatch):
 
 
 def test_stats_on_empty_memory(tmp_path):
-    memory = EpisodicMemory(path=tmp_path / "memory.jsonl")
+    memory = EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json")
     stats = memory.stats()
     assert stats["total_messages"] == 0
     assert stats["total_conversations"] == 0
@@ -127,7 +200,7 @@ def test_stats_counts_messages_and_conversations(tmp_path, monkeypatch):
 
 
 def test_stats_activity_by_day_counts_todays_messages(tmp_path):
-    memory = EpisodicMemory(path=tmp_path / "memory.jsonl")
+    memory = EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json")
     memory.append("text", "hoy", "respuesta", conversation_id="c1")
     stats = memory.stats()
     today_bucket = stats["activity_by_day"][-1]

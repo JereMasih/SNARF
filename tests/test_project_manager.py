@@ -1,15 +1,21 @@
-from snarf.specialists.project_manager import ProjectManager
+from snarf.specialists.project_manager import PROJECT_PROMPT_MAX_LENGTH, ProjectManager
 
 
 class FakeDrive:
-    def __init__(self):
+    def __init__(self, files_by_folder=None):
         self.folder_calls = []  # list of (name, parent_id)
         self._next_id = 0
+        self._files_by_folder = files_by_folder or {}
 
     def get_or_create_folder(self, name, parent_id=None):
         self.folder_calls.append((name, parent_id))
         self._next_id += 1
         return f"folder-{self._next_id}"
+
+    def iter_all_files(self, query=None, page_size=200):
+        for folder_id, files in self._files_by_folder.items():
+            if folder_id in (query or ""):
+                yield from files
 
 
 class FakeLLM:
@@ -176,3 +182,99 @@ def test_search_within_delegates_to_the_indexer_scoped_by_project_id(tmp_path, m
     results = manager.search_within("proj-1", "impuestos", top_k=3)
     assert results == [{"id": "chunk-1", "text": "resultado"}]
     assert indexer.search_calls == [{"query": "impuestos", "top_k": 3, "where": {"project_id": "proj-1"}}]
+
+
+def test_set_prompt_truncates_to_the_max_length(tmp_path, monkeypatch):
+    manager = make_manager(tmp_path, monkeypatch)
+    record = manager.create("Proyecto")
+    updated = manager.set_prompt(record["id"], "x" * (PROJECT_PROMPT_MAX_LENGTH + 500))
+    assert len(updated["prompt"]) == PROJECT_PROMPT_MAX_LENGTH
+
+
+def test_get_truncates_an_overlong_prompt_found_on_disk(tmp_path, monkeypatch):
+    # Defensa contra el disco, no solo contra la API: un archivo tocado a
+    # mano o escrito por una versión vieja no debe poder colarse más largo.
+    from snarf.specialists import project_manager as module
+
+    projects_dir = tmp_path / "projects"
+    monkeypatch.setattr(module, "PROJECTS_DIR", projects_dir)
+    projects_dir.mkdir(parents=True)
+    projects_dir.joinpath("p1.json").write_text(
+        '{"name": "P", "prompt": "' + ("y" * (PROJECT_PROMPT_MAX_LENGTH + 200)) + '"}', encoding="utf-8"
+    )
+    manager = ProjectManager(FakeDrive(), FakeIndexer(), FakeLLM(), "fundador")
+    assert len(manager.get("p1")["prompt"]) == PROJECT_PROMPT_MAX_LENGTH
+
+
+def test_file_count_counts_real_files_in_the_project_folder(tmp_path, monkeypatch):
+    manager = make_manager(tmp_path, monkeypatch)
+    record = manager.create("Proyecto")
+    drive = FakeDrive(files_by_folder={record["drive_folder_id"]: [{"id": "f1"}, {"id": "f2"}, {"id": "f3"}]})
+    manager._drive = drive
+    assert manager.file_count(record["id"]) == 3
+
+
+def test_file_count_returns_none_for_a_missing_project(tmp_path, monkeypatch):
+    manager = make_manager(tmp_path, monkeypatch)
+    assert manager.file_count("no-existe") is None
+
+
+def test_file_count_excludes_the_suggested_subfolders(tmp_path, monkeypatch):
+    # Bug real encontrado con Playwright: las subcarpetas sugeridas por el
+    # LLM (Archivos, Investigación, etc.) también son "files" para la API de
+    # Drive — sin este filtro, un proyecto recién creado ya mostraba
+    # "archivos" que en realidad eran sus propias subcarpetas vacías.
+    manager = make_manager(tmp_path, monkeypatch)
+    record = manager.create("Proyecto")
+    files = [
+        {"id": "sub-1", "mimeType": "application/vnd.google-apps.folder"},
+        {"id": "sub-2", "mimeType": "application/vnd.google-apps.folder"},
+        {"id": "f1", "mimeType": "application/pdf"},
+    ]
+    manager._drive = FakeDrive(files_by_folder={record["drive_folder_id"]: files})
+    assert manager.file_count(record["id"]) == 1
+
+
+def test_generate_summary_never_invents_data_not_present(tmp_path, monkeypatch):
+    llm = FakeLLM(response="Resumen real basado en los datos.")
+    manager = make_manager(tmp_path, monkeypatch, llm=llm)
+    record = manager.create("Newsletter")
+    manager.add_task(record["id"], "escribir el borrador")
+    manager.add_note(record["id"], "usar el tono de la última edición")
+
+    updated = manager.generate_summary(record["id"])
+    assert updated["summary"] == "Resumen real basado en los datos."
+    assert isinstance(updated["summary_generated_at"], float)
+    # El contexto real que se le pasó al LLM incluye los datos reales, no
+    # texto inventado — la única fuente de verdad es lo que ya existe.
+    system, messages = llm.calls[-1]
+    assert "escribir el borrador" in messages[0]["content"]
+    assert "usar el tono de la última edición" in messages[0]["content"]
+
+
+def test_generate_summary_degrades_gracefully_without_llm(tmp_path, monkeypatch):
+    manager = make_manager(tmp_path, monkeypatch, llm=FakeLLM(available=False))
+    record = manager.create("Proyecto")
+    updated = manager.generate_summary(record["id"])
+    assert "ANTHROPIC_API_KEY" in updated["summary"]
+
+
+def test_generate_summary_returns_none_for_a_missing_project(tmp_path, monkeypatch):
+    manager = make_manager(tmp_path, monkeypatch)
+    assert manager.generate_summary("no-existe") is None
+
+
+def test_cached_summary_generates_once_then_reuses_the_cache(tmp_path, monkeypatch):
+    llm = FakeLLM(response="primer resumen")
+    manager = make_manager(tmp_path, monkeypatch, llm=llm)
+    record = manager.create("Proyecto")
+    llm.calls.clear()  # create() ya llamó al LLM una vez para sugerir subcarpetas
+
+    first = manager.cached_summary(record["id"])
+    assert first["summary"] == "primer resumen"
+    assert len(llm.calls) == 1
+
+    llm._response = "segundo resumen"
+    second = manager.cached_summary(record["id"])
+    assert second["summary"] == "primer resumen"  # no regenera, usa el cache
+    assert len(llm.calls) == 1

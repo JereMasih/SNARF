@@ -4,13 +4,48 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 DEFAULT_PATH = Path("data/episodic_memory.jsonl")
+DEFAULT_PROJECT_LINKS_PATH = Path("data/conversation_projects.json")
 
 
 class EpisodicMemory:
-    def __init__(self, path: Path = DEFAULT_PATH):
+    def __init__(self, path: Path = DEFAULT_PATH, project_links_path: Path = DEFAULT_PROJECT_LINKS_PATH):
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.touch(exist_ok=True)
+        # Fuente de verdad de "a qué proyecto pertenece HOY esta conversación"
+        # — separada a propósito del tag project_id por-entrada de append()
+        # (que es histórico/auditoría: qué proyecto estaba vigente cuando se
+        # escribió cada mensaje puntual, nunca se reescribe). Este mapeo sí
+        # se sobreescribe con cada asignación/reasignación/desasignación.
+        self._project_links_path = project_links_path
+        self._project_links_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _read_project_links(self) -> dict:
+        if not self._project_links_path.exists():
+            return {}
+        content = self._project_links_path.read_text(encoding="utf-8").strip()
+        return json.loads(content) if content else {}
+
+    def _write_project_links(self, links: dict) -> None:
+        self._project_links_path.write_text(json.dumps(links, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def get_conversation_project(self, conversation_id: str) -> str | None:
+        link = self._read_project_links().get(conversation_id)
+        return link.get("project_id") if link else None
+
+    def assign_conversation(self, conversation_id: str, project_id: str) -> dict:
+        links = self._read_project_links()
+        from_project_id = links.get(conversation_id, {}).get("project_id")
+        links[conversation_id] = {"project_id": project_id, "assigned_at": time.time()}
+        self._write_project_links(links)
+        return {"conversation_id": conversation_id, "from_project_id": from_project_id, "to_project_id": project_id}
+
+    def unassign_conversation(self, conversation_id: str) -> dict:
+        links = self._read_project_links()
+        from_project_id = links.get(conversation_id, {}).get("project_id")
+        links.pop(conversation_id, None)
+        self._write_project_links(links)
+        return {"conversation_id": conversation_id, "from_project_id": from_project_id, "to_project_id": None}
 
     def append(
         self,
@@ -43,13 +78,24 @@ class EpisodicMemory:
             entries = [e for e in entries if e.get("conversation_id") == conversation_id]
         return entries[-n:]
 
-    def list_conversations(self, project_id: str | None = None) -> list[dict]:
+    def list_conversations(self, project_id: str | None = None, unassigned_only: bool = False) -> list[dict]:
+        # Filtra por el mapeo vigente conversación→proyecto (fuente de
+        # verdad real), no por el tag histórico project_id de cada entrada
+        # del log — ese tag es auditoría de qué proyecto estaba vigente
+        # cuando se escribió CADA mensaje, no "cuál es el proyecto actual".
+        links = self._read_project_links()
+
+        def current_project(cid: str) -> str | None:
+            return links.get(cid, {}).get("project_id")
+
         by_id: dict[str, dict] = {}
         for entry in self._read_all():
-            if project_id is not None and entry.get("project_id") != project_id:
-                continue
             cid = entry.get("conversation_id")
             if not cid:
+                continue
+            if project_id is not None and current_project(cid) != project_id:
+                continue
+            if unassigned_only and current_project(cid) is not None:
                 continue
             if cid not in by_id:
                 by_id[cid] = {
@@ -59,6 +105,20 @@ class EpisodicMemory:
                     "last_activity": entry["timestamp"],
                 }
             by_id[cid]["last_activity"] = entry["timestamp"]
+
+        if project_id is not None:
+            # Una conversación recién asignada, todavía sin ningún mensaje,
+            # no tiene nada que escanear arriba — pero ya es una asociación
+            # real y debe aparecer de una en la lista de ESE proyecto.
+            for cid, link in links.items():
+                if link.get("project_id") == project_id and cid not in by_id:
+                    by_id[cid] = {
+                        "conversation_id": cid,
+                        "title": "(nueva conversación)",
+                        "started_at": link["assigned_at"],
+                        "last_activity": link["assigned_at"],
+                    }
+
         return sorted(by_id.values(), key=lambda c: c["last_activity"], reverse=True)
 
     def get_conversation(self, conversation_id: str) -> list[dict]:

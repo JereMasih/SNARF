@@ -7,6 +7,11 @@ from pathlib import Path
 PROJECTS_DIR = Path("data/projects")
 ROOT_FOLDER_NAME = "Snarf"
 PROJECTS_FOLDER_NAME = "Proyectos"
+# ≈800-1000 tokens — presupuesto razonable de instrucciones de proyecto sin
+# inflar cada turno de las conversaciones asociadas. El frontend usa el mismo
+# número como maxlength del textarea (duplicado con comentario cruzado,
+# mismo precedente que GMAIL_MAX_RESULTS_CHOICES en dashboard_prefs.py).
+PROJECT_PROMPT_MAX_LENGTH = 4000
 
 SUBFOLDER_SUGGESTION_SYSTEM_PROMPT = (
     "Proponé de 2 a 4 nombres cortos de subcarpeta (en español) para organizar los archivos "
@@ -58,10 +63,15 @@ class ProjectManager:
     def _normalize(self, raw: dict, project_id: str) -> dict:
         # Misma disciplina que dashboard_prefs.py: nunca confiar en lo que
         # hay en disco — tipos, claves faltantes, elementos corruptos.
+        summary_generated_at = raw.get("summary_generated_at")
+        if not isinstance(summary_generated_at, (int, float)) or isinstance(summary_generated_at, bool):
+            summary_generated_at = None
         return {
             "id": project_id,
             "name": str(raw.get("name", "")).strip() or "(sin nombre)",
-            "prompt": str(raw.get("prompt", "")),
+            "prompt": str(raw.get("prompt", ""))[:PROJECT_PROMPT_MAX_LENGTH],
+            "summary": str(raw.get("summary", "")),
+            "summary_generated_at": summary_generated_at,
             "drive_folder_id": raw.get("drive_folder_id"),
             "subfolders": {
                 str(k): str(v) for k, v in (raw.get("subfolders") or {}).items() if isinstance(v, str)
@@ -154,7 +164,7 @@ class ProjectManager:
         record = self.get(project_id)
         if record is None:
             return None
-        record["prompt"] = prompt
+        record["prompt"] = prompt[:PROJECT_PROMPT_MAX_LENGTH]
         return self._save(record)
 
     def add_task(self, project_id: str, text: str) -> dict | None:
@@ -205,3 +215,56 @@ class ProjectManager:
 
     def search_within(self, project_id: str, query: str, top_k: int = 5) -> list[dict]:
         return self._indexer.search(query, top_k=top_k, where={"project_id": project_id})
+
+    def file_count(self, project_id: str) -> int | None:
+        project = self.get(project_id)
+        if project is None or not project.get("drive_folder_id"):
+            return None
+        query = f"'{project['drive_folder_id']}' in parents and trashed = false"
+        # iter_all_files pagina todo el listado — un list_files simple con
+        # su default de 50 subcontaría un proyecto con más archivos que eso.
+        # Las subcarpetas sugeridas (Archivos, Investigación, etc.) también
+        # son "files" para la API de Drive — no cuentan como archivo real.
+        return sum(
+            1
+            for f in self._drive.iter_all_files(query=query)
+            if f.get("mimeType") != "application/vnd.google-apps.folder"
+        )
+
+    def generate_summary(self, project_id: str) -> dict | None:
+        project = self.get(project_id)
+        if project is None:
+            return None
+
+        if not self._llm.available:
+            summary_text = "No se pudo generar un resumen: falta configurar el modelo de lenguaje (ANTHROPIC_API_KEY)."
+        else:
+            pending = [t["text"] for t in project["tasks"] if not t["done"]]
+            done = [t["text"] for t in project["tasks"] if t["done"]]
+            notes = [n["text"] for n in project["notes"]]
+            context_lines = [
+                f"Proyecto: {project['name']}",
+                f"Archivos en Drive: {self.file_count(project_id)}",
+                f"Instrucciones del proyecto: {project['prompt'] or '(sin instrucciones propias todavía)'}",
+                f"Tareas pendientes ({len(pending)}): " + ("; ".join(pending) or "ninguna"),
+                f"Tareas completadas ({len(done)}): " + ("; ".join(done) or "ninguna"),
+                f"Notas ({len(notes)}): " + ("; ".join(notes) or "ninguna"),
+            ]
+            try:
+                summary_text = self._llm.generate(
+                    system=SUMMARY_SYSTEM_PROMPT, messages=[{"role": "user", "content": "\n".join(context_lines)}]
+                )
+            except Exception as exc:
+                summary_text = f"No se pudo generar el resumen: {exc}"
+
+        project["summary"] = summary_text
+        project["summary_generated_at"] = time.time()
+        return self._save(project)
+
+    def cached_summary(self, project_id: str) -> dict | None:
+        project = self.get(project_id)
+        if project is None:
+            return None
+        if not project.get("summary"):
+            return self.generate_summary(project_id)
+        return project

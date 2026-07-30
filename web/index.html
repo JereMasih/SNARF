@@ -377,15 +377,38 @@
   .sidebar-tab-panel { display: none; flex-direction: column; flex: 1 1 auto; min-height: 0; }
   .sidebar-tab-panel.active { display: flex; }
 
-  /* --- panel de detalle de Proyecto (mismo overlay que .settings-panel) --- */
-  /* El switcher Conversaciones/Proyectos vive dentro de #sidebar, que se
-     dockea DENTRO del modo enfoque (z-index 14/15) — el panel de detalle de
-     un proyecto tiene que quedar por encima de eso, no al mismo nivel que
-     el panel de configuración (10/11), o se abre tapado detrás. */
-  .project-overlay { z-index: 16; }
-  .project-panel {
-    z-index: 17;
-    width: min(440px, 90vw); max-height: 82vh; display: flex; flex-direction: column; gap: 0.8rem;
+  /* --- "home" de un Proyecto, dentro del área de chat (Proyectos Mark II) ---
+     Reemplaza al modal chico que existía antes — entrar a un proyecto desde
+     la barra lateral muestra esto en #chatInner mientras no haya ninguna
+     conversación cargada, en vez de abrir un panel flotante aparte. */
+  .project-home { padding: 1.4rem 1.2rem 2rem; display: flex; flex-direction: column; gap: 1.1rem; max-width: 640px; margin: 0 auto; }
+  .project-home-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; }
+  .project-home-head h2 { margin: 0; font-size: 1.15rem; color: var(--glow-soft); }
+  .project-home-actions { display: flex; align-items: center; gap: 0.8rem; font-size: 0.72rem; }
+  .project-home-actions a { color: var(--glow); text-decoration: none; }
+  .project-home-stats { display: flex; gap: 0.8rem; }
+  .project-stat {
+    flex: 1 1 0; text-align: center; padding: 0.7rem 0.4rem; border-radius: 10px;
+    background: rgba(79,216,232,0.06); border: 1px solid rgba(79,216,232,0.2);
+  }
+  .project-stat strong { display: block; font-size: 1.2rem; color: var(--text); }
+  .project-stat span { font-size: 0.66rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
+  .project-home-summary { font-size: 0.82rem; line-height: 1.55; color: var(--text); margin: 0; white-space: pre-wrap; }
+  .project-home-prompt-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 0.4rem; }
+  .project-home-prompt-footer span { font-size: 0.66rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+  /* --- mover/quitar una conversación de un proyecto (spec Mark II) --- */
+  .conv-item-row { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; }
+  .conv-item-row .conv-item-main { flex: 1 1 auto; min-width: 0; cursor: pointer; }
+  .conv-item-action {
+    flex: 0 0 auto; background: none; border: none; color: var(--text-dim);
+    cursor: pointer; font-size: 0.78rem; padding: 0.15rem 0.35rem; border-radius: 6px; line-height: 1;
+  }
+  .conv-item-action:hover { color: var(--text); background: rgba(79,216,232,0.15); }
+  .conv-move-select {
+    margin: 0.3rem 0 0; width: 100%; font-family: inherit; font-size: 0.68rem;
+    background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid rgba(79,216,232,0.3);
+    border-radius: 6px; padding: 0.3rem;
   }
   .project-field { display: flex; flex-direction: column; gap: 0.4rem; }
   .project-field-label { font-size: 0.66rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -1000,37 +1023,6 @@
     </div>
   </div>
 
-  <div class="settings-overlay project-overlay" id="projectOverlay"></div>
-  <div class="settings-panel project-panel" id="projectPanel">
-    <div class="settings-head">
-      <h3 id="projectPanelName">Proyecto</h3>
-      <button class="settings-close" id="projectCloseBtn">✕</button>
-    </div>
-    <div class="project-field">
-      <label class="project-field-label">prompt del proyecto</label>
-      <textarea id="projectPromptInput" placeholder="Instrucciones propias de este proyecto..."></textarea>
-      <button class="dash-mini-btn" id="projectPromptSaveBtn">guardar prompt</button>
-    </div>
-    <div class="project-field">
-      <a href="#" target="_blank" rel="noopener" id="projectDriveLink">abrir carpeta en Drive ↗</a>
-    </div>
-    <div class="project-section">
-      <div class="project-section-head">
-        <h4>Tareas</h4>
-        <button class="dash-mini-btn" id="projectAddTaskBtn">+ tarea</button>
-      </div>
-      <div id="projectTaskList"></div>
-    </div>
-    <div class="project-section">
-      <div class="project-section-head">
-        <h4>Notas</h4>
-        <button class="dash-mini-btn" id="projectAddNoteBtn">+ nota</button>
-      </div>
-      <div id="projectNoteList"></div>
-    </div>
-    <button class="user-menu-item danger" id="projectDeleteBtn">borrar proyecto</button>
-  </div>
-
   <div class="brain-overlay" id="brainOverlay"></div>
   <div class="brain-panel" id="brainPanel">
     <div class="settings-head">
@@ -1156,18 +1148,6 @@ const newProjectBtn = document.getElementById("newProjectBtn");
 const projectList = document.getElementById("projectList");
 const dashProjectList = document.getElementById("dashProjectList");
 const dashNewProjectBtn = document.getElementById("dashNewProjectBtn");
-const projectOverlay = document.getElementById("projectOverlay");
-const projectPanel = document.getElementById("projectPanel");
-const projectPanelName = document.getElementById("projectPanelName");
-const projectCloseBtn = document.getElementById("projectCloseBtn");
-const projectPromptInput = document.getElementById("projectPromptInput");
-const projectPromptSaveBtn = document.getElementById("projectPromptSaveBtn");
-const projectDriveLink = document.getElementById("projectDriveLink");
-const projectTaskList = document.getElementById("projectTaskList");
-const projectAddTaskBtn = document.getElementById("projectAddTaskBtn");
-const projectNoteList = document.getElementById("projectNoteList");
-const projectAddNoteBtn = document.getElementById("projectAddNoteBtn");
-const projectDeleteBtn = document.getElementById("projectDeleteBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 const textRow = document.getElementById("textRow");
 const textInput = document.getElementById("textInput");
@@ -1436,10 +1416,41 @@ function renderConvListInto(container, convs) {
   convs.forEach(c => {
     const div = document.createElement("div");
     div.className = "conv-item" + (c.conversation_id === conversationId ? " active" : "");
-    div.innerHTML = `${escapeHtml(c.title || "(sin título)")}<span class="conv-date">${relativeTime(c.last_activity)}</span>`;
-    div.addEventListener("click", () => loadConversation(c.conversation_id));
+    div.innerHTML = `
+      <div class="conv-item-row">
+        <span class="conv-item-main">${escapeHtml(c.title || "(sin título)")}<span class="conv-date">${relativeTime(c.last_activity)}</span></span>
+        <button class="conv-item-action" data-action="move" title="mover a un proyecto">📁</button>
+      </div>`;
+    div.querySelector(".conv-item-main").addEventListener("click", () => loadConversation(c.conversation_id));
+    div.querySelector('[data-action="move"]').addEventListener("click", (e) => {
+      e.stopPropagation();
+      openMoveToProjectPicker(c.conversation_id, div);
+    });
     container.appendChild(div);
   });
+}
+
+async function openMoveToProjectPicker(conversationIdToMove, rowEl) {
+  const existing = rowEl.querySelector(".conv-move-select");
+  if (existing) { existing.remove(); return; }
+  const res = await apiFetch("/projects");
+  const projects = await res.json();
+  if (!projects.length) { alert("todavía no hay proyectos creados"); return; }
+  const select = document.createElement("select");
+  select.className = "conv-move-select";
+  select.innerHTML =
+    '<option value="">mover a un proyecto...</option>' +
+    projects.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+  select.addEventListener("click", (e) => e.stopPropagation());
+  select.addEventListener("change", async () => {
+    if (!select.value) return;
+    await apiFetch(`/conversations/${conversationIdToMove}/project`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: select.value }),
+    });
+    refreshConvLists();
+    refreshProjectList();
+  });
+  rowEl.appendChild(select);
 }
 async function refreshConvLists() {
   const targets = [convList, dashConvList].filter((el) => el && el.isConnected);
@@ -1455,6 +1466,7 @@ async function refreshConvLists() {
 
 async function loadConversation(id) {
   conversationId = id;
+  pendingProjectHomeId = null;
   closeSidebar();
   clearChat();
   try {
@@ -1472,15 +1484,36 @@ async function loadConversation(id) {
 
 function startNewConversation() {
   conversationId = crypto.randomUUID();
+  currentProjectId = null;
+  pendingProjectHomeId = null;
   clearChat();
   closeSidebar();
   setState("idle", idleLabel());
   refreshConvLists();
+  refreshProjectList();
 }
 newConvBtn.addEventListener("click", startNewConversation);
 dashNewConvBtn.addEventListener("click", startNewConversation);
 
-/* ---------- Proyectos ---------- */
+/* ---------- Proyectos (Mark II) ----------
+   Entrar a un proyecto desde la barra lateral ya no abre un modal aparte:
+   escala la propia lista de la barra (muestra solo las conversaciones de
+   ESE proyecto, con vuelta atrás) y muestra su "home" — estadísticas,
+   resumen, prompt editable, tareas/notas — dentro del área de chat, en el
+   lugar donde iría el historial de mensajes, mientras no haya ninguna
+   conversación cargada todavía. */
+// Duplicado a propósito con snarf/specialists/project_manager.py
+// PROJECT_PROMPT_MAX_LENGTH — mismo precedente que GMAIL_MAX_RESULTS_CHOICES.
+const PROJECT_PROMPT_MAX_LENGTH = 4000;
+
+let currentProjectId = null;
+// Seteado al entrar a un proyecto sin haber elegido/creado ninguna
+// conversación todavía — si el usuario tipea directo (sin usar el botón "+
+// nueva conversación de este proyecto"), sendText() genera y asigna la
+// conversación recién en ese momento, para no crear conversaciones
+// fantasma solo por mirar un proyecto.
+let pendingProjectHomeId = null;
+
 function renderProjectListInto(container, projects) {
   container.innerHTML = "";
   if (!projects.length) {
@@ -1491,26 +1524,64 @@ function renderProjectListInto(container, projects) {
     const div = document.createElement("div");
     div.className = "conv-item";
     div.innerHTML = `${escapeHtml(p.name)}<span class="conv-date">${p.task_count} tarea(s) · ${p.note_count} nota(s)</span>`;
-    div.addEventListener("click", () => openProjectPanel(p.id));
+    div.addEventListener("click", () => enterProject(p.id));
     container.appendChild(div);
   });
 }
+
+function renderProjectConversationsInto(container, conversations) {
+  container.innerHTML = "";
+  const back = document.createElement("div");
+  back.className = "conv-item";
+  back.textContent = "← todos los proyectos";
+  back.addEventListener("click", () => exitProject());
+  container.appendChild(back);
+  if (!conversations.length) {
+    container.insertAdjacentHTML("beforeend", '<div class="conv-empty">sin conversaciones todavía en este proyecto</div>');
+    return;
+  }
+  conversations.forEach((c) => {
+    const div = document.createElement("div");
+    div.className = "conv-item" + (c.conversation_id === conversationId ? " active" : "");
+    div.innerHTML = `
+      <div class="conv-item-row">
+        <span class="conv-item-main">${escapeHtml(c.title || "(sin título)")}<span class="conv-date">${relativeTime(c.last_activity)}</span></span>
+        <button class="conv-item-action" data-action="unassign" title="quitar del proyecto">✕</button>
+      </div>`;
+    div.querySelector(".conv-item-main").addEventListener("click", () => loadConversation(c.conversation_id));
+    div.querySelector('[data-action="unassign"]').addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await apiFetch(`/conversations/${c.conversation_id}/project`, { method: "DELETE" });
+      refreshProjectList();
+      refreshConvLists();
+    });
+    container.appendChild(div);
+  });
+}
+
 async function refreshProjectList() {
   const targets = [projectList, dashProjectList].filter((el) => el && el.isConnected);
   if (!targets.length) return;
   try {
-    const res = await apiFetch("/projects");
-    const projects = await res.json();
-    targets.forEach((t) => renderProjectListInto(t, projects));
+    if (currentProjectId) {
+      const res = await apiFetch(`/projects/${currentProjectId}/conversations`);
+      if (!res.ok) throw new Error("proyecto no encontrado");
+      const conversations = await res.json();
+      targets.forEach((t) => renderProjectConversationsInto(t, conversations));
+    } else {
+      const res = await apiFetch("/projects");
+      const projects = await res.json();
+      targets.forEach((t) => renderProjectListInto(t, projects));
+    }
   } catch (e) {
     targets.forEach((t) => { t.innerHTML = '<div class="conv-empty">error cargando proyectos</div>'; });
   }
 }
 
-let currentProjectId = null;
-
-function renderProjectTasks(tasks) {
-  projectTaskList.innerHTML = tasks.length
+function renderProjectHomeTasks(tasks) {
+  const list = document.getElementById("projectHomeTaskList");
+  if (!list) return;
+  list.innerHTML = tasks.length
     ? tasks
         .map(
           (t) => `
@@ -1523,8 +1594,10 @@ function renderProjectTasks(tasks) {
     : '<div class="project-empty">sin tareas todavía</div>';
 }
 
-function renderProjectNotes(notes) {
-  projectNoteList.innerHTML = notes.length
+function renderProjectHomeNotes(notes) {
+  const list = document.getElementById("projectHomeNoteList");
+  if (!list) return;
+  list.innerHTML = notes.length
     ? notes
         .map(
           (n) => `
@@ -1537,113 +1610,161 @@ function renderProjectNotes(notes) {
     : '<div class="project-empty">sin notas todavía</div>';
 }
 
-function fillProjectPanel(project) {
-  projectPanelName.textContent = project.name;
-  projectPromptInput.value = project.prompt || "";
-  projectDriveLink.href = `https://drive.google.com/drive/folders/${encodeURIComponent(project.drive_folder_id || "")}`;
-  renderProjectTasks(project.tasks || []);
-  renderProjectNotes(project.notes || []);
+function renderProjectHome(project) {
+  chatInner.innerHTML = `
+    <div class="project-home">
+      <div class="project-home-head">
+        <h2>${escapeHtml(project.name)}</h2>
+        <div class="project-home-actions">
+          <a href="https://drive.google.com/drive/folders/${encodeURIComponent(project.drive_folder_id || "")}" target="_blank" rel="noopener">abrir carpeta en Drive ↗</a>
+          <button class="dash-mini-btn" id="projectHomeDeleteBtn">borrar proyecto</button>
+        </div>
+      </div>
+      <div class="project-home-stats">
+        <div class="project-stat"><strong>${project.file_count ?? "—"}</strong><span>archivo(s)</span></div>
+        <div class="project-stat"><strong>${project.pending_task_count ?? 0}</strong><span>pendiente(s)</span></div>
+        <div class="project-stat"><strong>${(project.notes || []).length}</strong><span>nota(s)</span></div>
+      </div>
+      <div class="project-section">
+        <div class="project-section-head"><h4>Resumen</h4><button class="dash-mini-btn" id="projectHomeSummaryRefreshBtn">actualizar</button></div>
+        <p class="project-home-summary">${escapeHtml(project.summary || "todavía sin resumen — usá \"actualizar\".")}</p>
+      </div>
+      <div class="project-section">
+        <div class="project-section-head"><h4>Instrucciones del proyecto</h4></div>
+        <div class="project-field">
+          <textarea id="projectHomePromptInput" maxlength="${PROJECT_PROMPT_MAX_LENGTH}" placeholder="Instrucciones propias de este proyecto...">${escapeHtml(project.prompt || "")}</textarea>
+          <div class="project-home-prompt-footer">
+            <span id="projectHomePromptCount">${(project.prompt || "").length}/${PROJECT_PROMPT_MAX_LENGTH}</span>
+            <button class="dash-mini-btn" id="projectHomePromptSaveBtn">guardar</button>
+          </div>
+        </div>
+      </div>
+      <div class="project-section">
+        <div class="project-section-head"><h4>Tareas</h4><button class="dash-mini-btn" id="projectHomeAddTaskBtn">+ tarea</button></div>
+        <div id="projectHomeTaskList"></div>
+      </div>
+      <div class="project-section">
+        <div class="project-section-head"><h4>Notas</h4><button class="dash-mini-btn" id="projectHomeAddNoteBtn">+ nota</button></div>
+        <div id="projectHomeNoteList"></div>
+      </div>
+      <button class="new-conv-btn" id="projectHomeNewConvBtn">+ nueva conversación de este proyecto</button>
+    </div>
+  `;
+  renderProjectHomeTasks(project.tasks || []);
+  renderProjectHomeNotes(project.notes || []);
+
+  const promptInput = document.getElementById("projectHomePromptInput");
+  promptInput.addEventListener("input", () => {
+    document.getElementById("projectHomePromptCount").textContent = `${promptInput.value.length}/${PROJECT_PROMPT_MAX_LENGTH}`;
+  });
+  document.getElementById("projectHomePromptSaveBtn").addEventListener("click", async () => {
+    const res = await apiFetch(`/projects/${project.id}/prompt`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: promptInput.value }),
+    });
+    if (res.ok) refreshProjectHome(project.id);
+  });
+  document.getElementById("projectHomeSummaryRefreshBtn").addEventListener("click", async () => {
+    const res = await apiFetch(`/projects/${project.id}/summary/refresh`, { method: "POST" });
+    if (res.ok) refreshProjectHome(project.id);
+  });
+  document.getElementById("projectHomeDeleteBtn").addEventListener("click", async () => {
+    // No hay forma de replicar el protocolo de vista-previa-en-dos-turnos
+    // del camino conversacional en un click — window.confirm es la
+    // confirmación real que exige el backend (?confirmed=true).
+    if (!confirm("¿Borrar este proyecto? Esto NO borra su carpeta ni sus archivos reales de Drive, solo el registro en Snarf.")) return;
+    const res = await apiFetch(`/projects/${project.id}?confirmed=true`, { method: "DELETE" });
+    if (res.ok) exitProject();
+  });
+  document.getElementById("projectHomeAddTaskBtn").addEventListener("click", async () => {
+    const text = prompt("¿Qué tarea agregamos?");
+    if (!text || !text.trim()) return;
+    const res = await apiFetch(`/projects/${project.id}/tasks`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.trim() }),
+    });
+    if (res.ok) { await refreshProjectHome(project.id); refreshProjectList(); }
+  });
+  document.getElementById("projectHomeTaskList").addEventListener("click", async (e) => {
+    const row = e.target.closest("[data-task-id]");
+    if (!row) return;
+    const action = e.target.dataset.action;
+    let res;
+    if (action === "toggle") res = await apiFetch(`/projects/${project.id}/tasks/${row.dataset.taskId}`, { method: "PATCH" });
+    else if (action === "delete") res = await apiFetch(`/projects/${project.id}/tasks/${row.dataset.taskId}`, { method: "DELETE" });
+    if (res && res.ok) { await refreshProjectHome(project.id); refreshProjectList(); }
+  });
+  document.getElementById("projectHomeAddNoteBtn").addEventListener("click", async () => {
+    const text = prompt("¿Qué anotamos?");
+    if (!text || !text.trim()) return;
+    const res = await apiFetch(`/projects/${project.id}/notes`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.trim() }),
+    });
+    if (res.ok) refreshProjectHome(project.id);
+  });
+  document.getElementById("projectHomeNoteList").addEventListener("click", async (e) => {
+    const row = e.target.closest("[data-note-id]");
+    if (!row || e.target.dataset.action !== "delete") return;
+    const res = await apiFetch(`/projects/${project.id}/notes/${row.dataset.noteId}`, { method: "DELETE" });
+    if (res.ok) refreshProjectHome(project.id);
+  });
+  document.getElementById("projectHomeNewConvBtn").addEventListener("click", () => startNewProjectConversation(project.id));
 }
 
-async function openProjectPanel(id) {
-  currentProjectId = id;
+async function refreshProjectHome(projectId) {
+  // Los endpoints de mutación (tasks/notes/prompt) devuelven el registro
+  // crudo de ProjectManager, sin file_count/pending_task_count/summary —
+  // esos campos solo los agrega el enriquecimiento de GET /projects/{id}
+  // (evita pegarle a Drive real en cada tilde de tarea, solo al ver el home).
+  const res = await apiFetch(`/projects/${projectId}`);
+  if (res.ok) renderProjectHome(await res.json());
+}
+
+async function showProjectHome(id) {
   try {
     const res = await apiFetch(`/projects/${id}`);
     if (!res.ok) throw new Error("no encontrado");
-    fillProjectPanel(await res.json());
-    projectOverlay.classList.add("open");
-    projectPanel.classList.add("open");
+    renderProjectHome(await res.json());
   } catch (e) {
-    alert("no se pudo abrir el proyecto: " + (e.message || e));
+    chatInner.innerHTML = `<div class="conv-empty">no se pudo abrir el proyecto: ${escapeHtml(e.message || String(e))}</div>`;
   }
 }
-function closeProjectPanel() {
-  projectOverlay.classList.remove("open");
-  projectPanel.classList.remove("open");
+
+async function enterProject(id) {
+  currentProjectId = id;
+  conversationId = null;
+  pendingProjectHomeId = id;
+  showChat();
+  closeSidebar();
+  setState("idle", idleLabel());
+  await refreshProjectList();
+  await showProjectHome(id);
+}
+
+function exitProject() {
+  // A propósito NO reusa startNewConversation(): esa cierra la barra
+  // lateral (correcto cuando el usuario explícitamente elige "+ nueva
+  // conversación"), pero acá el usuario sigue navegando DENTRO de la barra
+  // (volvió a la lista general de proyectos) — cerrarla de golpe sería
+  // un salto de UI no pedido.
   currentProjectId = null;
+  pendingProjectHomeId = null;
+  conversationId = crypto.randomUUID();
+  clearChat();
+  setState("idle", idleLabel());
+  refreshProjectList();
+  refreshConvLists();
 }
-projectOverlay.addEventListener("click", closeProjectPanel);
-projectCloseBtn.addEventListener("click", closeProjectPanel);
 
-projectPromptSaveBtn.addEventListener("click", async () => {
-  if (!currentProjectId) return;
-  const res = await apiFetch(`/projects/${currentProjectId}/prompt`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: projectPromptInput.value }),
+async function startNewProjectConversation(projectId) {
+  conversationId = crypto.randomUUID();
+  await apiFetch(`/conversations/${conversationId}/project`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: projectId }),
   });
-  if (res.ok) fillProjectPanel(await res.json());
-});
-
-projectAddTaskBtn.addEventListener("click", async () => {
-  if (!currentProjectId) return;
-  const text = prompt("¿Qué tarea agregamos?");
-  if (!text || !text.trim()) return;
-  const res = await apiFetch(`/projects/${currentProjectId}/tasks`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text: text.trim() }),
-  });
-  if (res.ok) {
-    fillProjectPanel(await res.json());
-    refreshProjectList();
-  }
-});
-
-projectTaskList.addEventListener("click", async (e) => {
-  const row = e.target.closest("[data-task-id]");
-  if (!row || !currentProjectId) return;
-  const taskId = row.dataset.taskId;
-  const action = e.target.dataset.action;
-  let res;
-  if (action === "toggle") {
-    res = await apiFetch(`/projects/${currentProjectId}/tasks/${taskId}`, { method: "PATCH" });
-  } else if (action === "delete") {
-    res = await apiFetch(`/projects/${currentProjectId}/tasks/${taskId}`, { method: "DELETE" });
-  }
-  if (res && res.ok) {
-    fillProjectPanel(await res.json());
-    refreshProjectList();
-  }
-});
-
-projectAddNoteBtn.addEventListener("click", async () => {
-  if (!currentProjectId) return;
-  const text = prompt("¿Qué anotamos?");
-  if (!text || !text.trim()) return;
-  const res = await apiFetch(`/projects/${currentProjectId}/notes`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text: text.trim() }),
-  });
-  if (res.ok) {
-    fillProjectPanel(await res.json());
-    refreshProjectList();
-  }
-});
-
-projectNoteList.addEventListener("click", async (e) => {
-  const row = e.target.closest("[data-note-id]");
-  if (!row || !currentProjectId || e.target.dataset.action !== "delete") return;
-  const res = await apiFetch(`/projects/${currentProjectId}/notes/${row.dataset.noteId}`, { method: "DELETE" });
-  if (res.ok) {
-    fillProjectPanel(await res.json());
-    refreshProjectList();
-  }
-});
-
-projectDeleteBtn.addEventListener("click", async () => {
-  if (!currentProjectId) return;
-  // No hay forma de replicar el protocolo de vista-previa-en-dos-turnos del
-  // camino conversacional en un click — window.confirm es la confirmación
-  // real que exige el backend (?confirmed=true), nunca se manda sin ella.
-  if (!confirm("¿Borrar este proyecto? Esto NO borra su carpeta ni sus archivos reales de Drive, solo el registro en Snarf.")) return;
-  const res = await apiFetch(`/projects/${currentProjectId}?confirmed=true`, { method: "DELETE" });
-  if (res.ok) {
-    closeProjectPanel();
-    refreshProjectList();
-  }
-});
+  pendingProjectHomeId = null;
+  clearChat();
+  closeSidebar();
+  setState("idle", idleLabel());
+  refreshProjectList();
+}
 
 async function createProject() {
   const name = prompt("Nombre del proyecto nuevo:");
@@ -1655,8 +1776,7 @@ async function createProject() {
   });
   if (res.ok) {
     const project = await res.json();
-    await refreshProjectList();
-    openProjectPanel(project.id);
+    await enterProject(project.id);
   }
 }
 newProjectBtn.addEventListener("click", createProject);
@@ -3314,6 +3434,18 @@ async function transcribeBlob(blob) {
 
 async function sendText(text) {
   if (!text.trim()) { setState("idle", idleLabel()); return; }
+  if (pendingProjectHomeId) {
+    // Se tipeó directo sobre el "home" de un proyecto, sin usar el botón
+    // dedicado — genera y asigna la conversación recién ahora, para no
+    // crear una conversación fantasma solo por haber entrado a mirar.
+    conversationId = crypto.randomUUID();
+    await apiFetch(`/conversations/${conversationId}/project`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: pendingProjectHomeId }),
+    });
+    pendingProjectHomeId = null;
+    clearChat();
+    refreshProjectList();
+  }
   addMessage(text, "user");
   setState("thinking", "pensando...");
   showTyping();

@@ -35,6 +35,8 @@ def test_handle_degrades_gracefully_when_the_llm_call_fails(orchestrator, monkey
 
 
 def test_handle_injects_project_prompt_as_additional_system_context(orchestrator, monkeypatch):
+    # Proyectos Mark II: la asociación conversación→proyecto es persistente
+    # (assign_conversation), ya no un parámetro por mensaje.
     monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
     captured = {}
 
@@ -46,7 +48,8 @@ def test_handle_injects_project_prompt_as_additional_system_context(orchestrator
     monkeypatch.setattr(
         orchestrator._projects, "get", lambda pid: {"id": pid, "name": "Newsletter", "prompt": "sos el asistente de este proyecto"}
     )
-    orchestrator.handle("text", "hola", conversation_id="c1", project_id="proj-1")
+    orchestrator._memory.assign_conversation("c1", "proj-1")
+    orchestrator.handle("text", "hola", conversation_id="c1")
     assert "Newsletter" in captured["system"]
     assert "sos el asistente de este proyecto" in captured["system"]
 
@@ -55,12 +58,14 @@ def test_handle_with_a_missing_project_degrades_gracefully(orchestrator, monkeyp
     monkeypatch.setattr(orchestrator._llm, "_client", object())
     monkeypatch.setattr(orchestrator._llm, "generate", lambda **kwargs: "respuesta")
     monkeypatch.setattr(orchestrator._projects, "get", lambda pid: None)  # proyecto borrado/inexistente
-    response = orchestrator.handle("text", "hola", conversation_id="c1", project_id="no-existe")
+    orchestrator._memory.assign_conversation("c1", "no-existe")
+    response = orchestrator.handle("text", "hola", conversation_id="c1")
     assert response == "respuesta"
 
 
 def test_handle_persists_project_id_on_the_memory_entry(orchestrator):
-    orchestrator.handle("text", "hola", conversation_id="c1", project_id="proj-1")
+    orchestrator._memory.assign_conversation("c1", "proj-1")
+    orchestrator.handle("text", "hola", conversation_id="c1")
     entry = orchestrator.memory.get_conversation("c1")[0]
     assert entry["project_id"] == "proj-1"
 
@@ -70,6 +75,64 @@ def test_handle_without_project_id_never_touches_projects(orchestrator):
     orchestrator._projects.get = lambda pid: calls.append(pid)
     orchestrator.handle("text", "hola", conversation_id="c1")
     assert calls == []
+
+
+def test_reassigning_a_conversation_changes_the_prompt_used_going_forward_only(orchestrator, monkeypatch):
+    # Confirmado con el fundador: reasignar A->B nunca reescribe el system
+    # prompt de turnos ya generados — solo cambia el turno que viene después.
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    captured = []
+    monkeypatch.setattr(
+        orchestrator._llm, "generate", lambda system, messages, tools=None, tool_handler=None: captured.append(system) or "ok"
+    )
+    monkeypatch.setattr(
+        orchestrator._projects,
+        "get",
+        lambda pid: {"id": pid, "name": pid, "prompt": f"instrucciones de {pid}"},
+    )
+
+    orchestrator._memory.assign_conversation("c1", "proj-a")
+    orchestrator.handle("text", "primero", conversation_id="c1")
+    orchestrator._memory.assign_conversation("c1", "proj-b")
+    orchestrator.handle("text", "segundo", conversation_id="c1")
+
+    assert "instrucciones de proj-a" in captured[0]
+    assert "instrucciones de proj-b" not in captured[0]
+    assert "instrucciones de proj-b" in captured[1]
+
+
+def test_handle_unassigned_conversation_uses_no_project_prompt(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    captured = {}
+    monkeypatch.setattr(
+        orchestrator._llm,
+        "generate",
+        lambda system, messages, tools=None, tool_handler=None: captured.update(system=system) or "ok",
+    )
+    orchestrator._memory.assign_conversation("c1", "proj-1")
+    orchestrator._memory.unassign_conversation("c1")
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    assert "Estás trabajando dentro del proyecto" not in captured["system"]
+
+
+def test_project_assign_unassign_and_list_conversations_tools(orchestrator):
+    result = orchestrator._handle_tool(
+        "project_assign_conversation", {"project_id": "proj-1", "conversation_id": "c1"}
+    )
+    assert result == {"conversation_id": "c1", "from_project_id": None, "to_project_id": "proj-1"}
+
+    listed = orchestrator._handle_tool("project_list_conversations", {"project_id": "proj-1"})
+    assert [c["conversation_id"] for c in listed] == ["c1"]
+
+    unassigned = orchestrator._handle_tool("project_unassign_conversation", {"conversation_id": "c1"})
+    assert unassigned == {"conversation_id": "c1", "from_project_id": "proj-1", "to_project_id": None}
+
+
+def test_project_assign_conversation_tool_never_requires_confirmation(orchestrator):
+    result = orchestrator._handle_tool(
+        "project_assign_conversation", {"project_id": "proj-1", "conversation_id": "c1"}
+    )
+    assert result.get("status") != "pending_confirmation"
 
 
 def test_handle_injects_sarcasm_instruction_at_the_default_level(orchestrator, monkeypatch):

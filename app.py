@@ -64,7 +64,6 @@ async def warmup():
 class SendRequest(BaseModel):
     text: str
     conversation_id: str | None = None
-    project_id: str | None = None
 
 
 class SendResponse(BaseModel):
@@ -103,6 +102,10 @@ class ProjectPromptRequest(BaseModel):
 
 class ProjectTextRequest(BaseModel):
     text: str
+
+
+class ConversationProjectRequest(BaseModel):
+    project_id: str
 
 
 @app.get("/")
@@ -171,9 +174,10 @@ async def transcribe(file: UploadFile, user_id: str = Depends(require_user)):
 @app.post("/send", response_model=SendResponse)
 def send(payload: SendRequest, user_id: str = Depends(require_user)):
     input_log.record("text")
-    response_text = orchestrator.handle(
-        "visual", payload.text, conversation_id=payload.conversation_id, project_id=payload.project_id
-    )
+    # El proyecto de la conversación (si tiene uno asignado) se resuelve solo
+    # dentro de orchestrator.handle() por conversation_id — ver Proyectos
+    # Mark II. Ya no viaja como parámetro por mensaje.
+    response_text = orchestrator.handle("visual", payload.text, conversation_id=payload.conversation_id)
     return SendResponse(response=response_text)
 
 
@@ -386,12 +390,31 @@ def dashboard_widget_youtube(user_id: str = Depends(require_user)):
 
 @app.get("/conversations")
 def list_conversations(user_id: str = Depends(require_user)):
-    return orchestrator.memory.list_conversations()
+    # La lista general de la barra lateral son las conversaciones SIN
+    # proyecto asignado — las que sí tienen uno viven en la lista propia de
+    # ese proyecto (GET /projects/{id}/conversations). El uso conversacional
+    # (tool list_conversations, para que Snarf recuerde todo) no pasa por
+    # acá y sigue viendo el historial completo.
+    return orchestrator.memory.list_conversations(unassigned_only=True)
 
 
 @app.get("/conversations/{conversation_id}")
 def get_conversation(conversation_id: str, user_id: str = Depends(require_user)):
     return orchestrator.memory.get_conversation(conversation_id)
+
+
+@app.put("/conversations/{conversation_id}/project")
+def assign_conversation_to_project(
+    conversation_id: str, payload: ConversationProjectRequest, user_id: str = Depends(require_user)
+):
+    if orchestrator.projects.get(payload.project_id) is None:
+        raise HTTPException(404, "proyecto no encontrado")
+    return orchestrator.memory.assign_conversation(conversation_id, payload.project_id)
+
+
+@app.delete("/conversations/{conversation_id}/project")
+def unassign_conversation_from_project(conversation_id: str, user_id: str = Depends(require_user)):
+    return orchestrator.memory.unassign_conversation(conversation_id)
 
 
 # Igual que /dashboard/widgets/gmail/digest/refresh: estas rutas llaman
@@ -416,7 +439,28 @@ def create_project(payload: ProjectCreateRequest, user_id: str = Depends(require
 
 @app.get("/projects/{project_id}")
 def get_project(project_id: str, user_id: str = Depends(require_user)):
-    project = orchestrator.projects.get(project_id)
+    # cached_summary genera el resumen la primera vez que se pide (mismo
+    # patrón que GmailDigestSpecialist.cached_digest() or refresh()) — así el
+    # "home" de un proyecto recién creado no llega vacío a la primera vista.
+    project = orchestrator.projects.cached_summary(project_id)
+    if project is None:
+        raise HTTPException(404, "proyecto no encontrado")
+    project["file_count"] = orchestrator.projects.file_count(project_id)
+    project["pending_task_count"] = sum(1 for t in project["tasks"] if not t["done"])
+    project["conversations"] = orchestrator.memory.list_conversations(project_id=project_id)
+    return project
+
+
+@app.get("/projects/{project_id}/conversations")
+def list_project_conversations(project_id: str, user_id: str = Depends(require_user)):
+    if orchestrator.projects.get(project_id) is None:
+        raise HTTPException(404, "proyecto no encontrado")
+    return orchestrator.memory.list_conversations(project_id=project_id)
+
+
+@app.post("/projects/{project_id}/summary/refresh")
+def refresh_project_summary(project_id: str, user_id: str = Depends(require_user)):
+    project = orchestrator.projects.generate_summary(project_id)
     if project is None:
         raise HTTPException(404, "proyecto no encontrado")
     return project

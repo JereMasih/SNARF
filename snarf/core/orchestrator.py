@@ -654,6 +654,47 @@ TOOLS = [
         },
     },
     {
+        "name": "project_assign_conversation",
+        "description": (
+            "Asigna una conversación existente a un Proyecto — a partir de ahí, el prompt propio de ese "
+            "proyecto se aplica automáticamente en todos los turnos de esa conversación, no solo cuando se "
+            "lo menciona. Si la conversación ya pertenecía a otro proyecto, la reasigna (la respuesta indica "
+            "de cuál a cuál, para trazabilidad). No reescribe el historial ya generado — solo cambia el "
+            "comportamiento hacia adelante. Reversible, no requiere confirmación en dos pasos."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}, "conversation_id": {"type": "string"}},
+            "required": ["project_id", "conversation_id"],
+        },
+    },
+    {
+        "name": "project_unassign_conversation",
+        "description": (
+            "Quita la asociación de una conversación con su Proyecto (vuelve a project_id nulo) — a partir "
+            "de ahí, esa conversación vuelve a comportarse solo con el prompt base de Snarf, sin rastro del "
+            "prompt del proyecto anterior. No borra la conversación. Reversible, no requiere confirmación."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"conversation_id": {"type": "string"}},
+            "required": ["conversation_id"],
+        },
+    },
+    {
+        "name": "project_list_conversations",
+        "description": (
+            "Lista las conversaciones asociadas a un Proyecto puntual (id, título, fechas) — mismo formato "
+            "que list_conversations. No busca sobre archivos subidos al proyecto (eso es project_search, "
+            "una cosa distinta)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}},
+            "required": ["project_id"],
+        },
+    },
+    {
         "name": "personality_set_sarcasm",
         "description": (
             "Ajusta el nivel de ingenio seco/sarcasmo de Snarf (0-10, en pasos de 0.5) a pedido "
@@ -812,6 +853,9 @@ class Orchestrator:
             "project_delete_note": lambda i: self._projects.delete_note(i["project_id"], i["note_id"]),
             "project_search": lambda i: self._projects.search_within(i["project_id"], i["query"], top_k=i.get("top_k", 5)),
             "project_delete": self._tool_project_delete,
+            "project_assign_conversation": lambda i: self._memory.assign_conversation(i["conversation_id"], i["project_id"]),
+            "project_unassign_conversation": lambda i: self._memory.unassign_conversation(i["conversation_id"]),
+            "project_list_conversations": lambda i: self._memory.list_conversations(project_id=i["project_id"]),
             "personality_set_sarcasm": self._tool_personality_set_sarcasm,
         }
 
@@ -1000,8 +1044,18 @@ class Orchestrator:
         channel_name: str,
         user_input: str,
         conversation_id: str | None = None,
-        project_id: str | None = None,
     ) -> str:
+        # project_id ya no viaja como parámetro por mensaje (eso no alcanzaba:
+        # una conversación recién creada sin mensajes no tenía nada que
+        # taggear, y reasignarla no tenía dónde guardar "cuál es su proyecto
+        # actual"). Se resuelve acá, por conversation_id, contra la
+        # asociación persistente real (Proyectos Mark II) — así se aplica
+        # automáticamente en TODOS los turnos mientras dure la asignación,
+        # sin que el frontend tenga que recordarlo. Calculado antes del if
+        # para quedar disponible también en modo eco (memory.append de abajo
+        # lo necesita en cualquier caso).
+        project_id = self._memory.get_conversation_project(conversation_id) if conversation_id else None
+
         if not self._llm.available:
             response = (
                 "[modo eco - ANTHROPIC_API_KEY no configurada, ver .env.example] "
@@ -1017,12 +1071,8 @@ class Orchestrator:
             sarcasm_level = personality_prefs.load_prefs(self._user_id)["sarcasm_level"]
             system += sarcasm_instruction(sarcasm_level)
             if project_id:
-                # Hace real la promesa de que "Snarf trabaja bajo el prompt
-                # del proyecto" — antes dependía de que el LLM decidiera
-                # llamar project_get por su cuenta; acá se inyecta siempre
-                # que la conversación esté explícitamente atada a un
-                # proyecto. Si el proyecto no existe más o no tiene prompt
-                # propio, se degrada en silencio (nunca rompe el turno).
+                # Si el proyecto no existe más o no tiene prompt propio, se
+                # degrada en silencio (nunca rompe el turno).
                 project = self._projects.get(project_id)
                 if project and project.get("prompt"):
                     system += (

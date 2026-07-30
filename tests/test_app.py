@@ -13,7 +13,11 @@ def client(tmp_path, monkeypatch):
     # app_module.orchestrator es un singleton creado al importar el módulo;
     # se fuerza acá su estado a "sin credenciales" y memoria descartable,
     # sin importar qué haya en el .env real del proyecto.
-    monkeypatch.setattr(app_module.orchestrator, "_memory", EpisodicMemory(path=tmp_path / "memory.jsonl"))
+    monkeypatch.setattr(
+        app_module.orchestrator,
+        "_memory",
+        EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json"),
+    )
     monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
     monkeypatch.setattr(app_module.stt, "_api_key", None)
     monkeypatch.setattr(app_module.tts, "_api_key", None)
@@ -49,8 +53,11 @@ def test_send_echo_mode_roundtrip(client):
     assert "hola" in res.json()["response"]
 
 
-def test_send_with_project_id_tags_the_memory_entry(client):
-    client.post("/send", json={"text": "hola", "conversation_id": "conv-proj", "project_id": "proj-1"})
+def test_send_tags_the_memory_entry_with_the_conversations_assigned_project(client):
+    # Proyectos Mark II: la asociación es persistente (assign_conversation),
+    # ya no un parámetro por mensaje en /send.
+    app_module.orchestrator.memory.assign_conversation("conv-proj", "proj-1")
+    client.post("/send", json={"text": "hola", "conversation_id": "conv-proj"})
     entry = app_module.orchestrator.memory.get_conversation("conv-proj")[0]
     assert entry["project_id"] == "proj-1"
 
@@ -559,6 +566,9 @@ def projects_fixture(tmp_path, monkeypatch, connected_google_token):
 
     monkeypatch.setattr(module, "PROJECTS_DIR", tmp_path / "projects")
     monkeypatch.setattr(app_module.orchestrator.drive, "get_or_create_folder", lambda name, parent_id=None: f"folder-{name}")
+    # cached_summary()/file_count() de GET /projects/{id} llaman a Drive real
+    # si no se mockea esto — sin costo/llamada real en tests.
+    monkeypatch.setattr(app_module.orchestrator.drive, "iter_all_files", lambda query=None, page_size=200: iter([]))
     monkeypatch.setattr(app_module.orchestrator.projects._llm, "_client", None)  # sin costo real en tests
 
 
@@ -648,6 +658,78 @@ def test_delete_project_with_confirmed_removes_it_and_never_touches_drive(client
     assert res.status_code == 200
     assert client.get(f"/projects/{project_id}").status_code == 404
     assert delete_calls == []  # nunca se llamó a borrar nada real de Drive
+
+
+def test_get_project_is_enriched_with_file_count_pending_tasks_and_conversations(client, projects_fixture):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    client.post(f"/projects/{project_id}/tasks", json={"text": "pendiente"})
+    done = client.post(f"/projects/{project_id}/tasks", json={"text": "hecha"})
+    client.patch(f"/projects/{project_id}/tasks/{done.json()['tasks'][1]['id']}")
+    app_module.orchestrator.memory.assign_conversation("conv-1", project_id)
+
+    project = client.get(f"/projects/{project_id}").json()
+    assert project["file_count"] == 0
+    assert project["pending_task_count"] == 1
+    assert [c["conversation_id"] for c in project["conversations"]] == ["conv-1"]
+    assert project["summary"]  # se generó solo en el primer GET (cached_summary)
+
+
+def test_get_project_conversations_endpoint(client, projects_fixture):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    app_module.orchestrator.memory.assign_conversation("conv-1", project_id)
+    res = client.get(f"/projects/{project_id}/conversations")
+    assert res.status_code == 200
+    assert [c["conversation_id"] for c in res.json()] == ["conv-1"]
+
+
+def test_get_project_conversations_returns_404_for_a_missing_project(client, projects_fixture):
+    res = client.get("/projects/no-existe/conversations")
+    assert res.status_code == 404
+
+
+def test_refresh_project_summary_endpoint(client, projects_fixture):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    res = client.post(f"/projects/{project_id}/summary/refresh")
+    assert res.status_code == 200
+    assert res.json()["summary"]
+    assert res.json()["summary_generated_at"] is not None
+
+
+def test_refresh_project_summary_returns_404_for_a_missing_project(client, projects_fixture):
+    res = client.post("/projects/no-existe/summary/refresh")
+    assert res.status_code == 404
+
+
+def test_assign_conversation_to_project_endpoint(client, projects_fixture):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    res = client.put(f"/conversations/conv-1/project", json={"project_id": project_id})
+    assert res.status_code == 200
+    assert res.json() == {"conversation_id": "conv-1", "from_project_id": None, "to_project_id": project_id}
+    assert app_module.orchestrator.memory.get_conversation_project("conv-1") == project_id
+
+
+def test_assign_conversation_to_a_missing_project_returns_404(client, projects_fixture):
+    res = client.put("/conversations/conv-1/project", json={"project_id": "no-existe"})
+    assert res.status_code == 404
+
+
+def test_unassign_conversation_from_project_endpoint(client, projects_fixture):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    client.put(f"/conversations/conv-1/project", json={"project_id": project_id})
+    res = client.delete("/conversations/conv-1/project")
+    assert res.status_code == 200
+    assert res.json() == {"conversation_id": "conv-1", "from_project_id": project_id, "to_project_id": None}
+    assert app_module.orchestrator.memory.get_conversation_project("conv-1") is None
+
+
+def test_conversations_list_excludes_conversations_assigned_to_a_project(client, projects_fixture):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    client.post("/send", json={"text": "general", "conversation_id": "conv-general"})
+    client.post("/send", json={"text": "de proyecto", "conversation_id": "conv-proj"})
+    client.put(f"/conversations/conv-proj/project", json={"project_id": project_id})
+
+    res = client.get("/conversations")
+    assert [c["conversation_id"] for c in res.json()] == ["conv-general"]
 
 
 def test_upload_with_project_id_uploads_to_the_project_folder_and_tags_the_index(
