@@ -541,3 +541,10 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - El indicador de "pensando" (tres puntitos) suma una mini-animación real del cerebro (mismos datos de `/dashboard/brain`) — clickeable, abre el cerebro completo mientras se espera una respuesta.
 - Al llegar la respuesta, si el cerebro se había abierto desde acá, se cierra solo y vuelve al chat — sin que haga falta cerrarlo a mano.
 - 445/445 tests (sin cambios de backend). Verificado con Playwright: la mini-animación aparece, el click abre el cerebro completo, y se cierra solo apenas llega la respuesta real. Ver ADR 0060 — nota: usa el mismo overlay flotante existente en mobile y desktop; la versión "contenida dentro de la caja de chat" específica de escritorio queda pendiente.
+
+## [2026-07-30] Identidad real del usuario, nunca inventada
+
+- Corrige un bug real: Snarf le empezó a decir "Andi" al fundador sin que nadie se lo dijera — una alucinación de identidad. Nuevo `snarf/runtime/user_profile.py` (mismo patrón que `personality_prefs.py`), atado al `user_id` real de cada usuario.
+- System prompt releído en cada turno: si hay nombre guardado, Snarf se dirige siempre por ese nombre; si no, tiene instrucción explícita de nunca inventar uno y preguntarlo si surge naturalmente. Tool nueva `profile_set_name` (sin gate de confirmación) para que lo guarde en cuanto la persona lo diga.
+- Endpoints `GET`/`PUT /profile` + campo de nombre en el panel de configuración del frontend.
+- 459/459 tests (7 nuevos de `user_profile`, 5 de `orchestrator`, 2 de endpoints REST). Verificado con Playwright: persistencia real vía HTTP y reflejada en la UI tras un reload. Ver ADR 0061.

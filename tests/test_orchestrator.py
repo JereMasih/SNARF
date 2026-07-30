@@ -236,6 +236,76 @@ def test_personality_set_sarcasm_tool_never_requires_confirmation(orchestrator):
     assert result.get("status") != "pending_confirmation"
 
 
+def test_handle_asks_instead_of_inventing_a_name_when_none_is_known(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    captured = {}
+
+    def fake_generate(system, messages, tools=None, tool_handler=None):
+        captured["system"] = system
+        return LLMResponse(text="respuesta", speech="respuesta")
+
+    monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    assert "Nunca inventes ni" in captured["system"]
+    assert "profile_set_name" in captured["system"]
+
+
+def test_handle_addresses_the_user_by_their_saved_real_name(orchestrator, monkeypatch):
+    from snarf.runtime import user_profile
+
+    user_profile.save_profile(orchestrator._user_id, {"name": "Jere"})
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    captured = {}
+
+    def fake_generate(system, messages, tools=None, tool_handler=None):
+        captured["system"] = system
+        return LLMResponse(text="respuesta", speech="respuesta")
+
+    monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    assert "El nombre real de quien te está hablando es Jere" in captured["system"]
+    assert "Nunca inventes ni" not in captured["system"]
+
+
+def test_handle_rereads_profile_name_on_every_turn(orchestrator, monkeypatch):
+    from snarf.runtime import user_profile
+
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    captured = []
+    monkeypatch.setattr(
+        orchestrator._llm,
+        "generate",
+        lambda system, messages, tools=None, tool_handler=None: captured.append(system) or LLMResponse(text="ok", speech="ok"),
+    )
+
+    orchestrator.handle("text", "primero", conversation_id="c1")
+    user_profile.save_profile(orchestrator._user_id, {"name": "Jere"})
+    orchestrator.handle("text", "segundo", conversation_id="c1")
+
+    assert "El nombre real de quien te está hablando es Jere" not in captured[0]
+    assert "El nombre real de quien te está hablando es Jere" in captured[1]
+
+
+def test_profile_set_name_tool_persists_and_is_reflected_next_turn(orchestrator, monkeypatch):
+    result = orchestrator._handle_tool("profile_set_name", {"name": "Jere"})
+    assert result == {"status": "updated", "name": "Jere"}
+
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    captured = {}
+    monkeypatch.setattr(
+        orchestrator._llm,
+        "generate",
+        lambda system, messages, tools=None, tool_handler=None: captured.update(system=system) or LLMResponse(text="ok", speech="ok"),
+    )
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    assert "El nombre real de quien te está hablando es Jere" in captured["system"]
+
+
+def test_profile_set_name_tool_never_requires_confirmation(orchestrator):
+    result = orchestrator._handle_tool("profile_set_name", {"name": "Jere"})
+    assert result.get("status") != "pending_confirmation"
+
+
 def test_handle_tool_reports_unknown_tool(orchestrator):
     result = orchestrator._handle_tool("herramienta_inexistente", {})
     assert result == {"error": "herramienta desconocida: herramienta_inexistente"}

@@ -386,6 +386,14 @@
   .settings-slider-labels #sarcasmValue { color: var(--glow); font-variant-numeric: tabular-nums; font-weight: 600; }
   .settings-slider-row input[type="range"] { width: 100%; accent-color: var(--glow); cursor: pointer; }
 
+  .settings-profile-row { padding: 0.3rem 0.2rem 0.4rem; }
+  .settings-profile-row input[type="text"] {
+    width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(79,216,232,0.25); border-radius: 8px; color: var(--text);
+    font-size: 0.82rem; padding: 0.5rem 0.6rem; font-family: inherit;
+  }
+  .settings-profile-row input[type="text"]:focus { outline: none; border-color: var(--glow); }
+
   /* --- barra lateral: Conversaciones / Proyectos ---
      .conv-list ya es flex:1 1 auto dentro de #sidebar — dos listas con el
      mismo flex competirían por el espacio, así que el switcher alterna cuál
@@ -1237,6 +1245,11 @@
     </div>
     <div class="settings-list" id="settingsList"></div>
 
+    <div class="settings-section-head"><h3>Tu nombre</h3></div>
+    <div class="settings-profile-row">
+      <input type="text" id="profileNameInput" placeholder="¿Cómo querés que te llame Snarf?" maxlength="80">
+    </div>
+
     <div class="settings-section-head"><h3>Personalidad</h3></div>
     <div class="settings-slider-row">
       <div class="settings-slider-labels">
@@ -1411,6 +1424,7 @@ const settingsCloseBtn = document.getElementById("settingsCloseBtn");
 const settingsList = document.getElementById("settingsList");
 const sarcasmSlider = document.getElementById("sarcasmSlider");
 const sarcasmValue = document.getElementById("sarcasmValue");
+const profileNameInput = document.getElementById("profileNameInput");
 const brainOverlay = document.getElementById("brainOverlay");
 const brainPanel = document.getElementById("brainPanel");
 const brainCloseBtn = document.getElementById("brainCloseBtn");
@@ -4002,6 +4016,22 @@ sarcasmSlider.addEventListener("change", () => {
   persistPersonalityPrefs();
 });
 
+let userProfile = null;
+async function renderProfileSection() {
+  if (!userProfile) userProfile = await (await apiFetch("/profile")).json();
+  profileNameInput.value = userProfile.name || "";
+}
+async function persistProfile() {
+  try {
+    userProfile = await (await apiFetch("/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: profileNameInput.value }),
+    })).json();
+  } catch (e) {}
+}
+profileNameInput.addEventListener("change", persistProfile);
+
 function visibleOrdered(ids) {
   return dashboardPrefs.panel_order.filter((id) => ids.includes(id) && dashboardPrefs.visible_widgets[id]);
 }
@@ -4165,6 +4195,7 @@ function openSettings() {
   settingsPanel.classList.add("open");
   renderSettingsList();
   renderPersonalitySection();
+  renderProfileSection();
 }
 function closeSettings() {
   settingsOverlay.classList.remove("open");

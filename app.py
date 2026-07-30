@@ -19,6 +19,7 @@ from snarf.core.orchestrator import DEFAULT_USER_ID, LOCAL_FILES_DATA_DIR, Orche
 from snarf.memory.audio_store import MIME_BY_EXT, AudioStore
 from snarf.runtime.dashboard_prefs import load_prefs, save_prefs
 from snarf.runtime.personality_prefs import load_prefs as load_personality_prefs, save_prefs as save_personality_prefs
+from snarf.runtime.user_profile import load_profile as load_user_profile, save_profile as save_user_profile
 from snarf.runtime import data_backup
 from snarf.knowledge.extraction import categorize_mime
 from snarf.telemetry import activity_log, brain, input_log, usage_tracker
@@ -116,6 +117,10 @@ class DashboardPreferences(BaseModel):
 
 class PersonalityPreferences(BaseModel):
     sarcasm_level: float = 7.5
+
+
+class ProfileRequest(BaseModel):
+    name: str
 
 
 class ProjectCreateRequest(BaseModel):
@@ -367,6 +372,16 @@ def get_personality_preferences(user_id: str = Depends(require_user)):
 @app.put("/personality/preferences")
 def put_personality_preferences(payload: PersonalityPreferences, user_id: str = Depends(require_user)):
     return save_personality_prefs(user_id, payload.model_dump())
+
+
+@app.get("/profile")
+def get_profile(user_id: str = Depends(require_user)):
+    return load_user_profile(user_id)
+
+
+@app.put("/profile")
+def put_profile(payload: ProfileRequest, user_id: str = Depends(require_user)):
+    return save_user_profile(user_id, payload.model_dump())
 
 
 @app.get("/dashboard/widgets/usage")

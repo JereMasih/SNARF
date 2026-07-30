@@ -362,6 +362,27 @@ def test_personality_preferences_put_then_get_roundtrip(client, tmp_path, monkey
     assert get_res.json() == put_res.json()
 
 
+def test_profile_defaults_before_any_save(client, tmp_path, monkeypatch):
+    from snarf.runtime import user_profile
+
+    monkeypatch.setattr(user_profile, "PREFS_DIR", tmp_path / "user_profile")
+    res = client.get("/profile")
+    assert res.status_code == 200
+    assert res.json() == {"name": None}
+
+
+def test_profile_put_then_get_roundtrip(client, tmp_path, monkeypatch):
+    from snarf.runtime import user_profile
+
+    monkeypatch.setattr(user_profile, "PREFS_DIR", tmp_path / "user_profile")
+    put_res = client.put("/profile", json={"name": "Jere"})
+    assert put_res.status_code == 200
+    assert put_res.json()["name"] == "Jere"
+
+    get_res = client.get("/profile")
+    assert get_res.json() == put_res.json()
+
+
 @pytest.fixture
 def no_google_token(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module, "GOOGLE_TOKENS_DIR", tmp_path / "tokens")

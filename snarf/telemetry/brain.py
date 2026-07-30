@@ -102,6 +102,7 @@ TOOL_TO_NODE: dict[str, str] = {
     "youtube_list_subscriptions": "youtube",
     "youtube_list_liked_videos": "youtube",
     "personality_set_sarcasm": "personality",
+    "profile_set_name": "personality",
 }
 
 VENDOR_TO_NODE: dict[str, str] = {"anthropic": "llm", "voyage": "knowledge"}

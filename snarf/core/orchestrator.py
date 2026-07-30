@@ -28,7 +28,7 @@ from snarf.knowledge.drive_indexer import DriveIndexer
 from snarf.knowledge.extraction import ContentExtractor
 from snarf.knowledge.vector_store import VectorStore
 from snarf.memory.episodic import EpisodicMemory
-from snarf.runtime import personality_prefs
+from snarf.runtime import personality_prefs, user_profile
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
 from snarf.telemetry import activity_log
@@ -737,6 +737,21 @@ TOOLS = [
             "required": ["level"],
         },
     },
+    {
+        "name": "profile_set_name",
+        "description": (
+            "Guarda el nombre real de quien te está hablando, apenas te lo diga (la primera vez que "
+            "lo mencione, o si contesta cuando se lo preguntaste porque no lo sabías). Persiste para "
+            "siempre en todas las conversaciones futuras con este mismo usuario — no hace falta volver "
+            "a preguntarlo. Nunca llames a esto con un nombre que no te haya dado la propia persona en "
+            "este intercambio — nunca inventado, nunca adivinado por contexto."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
 ]
 
 
@@ -760,6 +775,24 @@ def sarcasm_instruction(level: float) -> str:
         "crítica, un riesgo de alto impacto o una corrección importante — ahí prevalece siempre "
         "el registro serio de CHARACTER.md, sin importar este número, y sin que eso signifique "
         "bajarlo: es una excepción de comportamiento en el momento, no un cambio de configuración.\n"
+    )
+
+
+def profile_identity_instruction(name: str | None) -> str:
+    """Instrucción de identidad del usuario — nunca inventada (Principio VI de
+    FOUNDATION.md). Si no hay nombre guardado, le pide a Snarf que lo
+    pregunte en vez de asumir uno."""
+    if name:
+        return (
+            f"\n\nEl nombre real de quien te está hablando es {name} — dirigite a esa persona "
+            "por ese nombre (con la naturalidad que corresponda a tu personalidad), nunca uses "
+            "otro nombre ni lo cambies por tu cuenta.\n"
+        )
+    return (
+        "\n\nTodavía no sabés el nombre real de quien te está hablando. Nunca inventes ni "
+        "asumas un nombre — si en algún momento del intercambio te parece natural preguntarlo, "
+        "preguntáselo directamente, y en cuanto te lo diga guardalo con la tool "
+        "profile_set_name. Hasta entonces, dirigite a la persona sin usar ningún nombre propio.\n"
     )
 
 
@@ -884,6 +917,7 @@ class Orchestrator:
             "project_unassign_conversation": lambda i: self._memory.unassign_conversation(i["conversation_id"]),
             "project_list_conversations": lambda i: self._memory.list_conversations(project_id=i["project_id"]),
             "personality_set_sarcasm": self._tool_personality_set_sarcasm,
+            "profile_set_name": self._tool_profile_set_name,
         }
 
     @property
@@ -1052,6 +1086,13 @@ class Orchestrator:
         prefs = personality_prefs.save_prefs(self._user_id, {"sarcasm_level": i["level"]})
         return {"status": "updated", "sarcasm_level": prefs["sarcasm_level"]}
 
+    def _tool_profile_set_name(self, i: dict) -> dict:
+        # Persiste para siempre, atado al mismo user_id de las credenciales de
+        # Google y el resto de las preferencias — nunca inventado, solo lo que
+        # la propia persona dijo en este intercambio (ver ADR de esta feature).
+        profile = user_profile.save_profile(self._user_id, {"name": i["name"]})
+        return {"status": "updated", "name": profile["name"]}
+
     def _handle_tool(self, name: str, tool_input: dict) -> object:
         handler = self._tool_handlers.get(name)
         if not handler:
@@ -1099,6 +1140,10 @@ class Orchestrator:
             # reflejarse sin reiniciar Snarf.
             sarcasm_level = personality_prefs.load_prefs(self._user_id)["sarcasm_level"]
             system += sarcasm_instruction(sarcasm_level)
+            # Se relee en cada turno por el mismo motivo que sarcasm_level —
+            # profile_set_name puede guardar el nombre a mitad de conversación
+            # y tiene que reflejarse en el turno siguiente, sin reiniciar.
+            system += profile_identity_instruction(user_profile.load_profile(self._user_id)["name"])
             if project_id:
                 # Si el proyecto no existe más o no tiene prompt propio, se
                 # degrada en silencio (nunca rompe el turno).

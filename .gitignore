@@ -12,6 +12,7 @@ data/drive_index/
 data/local_files/
 data/projects/
 data/personality_prefs/
+data/user_profile/
 data/usage_log.jsonl
 data/activity_log.jsonl
 data/input_log.jsonl
