@@ -574,3 +574,9 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - El historial de conversaciones (barra lateral y dashboard) ahora se puede refrescar deslizando hacia abajo desde arriba del todo del listado.
 - Cada conversación se nombra sola apenas ocurre su primer intercambio real (LLM barato, en background, sin sumarle latencia a la respuesta) — reemplaza el substring crudo de los primeros 60 caracteres.
 - 475/475 tests. Verificado con Playwright: falla de red real simulada + reintento exitoso con el mismo audio, y gesto de pull-to-refresh disparando un nuevo `GET /conversations`. Ver ADR 0065 — incluye un hallazgo operativo urgente sin relación con el código: la cuenta real de Anthropic se quedó sin crédito.
+
+## [2026-07-30] Fix: el botón "reintentar" quedaba visible siempre
+
+- Mismo bug ya conocido del repo (ver ADR 0059): `display: flex` de autor le ganaba al `[hidden]` del navegador — el botón de reintentar quedaba visible en todos los chats sin importar si había algo real para reintentar, y clickearlo no hacía nada.
+- De paso, cambiar de conversación ahora limpia un reintento pendiente de la conversación anterior (antes podía quedar reintentando contra la conversación equivocada).
+- 475/475 tests. Verificado con Playwright: `display: none` real tanto al cargar como después de un envío exitoso. Ver ADR 0066.

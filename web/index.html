@@ -1050,6 +1050,10 @@
     color: #e88a8a; font-family: inherit; font-size: 0.68rem; letter-spacing: 0.03em;
     padding: 0.3rem 0.7rem; border-radius: 999px; cursor: pointer;
   }
+  /* Bug real: `display: flex` de arriba le gana al `[hidden]` del navegador
+     (misma causa que .text-row .icon-btn, ver ADR 0059) — sin esto, el botón
+     quedaba visible siempre, en cualquier chat, sin importar `.hidden`. */
+  .retry-btn[hidden] { display: none; }
   .retry-btn:hover { background: rgba(232,90,90,0.18); }
   .review { width: 100%; max-width: 480px; display: none; flex-direction: column; gap: 0.5rem; }
   .review.visible { display: flex; }
@@ -2137,6 +2141,10 @@ enablePullToRefresh(convList, convListPullIndicator, refreshConvLists);
 enablePullToRefresh(dashConvList, dashConvListPullIndicator, refreshConvLists);
 
 async function loadConversation(id) {
+  // Un reintento pendiente (nota de voz o texto fallido) es propio de la
+  // conversación donde ocurrió — cambiar de conversación lo abandona, nunca
+  // debe quedar visible ni reintentarse contra la conversación equivocada.
+  clearRetry();
   conversationId = id;
   pendingProjectHomeId = null;
   closeSidebar();
@@ -2156,6 +2164,7 @@ async function loadConversation(id) {
 }
 
 function startNewConversation() {
+  clearRetry();
   conversationId = crypto.randomUUID();
   currentProjectId = null;
   pendingProjectHomeId = null;
