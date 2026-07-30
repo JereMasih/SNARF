@@ -1381,6 +1381,8 @@ const ICONS = {
   resize: '<svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 17H8M17 17V8M17 17 11 11"/></svg>',
   expand: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3H4a1 1 0 0 0-1 1v3M13 3h3a1 1 0 0 1 1 1v3M17 13v3a1 1 0 0 1-1 1h-3M3 13v3a1 1 0 0 0 1 1h3"/></svg>',
   speaker: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8v4h3l4 3.5V4.5L6 8H3Z"/><path d="M13.3 7.2a4 4 0 0 1 0 5.6"/><path d="M15.6 5a7.2 7.2 0 0 1 0 10"/></svg>',
+  play: '<svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor" stroke="none"><path d="M6 4.2a1 1 0 0 1 1.53-.85l8 4.8a1 1 0 0 1 0 1.7l-8 4.8A1 1 0 0 1 6 13.8V4.2Z"/></svg>',
+  pause: '<svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor" stroke="none"><rect x="5.5" y="4" width="3.2" height="12" rx="1"/><rect x="11.3" y="4" width="3.2" height="12" rx="1"/></svg>',
 };
 
 const orbWrap = document.getElementById("orbWrap");
@@ -1793,7 +1795,7 @@ function formatVoiceNoteTime(seconds) {
 function refreshActiveVoiceNoteProgress() {
   if (!activeVoiceNotePlayer) return;
   const { playBtn, fill, timeEl } = activeVoiceNotePlayer;
-  playBtn.textContent = sharedAudio.paused ? "▶" : "⏸";
+  playBtn.innerHTML = sharedAudio.paused ? ICONS.play : ICONS.pause;
   const pct = sharedAudio.duration ? (sharedAudio.currentTime / sharedAudio.duration) * 100 : 0;
   fill.style.width = pct.toFixed(1) + "%";
   timeEl.textContent = formatVoiceNoteTime(sharedAudio.currentTime) + " / " + formatVoiceNoteTime(sharedAudio.duration);
@@ -1806,7 +1808,7 @@ function deactivateVoiceNotePlayer() {
   // capturado al activar: si se tocó play enseguida de generarlo, el probe
   // de metadata todavía no había resuelto en ese momento.
   const totalDuration = Number.isFinite(sharedAudio.duration) && sharedAudio.duration > 0 ? sharedAudio.duration : knownDuration;
-  playBtn.textContent = "▶";
+  playBtn.innerHTML = ICONS.play;
   fill.style.width = "0%";
   // Vuelve a mostrar la duración total conocida (no un "0:00" a secas) — no
   // hace falta perderla al pausar/cambiar a otra burbuja.
@@ -1825,7 +1827,7 @@ function buildVoiceNotePlayer(audioId, downloadName) {
   wrap.className = "voice-note-player";
   const playBtn = document.createElement("button");
   playBtn.className = "vn-play-btn";
-  playBtn.textContent = "▶";
+  playBtn.innerHTML = ICONS.play;
   playBtn.title = "reproducir";
   const progress = document.createElement("div");
   progress.className = "vn-progress";
@@ -4504,6 +4506,21 @@ async function beginActualRecording(pointerId) {
     recordPointerId = null;
     return;
   }
+  // Bug real reportado desde mobile: la PRIMERA vez que se pide el permiso
+  // de micrófono, el diálogo nativo del navegador corta el toque en curso
+  // (dispara pointercancel mientras getUserMedia() todavía estaba pendiente
+  // acá arriba) — para cuando la promesa resuelve (el usuario tocó
+  // "permitir"), ya no queda ningún gesto real sostenido, pero como nada
+  // volvía a chequear esto, se arrancaba a grabar igual y quedaba
+  // "escuchando" para siempre sin ningún pointerup/pointercancel pendiente
+  // que pudiera cortarlo. Si el gesto ya no está vivo, se descarta el
+  // stream recién abierto sin arrancar a grabar — el permiso ya quedó
+  // otorgado para la próxima vez, pero ESTA vez requiere un gesto nuevo.
+  if (recordPointerId !== pointerId) {
+    try { stream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+    setState("idle", idleLabel());
+    return;
+  }
   micBtn.classList.add("recording");
   micBtn.innerHTML = STOP_ICON_HTML;
   textRow.classList.add("recording");
@@ -4558,9 +4575,16 @@ micBtn.addEventListener("pointerup", (e) => {
   if (recordLocked) return;
   finishRecording(recordLastDx < -RECORD_CANCEL_THRESHOLD_PX);
 });
-micBtn.addEventListener("pointercancel", () => {
+micBtn.addEventListener("pointercancel", (e) => {
+  if (e.pointerId !== recordPointerId) return;
   clearTimeout(micHoldTimer);
-  if (state === "listening" && !recordLocked) finishRecording(true);
+  const wasListening = state === "listening" && !recordLocked;
+  // Se limpia SIEMPRE, incluso si todavía no se llegó a "listening" (ej.
+  // getUserMedia() sigue pendiente por el diálogo de permiso) — es lo que
+  // permite que beginActualRecording() detecte, apenas resuelva, que el
+  // gesto ya no está vivo y no arranque a grabar sin forma de pararlo.
+  recordPointerId = null;
+  if (wasListening) finishRecording(true);
 });
 recordCancelBtn.addEventListener("click", () => finishRecording(true));
 

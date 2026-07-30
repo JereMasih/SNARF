@@ -560,3 +560,10 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Rediseño de fondo del audio de las respuestas: ya no hay "resumen" (acortado) vs "completa" (texto crudo) — hay "escuchar" (narración hablada fiel de la respuesta completa en pantalla, sin tope de longitud artificial) y, solo cuando corresponde, "escuchar entregable" (nuevo marcador `---ENTREGABLE---`, aparece solo si la respuesta trae un plan/documento/copia puntual pedido explícitamente — lee solo eso, sin la charla alrededor).
 - Bug real encontrado y corregido en la propia verificación: cuando el modelo encadenaba el marcador de entregable sin cerrar el de habla antes, el entregable no se extraía y los marcadores quedaban crudos en el audio — `split_speech()` ahora es robusto a ese caso.
 - 467/467 tests. Verificado con Playwright + llamadas reales a Anthropic: mensaje conversacional → solo "escuchar"; pedido de un plan de negocios → aparecen ambos botones, el entregable limpio y completo. Ver ADR 0063.
+
+## [2026-07-30] Fix: carrera del permiso de micrófono en mobile + íconos del reproductor
+
+- Bug real reportado desde un teléfono real: el diálogo nativo de permiso de micrófono cortaba el toque en curso (`pointercancel` mientras `getUserMedia()` seguía pendiente) y, al otorgar el permiso, la grabación arrancaba igual sin que quedara ningún gesto real que pudiera cortarla — quedaba "grabando" para siempre, solo se arreglaba refrescando la página.
+- `pointercancel` ahora limpia el pointer activo siempre (no solo si ya estaba grabando), y `beginActualRecording` vuelve a chequear que el gesto siga vivo apenas `getUserMedia()` resuelve — si no, descarta el stream y pide un gesto nuevo, en vez de arrancar a grabar sin forma de pararlo.
+- Los íconos ▶/⏸ del mini reproductor de audio (antes glifos de texto/emoji) pasan a ser SVG propios, coherentes con el resto del branding.
+- 467/467 tests (sin cambios de backend). Verificado con Playwright simulando la carrera exacta del permiso. Ver ADR 0064.
