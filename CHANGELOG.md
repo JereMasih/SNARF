@@ -526,3 +526,12 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 
 - El flujo de partículas entre nodos viajaba en un solo sentido (orquestador → nodo). Ahora hay partículas en ambas direcciones a la vez mientras un nodo está activo: las que van usan el color propio del nodo, las que vuelven son blancas — se lee como ida y vuelta real de información, no un solo flujo.
 - 444/444 tests (sin cambios de backend). Verificado con Playwright: partículas en ambas direcciones, exactamente 2 colores distintos en pantalla, confirmado también visualmente. Ver ADR 0058.
+
+## [2026-07-30] Ronda de bugs reales: audio duplicado, scroll, grabación mobile
+
+- El audio de "resumen" podía salir idéntico al de "completa" en respuestas largas e importantes (un plan de negocio) — el modelo a veces ignoraba el límite de 400 caracteres del resumen. Reforzada la instrucción y sumado un tope de seguridad real en el código (nunca vuelve a pasar, sin importar qué decida el modelo).
+- Nueva instrucción: si una respuesta no entra en el límite de un mensaje, Snarf genera un archivo Markdown con el contenido completo en vez de truncar en silencio.
+- Barras de desplazamiento ocultas por default en toda la interfaz — aparecen solo mientras se hace scroll de verdad, nunca permanentes (resuelve también el textarea de una sola línea mostrando una barra sin necesidad real).
+- El scroll del chat ya no "se escapa" hacia el resto de la página al llegar al final.
+- Bug real en mobile: un toque rápido en el micrófono podía dejar la interfaz grabando sin ninguna forma de pararla (race real entre el permiso de micrófono y el toque). Ahora hace falta mantener presionado de verdad para que arranque a grabar, y mientras graba el ícono cambia a un cuadrado rojo de stop.
+- 445/445 tests. Verificado con Playwright y micrófono simulado. Ver ADR 0059.

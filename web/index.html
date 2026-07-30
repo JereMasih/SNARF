@@ -28,6 +28,18 @@
     --brain-grey: #6b7684;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  /* Barras de desplazamiento ocultas por default en TODA la interfaz —
+     aparecen solo mientras se hace scroll de verdad (clase .scrollbar-visible,
+     agregada/quitada por un listener global de "scroll", ver <script>), nunca
+     permanentes. Antes un textarea de una sola línea ya mostraba una barra
+     visible con solo `overflow-y: auto` — esto la deja invisible hasta que
+     realmente haga falta desplazar. */
+  * { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  *.scrollbar-visible { scrollbar-color: rgba(79,216,232,0.35) transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; }
+  *.scrollbar-visible::-webkit-scrollbar-thumb { background: rgba(79,216,232,0.35); }
   html { background: #000; height: 100%; overflow-x: hidden; overscroll-behavior: none; }
   body {
     margin: 0;
@@ -150,7 +162,7 @@
     cursor: pointer;
     text-align: left;
   }
-  .conv-list { overflow-y: auto; flex: 1 1 auto; padding: 0 8px; }
+  .conv-list { overflow-y: auto; overscroll-behavior: contain; flex: 1 1 auto; padding: 0 8px; }
   .conv-item {
     padding: 0.65rem 0.7rem;
     border-radius: 8px;
@@ -589,7 +601,7 @@
   .brain-graph-inner { position: absolute; inset: 0; will-change: transform; }
   .brain-graph-inner svg { position: absolute; inset: 0; width: 100%; height: 100%; }
   #brainParticles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-  .brain-feed { flex: 1 1 0; min-width: 0; overflow-y: auto; border-top: 1px solid rgba(255,255,255,0.06); }
+  .brain-feed { flex: 1 1 0; min-width: 0; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid rgba(255,255,255,0.06); }
   @media (min-width: 900px) { .brain-feed { border-top: none; border-left: 1px solid rgba(255,255,255,0.06); padding-left: 0.8rem; } }
   .brain-feed-row {
     display: flex; align-items: baseline; gap: 0.5rem; padding: 0.3rem 0.2rem; font-size: 0.75rem;
@@ -728,6 +740,9 @@
   .chat {
     position: relative; z-index: 2;
     flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+    /* Sin esto, llegar al final scrolleando rápido "se escapa" hacia la
+       página/dashboard entero en vez de frenar acá — bug real reportado. */
+    overscroll-behavior: contain;
     display: flex; flex-direction: column;
     padding: calc(env(safe-area-inset-top, 0px) + 3.2rem) 1rem 1rem;
     width: 100%; max-width: 560px; margin: 0 auto;
@@ -1424,6 +1439,20 @@ async function apiFetch(url, opts) {
   }
   return res;
 }
+
+// Muestra la barra de desplazamiento de CUALQUIER elemento solo mientras se
+// lo está scrolleando de verdad (ver CSS .scrollbar-visible) — "scroll" no
+// burbujea salvo en window, así que hace falta capture:true para agarrarlo
+// desde un único listener en vez de sumar uno por cada contenedor.
+const SCROLLBAR_HIDE_DELAY_MS = 800;
+const scrollbarHideTimers = new WeakMap();
+document.addEventListener("scroll", (e) => {
+  const el = e.target;
+  if (!(el instanceof Element)) return;
+  el.classList.add("scrollbar-visible");
+  clearTimeout(scrollbarHideTimers.get(el));
+  scrollbarHideTimers.set(el, setTimeout(() => el.classList.remove("scrollbar-visible"), SCROLLBAR_HIDE_DELAY_MS));
+}, true);
 
 const sharedAudio = new Audio();
 let audioUnlocked = false;
@@ -4294,12 +4323,26 @@ textInput.addEventListener("keydown", (e) => {
    confundía el mic en rojo con la flecha de enviar al lado. ---------- */
 const RECORD_CANCEL_THRESHOLD_PX = 80;
 const RECORD_LOCK_THRESHOLD_PX = 60;
+// Un tap rápido (soltar antes de este delay) nunca debe empezar a grabar —
+// sin esto, un tap accidental en mobile disparaba getUserMedia() de forma
+// asincrónica; para cuando esa promesa resolvía, el pointerup ya había
+// pasado y se había ignorado (state todavía "idle" en ese instante), así
+// que la grabación arrancaba igual pero sin ningún evento pendiente que
+// pudiera terminarla — quedaba "grabando" sin forma real de pararla. Bug
+// real reportado desde iPhone.
+const RECORD_HOLD_DELAY_MS = 180;
 let recordPointerId = null;
 let recordStartX = 0;
 let recordStartY = 0;
 let recordLastDx = 0;
 let recordLocked = false;
 let recordTimerInterval = null;
+let micHoldTimer = null;
+const MIC_ICON_HTML = micBtn.innerHTML;
+// Cuadrado rojo de "stop" — reemplaza el ícono de mic mientras se está
+// grabando (bloqueado o no): más intuitivo que solo el tinte rojo de
+// .recording para comunicar "soltar/tocar acá corta la grabación".
+const STOP_ICON_HTML = '<svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor" stroke="none"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/></svg>';
 
 function formatRecordTimer(ms) {
   const totalSeconds = Math.floor(ms / 1000);
@@ -4320,6 +4363,7 @@ function stopRecordTimer() { clearInterval(recordTimerInterval); recordTimerInte
 async function finishRecording(cancelled) {
   stopRecordTimer();
   micBtn.classList.remove("recording");
+  micBtn.innerHTML = MIC_ICON_HTML;
   textRow.classList.remove("recording");
   recordLockHint.classList.remove("locked");
   recordLocked = false;
@@ -4350,7 +4394,29 @@ async function finishRecording(cancelled) {
   }
 }
 
-micBtn.addEventListener("pointerdown", async (e) => {
+async function beginActualRecording(pointerId) {
+  // Si ya se soltó el dedo antes de que venza el delay de hold, `pointerup`
+  // ya limpió recordPointerId — nunca llegó a ser un hold real, no arranca.
+  if (recordPointerId !== pointerId) return;
+  try {
+    await startRecording();
+  } catch (err) {
+    setState("error", "sin micrófono: " + (err.message || err));
+    recordPointerId = null;
+    return;
+  }
+  micBtn.classList.add("recording");
+  micBtn.innerHTML = STOP_ICON_HTML;
+  textRow.classList.add("recording");
+  recordHint.classList.remove("fading");
+  recordHint.textContent = "‹ deslizá para cancelar";
+  recordCancelBtn.hidden = true;
+  recordLockHint.classList.remove("locked");
+  recordLockHint.textContent = "▲ deslizá para bloquear";
+  startRecordTimer();
+  updateSendMicToggle();
+}
+micBtn.addEventListener("pointerdown", (e) => {
   unlockAudio();
   if (state === "error") setState("idle", idleLabel());
   if (state !== "idle") return; // ya grabando o procesando: ignorar un segundo press
@@ -4360,21 +4426,8 @@ micBtn.addEventListener("pointerdown", async (e) => {
   recordLastDx = 0;
   recordLocked = false;
   micBtn.setPointerCapture(e.pointerId);
-  try {
-    await startRecording();
-  } catch (err) {
-    setState("error", "sin micrófono: " + (err.message || err));
-    return;
-  }
-  micBtn.classList.add("recording");
-  textRow.classList.add("recording");
-  recordHint.classList.remove("fading");
-  recordHint.textContent = "‹ deslizá para cancelar";
-  recordCancelBtn.hidden = true;
-  recordLockHint.classList.remove("locked");
-  recordLockHint.textContent = "▲ deslizá para bloquear";
-  startRecordTimer();
-  updateSendMicToggle();
+  clearTimeout(micHoldTimer);
+  micHoldTimer = setTimeout(() => beginActualRecording(e.pointerId), RECORD_HOLD_DELAY_MS);
 });
 micBtn.addEventListener("pointermove", (e) => {
   if (e.pointerId !== recordPointerId || state !== "listening" || recordLocked) return;
@@ -4395,10 +4448,19 @@ micBtn.addEventListener("pointermove", (e) => {
   recordHint.textContent = dx < -RECORD_CANCEL_THRESHOLD_PX ? "soltá para cancelar" : "‹ deslizá para cancelar";
 });
 micBtn.addEventListener("pointerup", (e) => {
-  if (e.pointerId !== recordPointerId || state !== "listening" || recordLocked) return;
+  if (e.pointerId !== recordPointerId) return;
+  if (state !== "listening") {
+    // Se soltó durante el delay de hold — fue un tap, nunca llegó a grabar
+    // nada real (ver comentario de RECORD_HOLD_DELAY_MS).
+    clearTimeout(micHoldTimer);
+    recordPointerId = null;
+    return;
+  }
+  if (recordLocked) return;
   finishRecording(recordLastDx < -RECORD_CANCEL_THRESHOLD_PX);
 });
 micBtn.addEventListener("pointercancel", () => {
+  clearTimeout(micHoldTimer);
   if (state === "listening" && !recordLocked) finishRecording(true);
 });
 recordCancelBtn.addEventListener("click", () => finishRecording(true));

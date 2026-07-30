@@ -230,3 +230,15 @@ def test_fallback_speech_truncates_long_text_at_a_sentence_boundary():
 
 def test_fallback_speech_returns_short_text_unchanged_aside_from_markdown_stripping():
     assert fallback_speech("Todo bien, corto y simple.") == "Todo bien, corto y simple."
+
+
+def test_split_speech_caps_a_runaway_speech_block_that_copies_the_whole_response():
+    """Bug real observado: en una respuesta larga e "importante" (un plan de
+    negocio), el modelo a veces pega el desarrollo entero dentro del bloque
+    de habla en vez del resumen corto pedido — sin este tope, el audio de
+    "resumen" queda idéntico al de "completa"."""
+    long_speech = "Este plan tiene muchos pasos. " * 40  # supera SPEECH_HARD_CAP_CHARS
+    raw = f"Respuesta completa.\n{SPEECH_START}\n{long_speech}\n{SPEECH_END}\n"
+    result = split_speech(raw)
+    assert len(result.speech) <= 400
+    assert result.speech != long_speech.strip()

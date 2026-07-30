@@ -20,6 +20,16 @@ CACHE_TTL = "1h"
 SPEECH_START = "---HABLA---"
 SPEECH_END = "---FIN-HABLA---"
 FALLBACK_SPEECH_MAX_CHARS = 400
+# Tope de seguridad sobre lo que el modelo puso DENTRO del marcador de habla
+# — la instrucción del system prompt (<400 caracteres) es una guía, no algo
+# estructuralmente forzado, y en respuestas largas/importantes (ej. un plan
+# de negocio detallado) el modelo puede decidir por su cuenta que "esto sí
+# amerita el desarrollo completo" y pegar el texto entero ahí adentro,
+# resultando en un audio de resumen idéntico al de la respuesta completa
+# (bug real observado). Más generoso que FALLBACK_SPEECH_MAX_CHARS a
+# propósito — no castiga una habla un poco más larga que lo ideal, solo
+# corta el caso patológico de "todo el texto otra vez".
+SPEECH_HARD_CAP_CHARS = 600
 
 
 @dataclass(frozen=True)
@@ -61,6 +71,8 @@ def split_speech(raw_text: str) -> LLMResponse:
     text = raw_text[:start].rstrip()
     end = raw_text.find(SPEECH_END, start)
     speech_block = raw_text[start + len(SPEECH_START) : end if end != -1 else None].strip()
+    if len(speech_block) > SPEECH_HARD_CAP_CHARS:
+        speech_block = fallback_speech(speech_block)
     return LLMResponse(text=text, speech=speech_block or fallback_speech(text))
 
 
