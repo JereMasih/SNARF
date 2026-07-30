@@ -477,4 +477,5 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - El "latido" de un nodo activo era un doble golpe con salto de escala grande (hasta 1.2×) — se veía como un "tac-tac" feo, sobre todo con varios nodos activos a la vez. Ahora es un solo pulso suave (máximo 1.05×), con la diferenciación real llevada a la luminosidad/glow. El ícono de cada nodo ya no escala nada al activarse — pulsa solo brillo y opacidad.
 - Los haces de luz que viajan entre nodos activos se ven más gruesos, brillantes y con segmentos más largos — se leen como un haz real, no una línea punteada genérica.
 - **Bug real encontrado en el camino**: el grosor de esos haces nunca se aplicaba de verdad — una regla de CSS declarada en el orden equivocado lo pisaba en silencio desde que existe el efecto.
+- El feed de eventos del cerebro ahora muestra el mismo ícono real de cada nodo junto al texto de cada fila (había quedado sin ninguno tras retirar los emoji).
 - 414/414 tests (sin cambios de backend). Verificado con Playwright. Ver ADR 0052.

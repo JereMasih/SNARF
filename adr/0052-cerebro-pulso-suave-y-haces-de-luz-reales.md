@@ -16,6 +16,7 @@ El fundador confirmó que los íconos propios de ADR 0049 le gustan y van en la 
 - Nueva regla `.brain-node-icon.brain-node-active` (más específica, pisa a la anterior): el ícono en sí **no escala nada** — pulsa solo opacidad y glow (`brain-icon-glow`, 3px a 11px). El círculo de fondo (una mancha difusa) tolera bien un rebote sutil; el ícono (una línea con detalle real) no.
 - `.brain-edge-flow` (el haz que viaja del orquestador a cada nodo activo) se vuelve más grueso (1.8→2.2px), con segmentos más largos (`stroke-dasharray` 5 9 → 10 16) y más brillo (drop-shadow 4px→7px) — se lee como un haz de luz real, no una línea punteada genérica.
 - **Bug real encontrado en el camino**: `.brain-edge-flow` estaba declarada ANTES de `.brain-edge` en la hoja de estilos — como ambas clases conviven en el mismo `<path>` con igual especificidad, el orden de la hoja decide, y `.brain-edge` (declarada después) le pisaba el `stroke-width` en silencio desde que existe el efecto de flujo. Los haces nunca se vieron tan gruesos como el código decía — corregido reordenando `.brain-edge-flow` para que quede después de `.brain-edge`.
+- El feed de eventos (`brainFeedRowHTML`) suma el mismo ícono real del grafo (`BRAIN_NODE_ICON_PATHS`, a tamaño de texto) junto al nombre de cada fila — antes, al retirar los emoji, había quedado sin ningún ícono ahí.
 
 ## Verificado
 

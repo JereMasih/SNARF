@@ -596,6 +596,7 @@
     color: var(--text); border-bottom: 1px solid rgba(255,255,255,0.05);
   }
   .brain-feed-row .dash-dot { align-self: center; }
+  .brain-feed-icon { align-self: center; flex-shrink: 0; opacity: 0.9; }
   .brain-feed-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .brain-feed-time { flex-shrink: 0; font-size: 0.68rem; color: var(--text-dim); }
   /* Opacidad baja a propósito: la línea recta centro-nodo tiene que existir
@@ -3067,11 +3068,20 @@ function buildBrainGraphSkeleton() {
   initBrainMesh();
 }
 
+// Mismo ícono/paths que el grafo (BRAIN_NODE_ICON_PATHS), a tamaño de texto
+// — el fundador pidió que el feed de eventos muestre el ícono real de cada
+// nodo junto al texto, como antes hacía con el emoji, pero con los íconos
+// propios nuevos.
+function brainFeedIconHTML(id) {
+  const colorCls = brainColorClassFor(id);
+  return `<svg class="brain-feed-icon ${colorCls}" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${BRAIN_NODE_ICON_PATHS[id] || ""}</svg>`;
+}
 function brainFeedRowHTML(ev) {
   const isError = ev.status !== "ok";
   const label = BRAIN_NODE_LABELS[ev.node] || ev.node;
   return `<div class="brain-feed-row">
     <span class="dash-dot ${isError ? "off" : "ok"}"></span>
+    ${brainFeedIconHTML(ev.node)}
     <span class="brain-feed-label">${escapeHtml(label)} · ${escapeHtml(ev.label || "")}</span>
     <span class="brain-feed-time">${relativeTime(ev.timestamp)}</span>
   </div>`;
