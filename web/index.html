@@ -513,30 +513,27 @@
   .brain-node-idle { animation: brain-breathe 3.6s ease-in-out infinite; }
   .brain-mini-center.brain-node-idle { animation-duration: 2.4s; }
 
-  /* Latido rápido tipo "lub-dub": nodos con actividad real reciente (ver
-     BRAIN_ACTIVE_WINDOW_S en el JS) — más brillante y con un doble golpe,
-     distinto a propósito del latido de espera de arriba. currentColor hace
-     que el resplandor tome el color propio de cada nodo/tier. */
+  /* Activo (actividad real reciente, ver BRAIN_ACTIVE_WINDOW_S en el JS):
+     antes era un "lub-dub" de dos golpes con salto de escala grande
+     (1.2/1.16) — el fundador lo describió como un "tac-tac" feo, sobre todo
+     con varios nodos latiendo a la vez sin sincronía. La diferenciación
+     ahora es sobre todo luminosidad/brillo (el glow crece bastante más que
+     en reposo), con un solo pulso suave y un movimiento mínimo. */
   @keyframes brain-heartbeat {
-    0%, 100% { opacity: 0.85; transform: scale(1); filter: drop-shadow(0 0 3px currentColor); }
-    12% { opacity: 1; transform: scale(1.2); filter: drop-shadow(0 0 16px currentColor); }
-    24% { opacity: 0.9; transform: scale(1.02); }
-    36% { opacity: 1; transform: scale(1.16); filter: drop-shadow(0 0 16px currentColor); }
-    50%, 100% { opacity: 0.85; transform: scale(1); }
+    0%, 100% { opacity: 0.85; transform: scale(1); filter: drop-shadow(0 0 4px currentColor); }
+    50% { opacity: 1; transform: scale(1.05); filter: drop-shadow(0 0 18px currentColor); }
   }
-  .brain-node-active { animation: brain-heartbeat 1.3s ease-in-out infinite; }
-
-  /* Flujo continuo de luz sobre un edge activo — "corriente" entre neuronas,
-     independiente de los pulsos puntuales que viajan por cada evento nuevo.
-     currentColor: cada edge ya tiene su clase de color asignada al nodo que
-     conecta (ver brainColorClassFor en el JS). */
-  .brain-edge-flow {
-    fill: none; stroke: currentColor; stroke-width: 1.8; stroke-opacity: 0.9;
-    stroke-dasharray: 5 9; filter: drop-shadow(0 0 4px currentColor);
-    animation: brain-flow 1s linear infinite;
+  .brain-node-active { animation: brain-heartbeat 1.6s ease-in-out infinite; }
+  /* El ícono (línea fina, con detalle real) se nota mucho más que el círculo
+     de fondo (una mancha de luz difusa) al rebotar en escala — acá la
+     diferenciación es pura luz: nada de transform. */
+  .brain-node-icon.brain-node-active {
+    animation: brain-icon-glow 1.6s ease-in-out infinite;
   }
-  .brain-edge-flow.brain-edge-flow-error { color: var(--brain-red) !important; }
-  @keyframes brain-flow { to { stroke-dashoffset: -28; } }
+  @keyframes brain-icon-glow {
+    0%, 100% { opacity: 0.8; filter: drop-shadow(0 0 3px currentColor); }
+    50% { opacity: 1; filter: drop-shadow(0 0 11px currentColor); }
+  }
 
   /* --- modo enfoque: chat a pantalla completa + barra lateral --- */
   .chat-focus-overlay {
@@ -606,6 +603,23 @@
      debe leerse como un diagrama de red — la malla orgánica de arriba es la
      que tiene que dominar visualmente. */
   .brain-edge { stroke: var(--glow-dim); stroke-opacity: 0.13; stroke-width: 0.7; fill: none; }
+  /* Haces de luz reales viajando desde el orquestador hacia cada nodo activo
+     — la corriente entre neuronas, independiente de los pulsos puntuales
+     que viajan por cada evento nuevo. Declarado DESPUÉS de .brain-edge a
+     propósito: ambas clases conviven en el mismo <path> (flowPath ya nace
+     con "brain-edge", y "brain-edge-flow" se agrega/saca según actividad) —
+     misma especificidad, así que el orden en la hoja de estilos decide cuál
+     stroke-width gana; sin este orden, el de acá quedaba pisado en silencio.
+     Segmento más largo y brillo más fuerte que antes para que se lea como
+     un haz, no como una línea punteada genérica. currentColor: cada edge ya
+     tiene su clase de color asignada al nodo que conecta (brainColorClassFor). */
+  .brain-edge-flow {
+    fill: none; stroke: currentColor; stroke-width: 2.2; stroke-opacity: 0.95;
+    stroke-linecap: round; stroke-dasharray: 10 16; filter: drop-shadow(0 0 7px currentColor);
+    animation: brain-flow 1.1s linear infinite;
+  }
+  .brain-edge-flow.brain-edge-flow-error { color: var(--brain-red) !important; }
+  @keyframes brain-flow { to { stroke-dashoffset: -52; } }
   /* Ícono propio de cada nodo (reemplaza el emoji/texto de antes) — dibujado
      a mano en el mismo lenguaje monolínea del resto de la interfaz, no un
      emoji. overflow:visible porque el glow del filter puede salirse del

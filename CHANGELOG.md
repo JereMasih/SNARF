@@ -471,3 +471,10 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - El reproductor flotante único de siempre (pausa/velocidad/cerrar, pero sin forma real de volver a darle play tras pausarlo) se retira por completo. Reemplazado por un reproductor embebido propio por burbuja — el mismo componente para la nota de voz del usuario y para la de Snarf — con play/pausa real (confirmado que reanudar funciona), progreso seekable, velocidad, y un menú ⋮ con **compartir** (Web Share API, pensado para iPhone) y **descargar**.
 - El botón de las respuestas de Snarf pasa de "▶ escuchar" a "🎙️ generar nota de voz": genera (o recupera de caché, instantáneo) y reemplaza el propio botón por el reproductor real, en vez de reproducir directo en el reproductor flotante de un solo uso.
 - 414/414 tests. Verificado con Playwright: pausar/reanudar de verdad con un audio real de ~16 segundos, seek por click en la barra, ciclo de velocidad, y el menú de descargar. Ver ADR 0051.
+
+## [2026-07-29] Cerebro: pulso de activación suave y haces de luz reales
+
+- El "latido" de un nodo activo era un doble golpe con salto de escala grande (hasta 1.2×) — se veía como un "tac-tac" feo, sobre todo con varios nodos activos a la vez. Ahora es un solo pulso suave (máximo 1.05×), con la diferenciación real llevada a la luminosidad/glow. El ícono de cada nodo ya no escala nada al activarse — pulsa solo brillo y opacidad.
+- Los haces de luz que viajan entre nodos activos se ven más gruesos, brillantes y con segmentos más largos — se leen como un haz real, no una línea punteada genérica.
+- **Bug real encontrado en el camino**: el grosor de esos haces nunca se aplicaba de verdad — una regla de CSS declarada en el orden equivocado lo pisaba en silencio desde que existe el efecto.
+- 414/414 tests (sin cambios de backend). Verificado con Playwright. Ver ADR 0052.
