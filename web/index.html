@@ -262,7 +262,10 @@
        camino: configuración del dashboard y cerrar sesión. Selector con
        #sidebar a propósito: #dashHistoryParked reusa las mismas clases
        .sidebar-tabs/.sidebar-tab-panel y no debe verse afectado. */
-    body.jarvis-mode #sidebar .sidebar-tabs, body.jarvis-mode #sidebar .sidebar-tab-panel { display: none; }
+    /* :not(.docked) a propósito: dentro del modo enfoque (openChatFocus) esta
+       misma barra se reutiliza como panel de historial fijo — ocultarla ahí
+       también era un bug real (modo enfoque quedaba sin nada al costado). */
+    body.jarvis-mode #sidebar:not(.docked) .sidebar-tabs, body.jarvis-mode #sidebar:not(.docked) .sidebar-tab-panel { display: none; }
   }
   .dash-grid-desktop { display: none; }
 
@@ -394,6 +397,18 @@
   .project-home-head h2 { margin: 0; font-size: 1.15rem; color: var(--glow-soft); }
   .project-home-actions { display: flex; align-items: center; gap: 0.8rem; font-size: 0.72rem; }
   .project-home-actions a { color: var(--glow); text-decoration: none; }
+  /* Separado del resto de las acciones (antes al lado del link a Drive,
+     demasiado a mano de un click sin querer) — al final de todo, mismo
+     criterio que "cerrar sesión" en el menú de usuario: una acción de baja
+     frecuencia y alto costo de error no debería competir por atención con
+     las de uso diario. */
+  .project-home-delete-btn {
+    align-self: center; margin-top: 0.4rem;
+    background: none; border: 1px solid rgba(232,90,90,0.35);
+    color: #e88a8a; font-family: inherit; font-size: 0.7rem;
+    padding: 0.45rem 0.9rem; border-radius: 999px; cursor: pointer;
+  }
+  .project-home-delete-btn:hover { background: rgba(232,90,90,0.12); color: #fff; }
   .project-home-stats { display: flex; gap: 0.8rem; }
   .project-stat {
     flex: 1 1 0; text-align: center; padding: 0.7rem 0.4rem; border-radius: 10px;
@@ -591,11 +606,14 @@
      debe leerse como un diagrama de red — la malla orgánica de arriba es la
      que tiene que dominar visualmente. */
   .brain-edge { stroke: var(--glow-dim); stroke-opacity: 0.13; stroke-width: 0.7; fill: none; }
-  .brain-node-label { fill: var(--text-dim); font-size: 11px; text-anchor: middle; }
-  /* Ícono en vez de nombre de texto (pedido del fundador, más limpio de
-     mirar) — el nombre completo sigue disponible como tooltip nativo
-     (<title> SVG) al pasar el mouse. */
-  .brain-node-label-icon { font-size: 15px; }
+  /* Ícono propio de cada nodo (reemplaza el emoji/texto de antes) — dibujado
+     a mano en el mismo lenguaje monolínea del resto de la interfaz, no un
+     emoji. overflow:visible porque el glow del filter puede salirse del
+     viewBox chico del <svg> anidado. El nombre completo sigue disponible
+     como tooltip nativo (<title> SVG) al pasar el mouse. */
+  .brain-node-icon { overflow: visible; opacity: 0.85; }
+  .brain-node-icon.brain-node-active { filter: drop-shadow(0 0 5px currentColor); }
+  .brain-node-icon.brain-node-ghost { opacity: 0.35; }
   /* Pulso puntual por evento real — currentColor toma el color propio del
      nodo de origen (ver brainColorClassFor), salvo que sea un error o un
      archivo con categoría real conocida, que pisan ese color a propósito. */
@@ -706,6 +724,25 @@
     display: flex; flex-direction: column; gap: 0.55rem;
     min-width: 0;
   }
+  /* Indica en qué proyecto está la conversación abierta — antes no había
+     ningún rastro de esto una vez adentro de una conversación real (solo se
+     veía en el home). Sticky sobre .chat (su propio scrollport) para que no
+     se pierda arriba al leer mensajes viejos. */
+  .project-context-bar {
+    display: none;
+    position: sticky; top: 0; z-index: 3;
+    align-self: center;
+    margin-bottom: 0.6rem;
+    padding: 0.3rem 0.8rem;
+    border-radius: 999px;
+    background: rgba(5,10,12,0.75);
+    border: 1px solid rgba(79,216,232,0.3);
+    backdrop-filter: blur(6px);
+    color: var(--text-dim);
+    font-size: 0.68rem;
+    letter-spacing: 0.02em;
+  }
+  .project-context-bar.visible { display: block; }
   .msg {
     max-width: 82%; padding: 0.6rem 0.9rem; border-radius: 14px;
     font-size: 0.85rem; line-height: 1.5; animation: fadein 0.3s ease;
@@ -977,6 +1014,7 @@
 
   /* --- text mode --- */
   .text-row {
+    position: relative;
     display: none;
     width: 100%; max-width: 480px;
     gap: 0.5rem;
@@ -1015,6 +1053,47 @@
     background: rgba(232,90,90,0.16); border-color: var(--error); color: var(--error);
     animation: pulse-fast 1s ease-in-out infinite;
   }
+  /* Grabación estilo WhatsApp/Telegram: mantener presionado el mic graba,
+     soltar transcribe y envía directo, deslizar a la izquierda cancela,
+     deslizar hacia arriba bloquea (manos libres). Antes era un toggle de
+     click simple — el mic quedaba en rojo al lado de la flecha de enviar,
+     y esa flecha parecía "terminar" la grabación pero en realidad la dejaba
+     colgada sin transcribir (bug de interacción real, señalado por el
+     fundador). El botón mic ya no cambia de posición: solo se reemplaza el
+     contenido de attach+textInput por este overlay mientras se graba. */
+  .record-overlay {
+    display: none;
+    flex: 1 1 auto; min-width: 0;
+    align-items: center; gap: 0.5rem;
+    padding: 0 0.9rem;
+    height: 42px;
+  }
+  .text-row.recording #attachBtn, .text-row.recording #textInput { display: none; }
+  .text-row.recording .record-overlay { display: flex; }
+  .record-dot {
+    width: 9px; height: 9px; border-radius: 50%; background: var(--error); flex-shrink: 0;
+    animation: pulse-fast 1s ease-in-out infinite;
+  }
+  .record-timer { font-variant-numeric: tabular-nums; font-size: 0.82rem; color: var(--text); flex-shrink: 0; }
+  .record-hint { font-size: 0.72rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: opacity 0.15s ease; }
+  .record-hint.fading { opacity: 0.25; }
+  .record-cancel-btn {
+    flex-shrink: 0; margin-left: auto; background: none; border: none; font-size: 0.95rem; cursor: pointer;
+    color: var(--text-dim); padding: 0.2rem 0.3rem;
+  }
+  /* Indicador de "deslizá para bloquear", flota arriba del mic — su propia
+     posición (no la del overlay) porque el gesto de bloqueo es vertical,
+     relativo al dedo sobre el mic, no al texto de la izquierda. */
+  .record-lock-hint {
+    display: none;
+    position: absolute; right: 52px; bottom: calc(100% + 6px);
+    font-size: 0.66rem; color: var(--text-dim);
+    background: rgba(5,10,12,0.85); border: 1px solid rgba(79,216,232,0.25);
+    border-radius: 999px; padding: 0.25rem 0.55rem; white-space: nowrap;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+  .text-row.recording .record-lock-hint { display: block; }
+  .record-lock-hint.locked { color: var(--glow-soft); border-color: var(--glow); }
 </style>
 </head>
 <body>
@@ -1120,7 +1199,7 @@
 
   <div id="appRoot">
   <div class="view-chat active" id="viewChat">
-    <div class="chat" id="chat"><div class="chat-inner" id="chatInner"></div></div>
+    <div class="chat" id="chat"><div class="project-context-bar" id="projectContextBar"></div><div class="chat-inner" id="chatInner"></div></div>
 
     <div class="control-bar">
       <div class="status" id="status">click para grabar</div>
@@ -1135,7 +1214,14 @@
         <input type="file" id="fileInput" hidden>
         <button class="icon-btn" id="attachBtn" title="Adjuntar archivo"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 6.5l-6 6a2.5 2.5 0 0 0 3.5 3.5l6.5-6.5a4 4 0 0 0-5.5-5.5l-7 7a5.5 5.5 0 0 0 7.5 7.5"/></svg></button>
         <textarea id="textInput" placeholder="Escribile a Snarf..." rows="1"></textarea>
-        <button class="icon-btn" id="micBtn" title="Grabar"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg></button>
+        <div class="record-overlay" id="recordOverlay">
+          <span class="record-dot"></span>
+          <span class="record-timer" id="recordTimer">0:00</span>
+          <span class="record-hint" id="recordHint">‹ deslizá para cancelar</span>
+          <button class="record-cancel-btn" id="recordCancelBtn" title="cancelar grabación" hidden>🗑</button>
+        </div>
+        <span class="record-lock-hint" id="recordLockHint">▲ deslizá para bloquear</span>
+        <button class="icon-btn" id="micBtn" title="Mantené presionado para grabar"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg></button>
         <button class="icon-btn" id="textSendBtn" title="Enviar"><svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="16" x2="10" y2="4"/><path d="M5 9l5-5 5 5"/></svg></button>
       </div>
       <div class="orb-wrap" id="orbWrap">
@@ -1225,11 +1311,16 @@ const logoutBtn = document.getElementById("logoutBtn");
 const textRow = document.getElementById("textRow");
 const textInput = document.getElementById("textInput");
 const textSendBtn = document.getElementById("textSendBtn");
+const recordTimerEl = document.getElementById("recordTimer");
+const recordHint = document.getElementById("recordHint");
+const recordCancelBtn = document.getElementById("recordCancelBtn");
+const recordLockHint = document.getElementById("recordLockHint");
 const micBtn = document.getElementById("micBtn");
 const attachBtn = document.getElementById("attachBtn");
 const fileInput = document.getElementById("fileInput");
 const dashBtn = document.getElementById("dashBtn");
 const projectHomeBtn = document.getElementById("projectHomeBtn");
+const projectContextBar = document.getElementById("projectContextBar");
 const viewChat = document.getElementById("viewChat");
 const viewDashboard = document.getElementById("viewDashboard");
 const dashboardInner = document.getElementById("dashboardInner");
@@ -1675,6 +1766,7 @@ dashNewConvBtn.addEventListener("click", startNewConversation);
 const PROJECT_PROMPT_MAX_LENGTH = 4000;
 
 let currentProjectId = null;
+let currentProjectName = null; // para la etiqueta de #projectContextBar; se fija cada vez que renderProjectHome recibe un proyecto real
 // Seteado al entrar a un proyecto sin haber elegido/creado ninguna
 // conversación todavía — si el usuario tipea directo (sin usar el botón "+
 // nueva conversación de este proyecto"), sendText() genera y asigna la
@@ -1704,6 +1796,14 @@ function renderProjectConversationsInto(container, conversations) {
   back.textContent = "← todos los proyectos";
   back.addEventListener("click", () => exitProject());
   container.appendChild(back);
+  // Antes solo se podía arrancar una conversación nueva del proyecto desde
+  // el home — acá también, mismo lugar donde vive "+ nuevo proyecto" en la
+  // lista general.
+  const newConvForProject = document.createElement("button");
+  newConvForProject.className = "new-conv-btn";
+  newConvForProject.textContent = "+ nueva conversación";
+  newConvForProject.addEventListener("click", () => startNewProjectConversation(currentProjectId));
+  container.appendChild(newConvForProject);
   if (!conversations.length) {
     container.insertAdjacentHTML("beforeend", '<div class="conv-empty">sin conversaciones todavía en este proyecto</div>');
     return;
@@ -1783,13 +1883,13 @@ function renderProjectHomeNotes(notes) {
 }
 
 function renderProjectHome(project) {
+  currentProjectName = project.name;
   chatInner.innerHTML = `
     <div class="project-home">
       <div class="project-home-head">
         <h2>${escapeHtml(project.name)}</h2>
         <div class="project-home-actions">
           <a href="https://drive.google.com/drive/folders/${encodeURIComponent(project.drive_folder_id || "")}" target="_blank" rel="noopener">abrir carpeta en Drive ↗</a>
-          <button class="dash-mini-btn" id="projectHomeDeleteBtn">borrar proyecto</button>
         </div>
       </div>
       <div class="project-home-stats">
@@ -1820,6 +1920,7 @@ function renderProjectHome(project) {
         <div id="projectHomeNoteList"></div>
       </div>
       <button class="new-conv-btn" id="projectHomeNewConvBtn">+ nueva conversación de este proyecto</button>
+      <button class="project-home-delete-btn" id="projectHomeDeleteBtn">borrar proyecto</button>
     </div>
   `;
   renderProjectHomeTasks(project.tasks || []);
@@ -1903,7 +2004,13 @@ async function showProjectHome(id) {
 // Visible solo mientras hay una conversación de proyecto abierta (nunca
 // mientras se mira el propio home, donde ya está de más).
 function updateProjectHomeBtnVisibility() {
-  projectHomeBtn.classList.toggle("visible", Boolean(currentProjectId) && Boolean(conversationId));
+  const insideProjectConversation = Boolean(currentProjectId) && Boolean(conversationId);
+  projectHomeBtn.classList.toggle("visible", insideProjectConversation);
+  // Antes no había ningún rastro de en qué proyecto está la conversación
+  // abierta una vez que dejás de mirar el home — el fundador lo señaló como
+  // falta real.
+  projectContextBar.classList.toggle("visible", insideProjectConversation);
+  if (insideProjectConversation) projectContextBar.textContent = "📁 " + (currentProjectName || currentProjectId);
 }
 
 async function enterProject(id) {
@@ -2543,28 +2650,47 @@ const BRAIN_NODE_LABELS = {
   orchestrator: "Orchestrator",
 };
 // El fundador pidió reemplazar el título de texto de cada nodo por un
-// carácter/ícono — más limpio de mirar en el grafo. El nombre completo
-// (BRAIN_NODE_LABELS) no se pierde: queda como tooltip nativo (<title> SVG)
-// al pasar el mouse, y sigue usándose tal cual en el feed de eventos.
-const BRAIN_NODE_ICONS = {
-  orchestrator: "⚙️",
-  input_text: "⌨️",
-  input_voice: "🎙️",
-  input_file: "📎",
-  specialist_gmail: "🗞️",
-  specialist_projects: "🗂️",
-  memory: "💾",
-  drive: "📁",
-  knowledge: "📚",
-  documents: "📄",
-  gmail: "✉️",
-  calendar: "📅",
-  youtube: "▶️",
-  llm: "🧠",
-  stt: "👂",
-  tts: "🔊",
-  personality: "🎭",
+// ícono — pero no un emoji genérico: dibujado a mano en el mismo lenguaje
+// visual monolínea que ya usa el resto de esta interfaz (ver el objeto
+// ICONS más arriba — stroke 1.6, sin relleno salvo el triángulo de
+// YouTube). viewBox 0 0 20 20 fijo para que todos midan igual. El nombre
+// completo (BRAIN_NODE_LABELS) no se pierde: queda como tooltip nativo
+// (<title> SVG) al pasar el mouse.
+const BRAIN_NODE_ICON_PATHS = {
+  orchestrator: '<path d="M10 2 L16.5 6 L16.5 14 L10 18 L3.5 14 L3.5 6 Z"/><circle cx="10" cy="10" r="2.2"/>',
+  input_text: '<rect x="2.5" y="6" width="15" height="9" rx="1.5"/><line x1="5.5" y1="10.5" x2="5.5" y2="10.5"/><line x1="8.5" y1="10.5" x2="8.5" y2="10.5"/><line x1="11.5" y1="10.5" x2="11.5" y2="10.5"/><line x1="14.5" y1="10.5" x2="14.5" y2="10.5"/><line x1="6" y1="13" x2="14" y2="13"/>',
+  input_voice: '<rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/>',
+  input_file: '<path d="M13.5 6.5l-6 6a2.5 2.5 0 0 0 3.5 3.5l6.5-6.5a4 4 0 0 0-5.5-5.5l-7 7a5.5 5.5 0 0 0 7.5 7.5"/>',
+  specialist_gmail: '<path d="M3 6.5a1.5 1.5 0 0 1 1.5-1.5h9a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 3 12.5v-6Z"/><path d="M3.5 6.5 9 10.5l5.5-4"/><path d="M16.5 3l.55 1.3 1.3.55-1.3.55-.55 1.3-.55-1.3-1.3-.55 1.3-.55Z"/>',
+  specialist_projects: '<path d="M2.5 7.5V6a1 1 0 0 1 1-1h2.6l1.2 1.5H16a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1v-6.5Z"/><path d="M4.7 5V4.2a1 1 0 0 1 1-1h2L8.9 4.5"/>',
+  memory: '<ellipse cx="10" cy="5.2" rx="6.3" ry="2.1"/><path d="M3.7 5.2v9.6c0 1.16 2.82 2.1 6.3 2.1s6.3-.94 6.3-2.1V5.2"/><path d="M3.7 10c0 1.16 2.82 2.1 6.3 2.1s6.3-.94 6.3-2.1"/>',
+  drive: '<path d="M2.5 6a1 1 0 0 1 1-1h3.6l1.4 1.8H16.5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V6Z"/>',
+  knowledge: '<path d="M10 5.6c-1.3-1-3.2-1.5-5.5-1.5-.55 0-1 .45-1 1v9c0 .55.45 1 1 1 2.3 0 4.2.5 5.5 1.5 1.3-1 3.2-1.5 5.5-1.5.55 0 1-.45 1-1v-9c0-.55-.45-1-1-1-2.3 0-4.2.5-5.5 1.5Z"/><line x1="10" y1="5.6" x2="10" y2="16.6"/>',
+  documents: '<path d="M5.8 2.5h5.7l3 3v11.5a.5.5 0 0 1-.5.5H5.8a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5Z"/><path d="M11.5 2.5V6h3"/><line x1="7.3" y1="10.2" x2="12.7" y2="10.2"/><line x1="7.3" y1="13.2" x2="12.7" y2="13.2"/>',
+  gmail: '<rect x="2.5" y="5" width="15" height="10" rx="1.5"/><path d="M3 6l7 5.5L17 6"/>',
+  calendar: '<rect x="2.8" y="4" width="14.4" height="13" rx="1.5"/><line x1="2.8" y1="8" x2="17.2" y2="8"/><line x1="6.5" y1="2.3" x2="6.5" y2="5.5"/><line x1="13.5" y1="2.3" x2="13.5" y2="5.5"/>',
+  youtube: '<rect x="2.5" y="5" width="15" height="10" rx="3"/><path d="M8.6 7.9v4.2l3.9-2.1Z" fill="currentColor" stroke="none"/>',
+  llm: '<circle cx="10" cy="4.3" r="1.5"/><circle cx="4.3" cy="14.7" r="1.5"/><circle cx="15.7" cy="14.7" r="1.5"/><line x1="10" y1="5.8" x2="5.1" y2="13.3"/><line x1="10" y1="5.8" x2="14.9" y2="13.3"/><line x1="5.8" y1="14.7" x2="14.2" y2="14.7"/>',
+  stt: '<path d="M7 15c-2-1-3.5-3-3.5-5.5A6.5 6.5 0 0 1 16 9c0 2-1.5 2.5-1.5 4.5v1a2 2 0 0 1-4 0"/><path d="M9 9a1.5 1.5 0 0 1 3 0c0 1-1.2 1.2-1.2 2.3"/>',
+  tts: '<path d="M4 8v4h3l4 3V5L7 8Z"/><path d="M14 7a4.2 4.2 0 0 1 0 6"/><path d="M16.3 5a7.2 7.2 0 0 1 0 10"/>',
+  personality: '<path d="M10 2.3l1.4 5.3 5.3 1.4-5.3 1.4L10 15.7l-1.4-5.3-5.3-1.4 5.3-1.4Z"/>',
 };
+function createBrainNodeIconEl(id, x, y, size) {
+  const el = document.createElementNS(SVG_NS, "svg");
+  el.setAttribute("x", (x - size / 2).toFixed(1));
+  el.setAttribute("y", (y - size / 2).toFixed(1));
+  el.setAttribute("width", size);
+  el.setAttribute("height", size);
+  el.setAttribute("viewBox", "0 0 20 20");
+  el.setAttribute("fill", "none");
+  el.setAttribute("stroke", "currentColor");
+  el.setAttribute("stroke-width", "1.6");
+  el.setAttribute("stroke-linecap", "round");
+  el.setAttribute("stroke-linejoin", "round");
+  el.setAttribute("class", "brain-node-icon");
+  el.innerHTML = (BRAIN_NODE_ICON_PATHS[id] || "") + `<title>${BRAIN_NODE_LABELS[id] || id}</title>`;
+  return el;
+}
 // Color real por nodo (paleta de la marca del fundador, ver CSS) — cada
 // tier tiene su propio color base; currentColor lo propaga a fill/stroke/
 // resplandor de nodo, edge y pulso sin repetir la lógica en tres lugares.
@@ -2728,6 +2854,7 @@ function startBrainMiniPolling() {
 // corre el polling en vivo, mismo criterio que el auto-refresh del digest de Gmail.
 let brainGraphBuilt = false;
 let brainNodeEls = {};
+let brainIconEls = {};
 let brainEdgePaths = {};
 let brainEdgeFlowPaths = {};
 let brainPollTimer = null;
@@ -2743,6 +2870,7 @@ function buildBrainGraphSkeleton() {
   flowsG.innerHTML = "";
   nodesG.innerHTML = "";
   brainNodeEls = {};
+  brainIconEls = {};
   brainEdgePaths = {};
   brainEdgeFlowPaths = {};
 
@@ -2766,15 +2894,10 @@ function buildBrainGraphSkeleton() {
   nodesG.appendChild(centerCircle);
   brainNodeEls.orchestrator = centerCircle;
 
-  const centerLabel = document.createElementNS(SVG_NS, "text");
-  centerLabel.setAttribute("x", cx);
-  centerLabel.setAttribute("y", cy + 48);
-  centerLabel.setAttribute("class", "brain-node-label brain-node-label-icon");
-  centerLabel.textContent = BRAIN_NODE_ICONS.orchestrator;
-  const centerTitle = document.createElementNS(SVG_NS, "title");
-  centerTitle.textContent = BRAIN_NODE_LABELS.orchestrator;
-  centerLabel.appendChild(centerTitle);
-  nodesG.appendChild(centerLabel);
+  const centerIcon = createBrainNodeIconEl("orchestrator", cx, cy + 48, 22);
+  centerIcon.classList.add("brain-color-white");
+  nodesG.appendChild(centerIcon);
+  brainIconEls.orchestrator = centerIcon;
 
   layout.forEach((p) => {
     const isSpecialist = BRAIN_SPECIALIST_ORDER.includes(p.id);
@@ -2806,15 +2929,11 @@ function buildBrainGraphSkeleton() {
     nodesG.appendChild(circle);
     brainNodeEls[p.id] = circle;
 
-    const label = document.createElementNS(SVG_NS, "text");
-    label.setAttribute("x", p.x.toFixed(1));
-    label.setAttribute("y", (p.y + (p.y > cy ? 24 : -18)).toFixed(1));
-    label.setAttribute("class", "brain-node-label brain-node-label-icon");
-    label.textContent = BRAIN_NODE_ICONS[p.id] || "●";
-    const title = document.createElementNS(SVG_NS, "title");
-    title.textContent = BRAIN_NODE_LABELS[p.id] || p.id;
-    label.appendChild(title);
-    nodesG.appendChild(label);
+    const iconY = p.y + (p.y > cy ? 24 : -18);
+    const icon = createBrainNodeIconEl(p.id, p.x, iconY, 17);
+    icon.classList.add(colorCls);
+    nodesG.appendChild(icon);
+    brainIconEls[p.id] = icon;
   });
 
   resizeBrainCanvas();
@@ -2824,11 +2943,10 @@ function buildBrainGraphSkeleton() {
 
 function brainFeedRowHTML(ev) {
   const isError = ev.status !== "ok";
-  const icon = BRAIN_NODE_ICONS[ev.node] || "●";
   const label = BRAIN_NODE_LABELS[ev.node] || ev.node;
   return `<div class="brain-feed-row">
     <span class="dash-dot ${isError ? "off" : "ok"}"></span>
-    <span class="brain-feed-label">${icon} ${escapeHtml(label)} · ${escapeHtml(ev.label || "")}</span>
+    <span class="brain-feed-label">${escapeHtml(label)} · ${escapeHtml(ev.label || "")}</span>
     <span class="brain-feed-time">${relativeTime(ev.timestamp)}</span>
   </div>`;
 }
@@ -2900,6 +3018,14 @@ function applyBrainSnapshot(snap, spawnPulses) {
     const stateCls = brainStateClass(node);
     brainNodeEls[id].classList.remove("brain-node-active", "brain-node-idle", "brain-node-ghost");
     brainNodeEls[id].classList.add(stateCls);
+    // El ícono propio de cada nodo pulsa con la misma actividad real que el
+    // círculo — mismas clases, mismas animaciones (brain-breathe/heartbeat
+    // ya definidas en CSS), pedido explícito del fundador.
+    const iconEl = brainIconEls[id];
+    if (iconEl) {
+      iconEl.classList.remove("brain-node-active", "brain-node-idle", "brain-node-ghost");
+      iconEl.classList.add(stateCls);
+    }
 
     const flowPath = brainEdgeFlowPaths[id];
     if (flowPath) {
@@ -3622,26 +3748,11 @@ settingsBtn.addEventListener("click", () => { userMenu.classList.remove("open");
 settingsCloseBtn.addEventListener("click", closeSettings);
 settingsOverlay.addEventListener("click", closeSettings);
 
-/* ---------- swipe entre chat y dashboard ---------- */
-let touchStartX = null;
-let touchStartY = null;
-document.addEventListener("touchstart", (e) => {
-  // En desktop ya no hay una vista "solo chat" separada a la que swipear —
-  // el chat vive siempre dentro de la grilla del dashboard.
-  if (isDesktopDashboard() || state === "listening" || isDraggingPanel) return;
-  touchStartX = e.touches[0].clientX;
-  touchStartY = e.touches[0].clientY;
-}, { passive: true });
-document.addEventListener("touchend", (e) => {
-  if (isDesktopDashboard() || touchStartX === null || isDraggingPanel) { touchStartX = null; return; }
-  const dx = e.changedTouches[0].clientX - touchStartX;
-  const dy = e.changedTouches[0].clientY - touchStartY;
-  touchStartX = null;
-  if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.6) {
-    if (dx < 0 && currentView === "chat") showDashboard();
-    else if (dx > 0 && currentView === "dashboard") showChat();
-  }
-}, { passive: true });
+// El swipe lateral chat↔dashboard en mobile se retiró: el fundador señaló
+// que molestaba el desplazamiento lateral real dentro de los globos de chat
+// (bloques de código, tablas) — cualquier arrastre horizontal ahí quedaba
+// interpretado como "cambiar de vista" en vez de "scrollear el contenido".
+// El botón dashBtn sigue siendo el camino real para cambiar de vista.
 
 /* ---------- audio recording ---------- */
 function pickMimeType() {
@@ -3781,38 +3892,119 @@ function sendFromTextInput() {
   unlockAudio();
   sendText(text).then(() => textInput.focus());
 }
-textSendBtn.addEventListener("click", sendFromTextInput);
+textSendBtn.addEventListener("click", () => {
+  // Grabación bloqueada (manos libres): el arrow reusa este mismo botón
+  // para terminar y enviar, en vez de sumar un botón nuevo al lado.
+  if (recordLocked && state === "listening") { finishRecording(false); return; }
+  sendFromTextInput();
+});
 textInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendFromTextInput(); }
 });
 
-async function handleMicClick() {
-  unlockAudio();
-  if (state === "error") setState("idle", idleLabel());
-  if (state === "idle") {
-    try {
-      await startRecording();
-      micBtn.classList.add("recording");
-    } catch (err) {
-      setState("error", "sin micrófono: " + (err.message || err));
-    }
-  } else if (state === "listening") {
-    micBtn.classList.remove("recording");
-    setState("thinking", "transcribiendo...");
-    try {
-      const blob = await stopRecording();
-      const { transcript, error } = await transcribeBlob(blob);
-      if (error) { setState("error", error); return; }
-      textInput.value = transcript;
-      autoResizeTextarea(textInput);
-      setState("idle", idleLabel());
-      textInput.focus();
-    } catch (err) {
-      setState("error", "error: " + (err.message || err));
-    }
+/* ---------- grabación mic en modo texto: mantener presionado, deslizar
+   izquierda cancela, deslizar arriba bloquea (manos libres) — mismo patrón
+   que WhatsApp/Telegram/ChatGPT, reemplaza el toggle de click de antes que
+   confundía el mic en rojo con la flecha de enviar al lado. ---------- */
+const RECORD_CANCEL_THRESHOLD_PX = 80;
+const RECORD_LOCK_THRESHOLD_PX = 60;
+let recordPointerId = null;
+let recordStartX = 0;
+let recordStartY = 0;
+let recordLastDx = 0;
+let recordLocked = false;
+let recordTimerInterval = null;
+
+function formatRecordTimer(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+function startRecordTimer() {
+  const startedAt = Date.now();
+  recordTimerEl.textContent = "0:00";
+  clearInterval(recordTimerInterval);
+  recordTimerInterval = setInterval(() => {
+    recordTimerEl.textContent = formatRecordTimer(Date.now() - startedAt);
+  }, 200);
+}
+function stopRecordTimer() { clearInterval(recordTimerInterval); recordTimerInterval = null; }
+
+async function finishRecording(cancelled) {
+  stopRecordTimer();
+  micBtn.classList.remove("recording");
+  textRow.classList.remove("recording");
+  recordLockHint.classList.remove("locked");
+  recordLocked = false;
+  recordPointerId = null;
+  if (cancelled) {
+    try { await stopRecording(); } catch (e) {}
+    setState("idle", idleLabel());
+    return;
+  }
+  setState("thinking", "transcribiendo...");
+  try {
+    const blob = await stopRecording();
+    const { transcript, error } = await transcribeBlob(blob);
+    if (error) { setState("error", error); return; }
+    if (!transcript.trim()) { setState("idle", "no se escuchó nada, probá de nuevo"); return; }
+    await sendText(transcript);
+  } catch (err) {
+    setState("error", "error: " + (err.message || err));
   }
 }
-micBtn.addEventListener("click", handleMicClick);
+
+micBtn.addEventListener("pointerdown", async (e) => {
+  unlockAudio();
+  if (state === "error") setState("idle", idleLabel());
+  if (state !== "idle") return; // ya grabando o procesando: ignorar un segundo press
+  recordPointerId = e.pointerId;
+  recordStartX = e.clientX;
+  recordStartY = e.clientY;
+  recordLastDx = 0;
+  recordLocked = false;
+  micBtn.setPointerCapture(e.pointerId);
+  try {
+    await startRecording();
+  } catch (err) {
+    setState("error", "sin micrófono: " + (err.message || err));
+    return;
+  }
+  micBtn.classList.add("recording");
+  textRow.classList.add("recording");
+  recordHint.classList.remove("fading");
+  recordHint.textContent = "‹ deslizá para cancelar";
+  recordCancelBtn.hidden = true;
+  recordLockHint.classList.remove("locked");
+  recordLockHint.textContent = "▲ deslizá para bloquear";
+  startRecordTimer();
+});
+micBtn.addEventListener("pointermove", (e) => {
+  if (e.pointerId !== recordPointerId || state !== "listening" || recordLocked) return;
+  const dx = e.clientX - recordStartX;
+  const dy = e.clientY - recordStartY;
+  recordLastDx = dx;
+  if (dy < -RECORD_LOCK_THRESHOLD_PX) {
+    recordLocked = true;
+    recordLockHint.textContent = "🔒 bloqueado";
+    recordLockHint.classList.add("locked");
+    recordHint.classList.remove("fading");
+    recordHint.textContent = "manos libres — tocá enviar";
+    recordCancelBtn.hidden = false;
+    return;
+  }
+  recordHint.classList.toggle("fading", dx < -RECORD_CANCEL_THRESHOLD_PX);
+  recordHint.textContent = dx < -RECORD_CANCEL_THRESHOLD_PX ? "soltá para cancelar" : "‹ deslizá para cancelar";
+});
+micBtn.addEventListener("pointerup", (e) => {
+  if (e.pointerId !== recordPointerId || state !== "listening" || recordLocked) return;
+  finishRecording(recordLastDx < -RECORD_CANCEL_THRESHOLD_PX);
+});
+micBtn.addEventListener("pointercancel", () => {
+  if (state === "listening" && !recordLocked) finishRecording(true);
+});
+recordCancelBtn.addEventListener("click", () => finishRecording(true));
 
 /* ---------- adjuntar archivo ---------- */
 async function uploadAttachedFile(file) {

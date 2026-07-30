@@ -446,3 +446,14 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Botones de copiar en las respuestas de Snarf: la respuesta completa, y cada bloque de código/entregable por separado (sin arrastrar el comentario alrededor).
 - El widget colapsado del cerebro de Snarf ahora hace poll propio cada 4s (antes una foto fija) — se siente vivo sin tener que abrir la pantalla completa. Cada nodo del grafo reemplaza su título de texto por un ícono, con el nombre completo como tooltip.
 - 398/398 tests (sin cambios de backend esta ronda). Verificado con Playwright en escritorio contra una instancia real aislada. Ver ADR 0048.
+
+## [2026-07-29] Grabación estilo WhatsApp, cerebro con íconos propios, y más pulido de Proyectos
+
+- **Regresión de ADR 0048 corregida**: el modo enfoque en escritorio se quedaba sin nada al costado — la regla que oculta las pestañas del cajón del hamburguesa no distinguía el estado en que esa misma barra se reutiliza como panel fijo del modo enfoque.
+- Grabación de voz en modo texto: se retira el toggle de click (mic en rojo confundible con la flecha de enviar, que en realidad dejaba la grabación colgada sin transcribir) y se reemplaza por el patrón de WhatsApp/Telegram/ChatGPT — mantener presionado graba, soltar transcribe y envía directo, deslizar a la izquierda cancela, deslizar hacia arriba bloquea para grabar manos libres.
+- El cerebro de Snarf reemplaza los emoji de la ronda anterior por íconos propios dibujados en el mismo lenguaje visual monolínea del resto de la interfaz, con el mismo pulso de luz de los nodos activos aplicado también al ícono.
+- Nuevo indicador de en qué proyecto está una conversación abierta (antes no existía ningún rastro salvo en el home).
+- Se retira el swipe lateral chat↔dashboard en mobile — interfería con el scroll horizontal real dentro de bloques de código/tablas en los globos de chat.
+- "+ nueva conversación" ahora también disponible en la barra lateral dentro de un proyecto (antes solo en el home); "borrar proyecto" se reubica al final del home, lejos de una acción de uso diario.
+- Backlog real de "Incubadora de Ideas" revisado en Drive — sin conflictos con el trabajo de esta sesión.
+- 398/398 tests (sin cambios de backend). Verificado con Playwright en escritorio y en mobile (con micrófono falso). Ver ADR 0049.
