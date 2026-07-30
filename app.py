@@ -90,6 +90,7 @@ class SendRequest(BaseModel):
 class SendResponse(BaseModel):
     response: str
     speech: str
+    deliverable: str | None = None
 
 
 class TTSRequest(BaseModel):
@@ -217,7 +218,7 @@ def send(payload: SendRequest, user_id: str = Depends(require_user)):
     result = orchestrator.handle(
         "visual", payload.text, conversation_id=payload.conversation_id, input_audio_id=payload.input_audio_id
     )
-    return SendResponse(response=result.text, speech=result.speech)
+    return SendResponse(response=result.text, speech=result.speech, deliverable=result.deliverable)
 
 
 @app.post("/tts", response_model=TTSResponse)

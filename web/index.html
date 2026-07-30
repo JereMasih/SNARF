@@ -908,15 +908,15 @@
     border-radius: 999px;
     cursor: pointer;
   }
-  /* Botón "escuchar completa" — más discreto que el de resumen: es la
-     opción secundaria, no la que se quiere destacar por default. */
+  /* Botón "escuchar entregable" — más discreto que "escuchar": es la opción
+     secundaria, solo visible cuando la respuesta trae un entregable real. */
   .play-audio-btn-full {
     background: transparent;
     border-color: rgba(79,216,232,0.15);
     opacity: 0.75;
   }
   .play-audio-btn-full:hover { opacity: 1; }
-  /* Placeholder mientras se genera automáticamente el resumen hablado
+  /* Placeholder mientras se genera automáticamente el audio de "escuchar"
      (turnos que llegaron por voz) — nunca hay botón que tocar acá, el
      player lo reemplaza solo cuando está listo. */
   .voice-note-slot {
@@ -1613,14 +1613,14 @@ function addCodeBlockCopyButtons(container) {
   });
 }
 
-function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak) {
+function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliverable) {
   const div = document.createElement("div");
   div.className = "msg " + who;
   if (who === "snarf") {
-    // Los reproductores de audio (resumen y/o completa) van SIEMPRE arriba
-    // del texto — la comunicación primaria cuando hay audio es el audio, la
-    // respuesta completa en pantalla queda debajo, y los botones en su lugar
-    // de siempre, debajo de todo.
+    // Los reproductores de audio van SIEMPRE arriba del texto — la
+    // comunicación primaria cuando hay audio es el audio, la respuesta
+    // completa en pantalla queda debajo, y los botones en su lugar de
+    // siempre, debajo de todo.
     const playersContainer = document.createElement("div");
     playersContainer.className = "voice-note-players";
     div.appendChild(playersContainer);
@@ -1634,39 +1634,42 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak) {
     const actions = document.createElement("div");
     actions.className = "msg-actions";
     if (withAudio) {
-      // Resumen hablado (speech): si este turno llegó por voz, se sintetiza
-      // solo, sin tocar nada — es gratis (tier local) y es lo esperable
-      // cuando ya le hablaste a Snarf. No se reproduce solo (no autoplay):
-      // aparece listo para tocar, sin sorprender con audio inesperado. Si
-      // el turno llegó por texto, sigue siendo un botón manual — no tiene
-      // sentido gastar CPU sintetizando algo que la mayoría de las veces no
-      // se va a escuchar; al tocarlo sí arranca solo (ya es una confirmación
-      // explícita). Mensajes viejos (guardados antes de este cambio) no
-      // tienen speech propio: se degrada a la respuesta completa.
+      // "Escuchar": narración hablada de la MISMA respuesta completa que ya
+      // está en pantalla (speech) — ya no es un resumen acortado, ver ADR de
+      // esta ronda. Si el turno llegó por voz, se sintetiza sola, sin tocar
+      // nada — es gratis (tier local) y es lo esperable cuando ya le
+      // hablaste a Snarf. No se reproduce sola (no autoplay): aparece lista
+      // para tocar. Si el turno llegó por texto, sigue siendo un botón
+      // manual — al tocarlo sí arranca solo (ya es una confirmación
+      // explícita). Mensajes viejos sin speech propio se degradan al texto.
       if (autoSpeak && speech) {
         const summarySlot = document.createElement("span");
         summarySlot.className = "voice-note-slot";
-        summarySlot.textContent = "generando resumen en audio...";
+        summarySlot.textContent = "generando audio...";
         playersContainer.appendChild(summarySlot);
         synthesizeVoiceNote(speech).then((audioId) => {
           if (audioId) summarySlot.replaceWith(buildVoiceNotePlayer(audioId, "respuesta-de-snarf"));
           else summarySlot.remove();
         });
       } else {
-        const summaryBtn = document.createElement("button");
-        summaryBtn.className = "play-audio-btn";
-        summaryBtn.innerHTML = `${ICONS.mic} escuchar resumen`;
-        summaryBtn.addEventListener("click", () => generateVoiceNoteAndPlay(speech || text, summaryBtn, "respuesta-de-snarf", playersContainer));
-        actions.appendChild(summaryBtn);
+        const listenBtn = document.createElement("button");
+        listenBtn.className = "play-audio-btn";
+        listenBtn.innerHTML = `${ICONS.mic} escuchar`;
+        listenBtn.addEventListener("click", () => generateVoiceNoteAndPlay(speech || text, listenBtn, "respuesta-de-snarf", playersContainer));
+        actions.appendChild(listenBtn);
       }
 
-      // Completa: la respuesta larga a pantalla, leída entera — siempre a
-      // pedido, nunca automática (a veces se quiere, a veces no).
-      const fullBtn = document.createElement("button");
-      fullBtn.className = "play-audio-btn play-audio-btn-full";
-      fullBtn.innerHTML = `${ICONS.speaker} escuchar completa`;
-      fullBtn.addEventListener("click", () => generateVoiceNoteAndPlay(text, fullBtn, "respuesta-completa", playersContainer));
-      actions.appendChild(fullBtn);
+      // "Escuchar entregable": solo aparece cuando ESTA respuesta trae un
+      // entregable puntual (un plan, un documento, una copia pedida)
+      // distinto de la charla alrededor — lee solo eso, completo, sin lo
+      // que Snarf dijo antes o después. Siempre manual, nunca automático.
+      if (deliverable) {
+        const deliverableBtn = document.createElement("button");
+        deliverableBtn.className = "play-audio-btn play-audio-btn-full";
+        deliverableBtn.innerHTML = `${ICONS.speaker} escuchar entregable`;
+        deliverableBtn.addEventListener("click", () => generateVoiceNoteAndPlay(deliverable, deliverableBtn, "entregable", playersContainer));
+        actions.appendChild(deliverableBtn);
+      }
     }
     const copyBtn = document.createElement("button");
     copyBtn.className = "copy-msg-btn";
@@ -2055,7 +2058,7 @@ async function loadConversation(id) {
     const entries = await res.json();
     entries.forEach(e => {
       addMessage(e.input, "user", false, e.input_audio_id);
-      addMessage(e.response, "snarf", ttsAvailable, null, e.speech);
+      addMessage(e.response, "snarf", ttsAvailable, null, e.speech, false, e.deliverable);
     });
   } catch (e) {
     addMessage("no se pudo cargar la conversación: " + (e.message || e), "snarf");
@@ -4324,7 +4327,7 @@ async function sendText(text, inputAudioId) {
     if (!res.ok) throw new Error("send HTTP " + res.status);
     const data = await res.json();
     hideTyping();
-    addMessage(data.response, "snarf", ttsAvailable, null, data.speech, Boolean(inputAudioId));
+    addMessage(data.response, "snarf", ttsAvailable, null, data.speech, Boolean(inputAudioId), data.deliverable);
     setState("idle", idleLabel());
     // Sin esto, una conversación nueva se queda mostrando el placeholder
     // "(nueva conversación)" en las listas hasta que el usuario navega fuera

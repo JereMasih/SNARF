@@ -554,3 +554,9 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - El mini-cerebro clickeable durante "pensando" (ADR 0060) ahora aparece al lado de los tres puntitos (mismo renglón, antes quedaba debajo) con una entrada en remolino real (escala + rotación, 0.7s) en vez de aparecer de golpe.
 - Los tres puntitos se mantienen sin cambios — señal inmediata sin depender de la red; el cerebro se materializa al lado apenas llegan sus datos reales, ambas señales conviven en vez de reemplazarse.
 - 459/459 tests (sin cambios de backend). Verificado con Playwright: orden de aparición correcto, animación aplicada (`brain-swirl-in`), click sigue abriendo el cerebro completo. Ver ADR 0062.
+
+## [2026-07-30] "Escuchar" vs "escuchar entregable" reemplaza resumen/completa
+
+- Rediseño de fondo del audio de las respuestas: ya no hay "resumen" (acortado) vs "completa" (texto crudo) — hay "escuchar" (narración hablada fiel de la respuesta completa en pantalla, sin tope de longitud artificial) y, solo cuando corresponde, "escuchar entregable" (nuevo marcador `---ENTREGABLE---`, aparece solo si la respuesta trae un plan/documento/copia puntual pedido explícitamente — lee solo eso, sin la charla alrededor).
+- Bug real encontrado y corregido en la propia verificación: cuando el modelo encadenaba el marcador de entregable sin cerrar el de habla antes, el entregable no se extraía y los marcadores quedaban crudos en el audio — `split_speech()` ahora es robusto a ese caso.
+- 467/467 tests. Verificado con Playwright + llamadas reales a Anthropic: mensaje conversacional → solo "escuchar"; pedido de un plan de negocios → aparecen ambos botones, el entregable limpio y completo. Ver ADR 0063.

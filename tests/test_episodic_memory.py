@@ -49,6 +49,20 @@ def test_append_defaults_speech_to_none(tmp_path, monkeypatch):
     assert entries[0]["speech"] is None
 
 
+def test_append_persists_deliverable(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "haceme un plan", "acá tenés el plan", conversation_id="c1", deliverable="solo el plan")
+    entries = memory.recent(10, conversation_id="c1")
+    assert entries[0]["deliverable"] == "solo el plan"
+
+
+def test_append_defaults_deliverable_to_none(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "hola", "respuesta", conversation_id="c1")
+    entries = memory.recent(10, conversation_id="c1")
+    assert entries[0]["deliverable"] is None
+
+
 def test_recent_filters_by_conversation_id(tmp_path, monkeypatch):
     memory = make_memory(tmp_path, monkeypatch)
     memory.append("text", "de c1", "r1", conversation_id="c1")

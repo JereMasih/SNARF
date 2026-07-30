@@ -12,37 +12,37 @@ MAX_TOOL_ROUNDS = 5
 MAX_OUTPUT_TOKENS = 4096
 CACHE_TTL = "1h"
 
-# Marcador que separa la respuesta completa (a pantalla) de su versión hablada
-# (a voz) dentro de un mismo texto generado — ver ADR de la capa de voz. El
-# system prompt (orchestrator.SYSTEM_PREFIX) instruye al modelo a usar
-# exactamente estos delimitadores; se definen acá porque este módulo es el
-# único que los parsea, y así queda una sola fuente de verdad.
+# Marcadores que separan, dentro de un mismo texto generado, la respuesta
+# completa (a pantalla) de su narración hablada (a voz) y — cuando corresponde
+# — del entregable puntual que la respuesta contiene (un plan, un documento,
+# una copia pedida). Ver ADR de la capa de voz + ADR de esta ronda (escuchar
+# vs escuchar entregable). El system prompt (orchestrator.SYSTEM_PREFIX)
+# instruye al modelo a usar exactamente estos delimitadores; se definen acá
+# porque este módulo es el único que los parsea, una sola fuente de verdad.
 SPEECH_START = "---HABLA---"
 SPEECH_END = "---FIN-HABLA---"
+DELIVERABLE_START = "---ENTREGABLE---"
+DELIVERABLE_END = "---FIN-ENTREGABLE---"
 FALLBACK_SPEECH_MAX_CHARS = 400
-# Tope de seguridad sobre lo que el modelo puso DENTRO del marcador de habla
-# — la instrucción del system prompt (<400 caracteres) es una guía, no algo
-# estructuralmente forzado, y en respuestas largas/importantes (ej. un plan
-# de negocio detallado) el modelo puede decidir por su cuenta que "esto sí
-# amerita el desarrollo completo" y pegar el texto entero ahí adentro,
-# resultando en un audio de resumen idéntico al de la respuesta completa
-# (bug real observado). Más generoso que FALLBACK_SPEECH_MAX_CHARS a
-# propósito — no castiga una habla un poco más larga que lo ideal, solo
-# corta el caso patológico de "todo el texto otra vez".
-SPEECH_HARD_CAP_CHARS = 600
 
 
 @dataclass(frozen=True)
 class LLMResponse:
-    """Una respuesta generada, separada en su versión completa y su versión hablada.
+    """Una respuesta generada, separada en pantalla / narración hablada / entregable.
 
     text: la respuesta íntegra, con estructura/markdown, para mostrar en pantalla.
-    speech: versión breve para sintetizar en voz — nunca oculta un riesgo o dato
-    faltante presente en `text`, solo recorta la explicación.
+    speech: narración hablada de ESA MISMA respuesta completa — no es un resumen
+    acortado, cubre todo lo sustancial que está en pantalla, fraseado para voz
+    (sin markdown, sin URLs deletreadas). Nunca oculta un riesgo o dato faltante.
+    deliverable: cuando la respuesta contiene un entregable puntual y pedido
+    explícitamente (un plan, un documento, una copia) distinto de la charla
+    alrededor, es SOLO ese contenido, fraseado para voz — None si esta
+    respuesta es puramente conversacional y no hay nada que aislar.
     """
 
     text: str
     speech: str
+    deliverable: str | None = None
 
 
 def fallback_speech(text: str) -> str:
@@ -62,18 +62,42 @@ def fallback_speech(text: str) -> str:
     return (truncated[: cut + 1] if cut > 0 else truncated).strip()
 
 
+def _extract_deliverable(remainder: str) -> str | None:
+    """Busca el bloque de entregable en lo que queda después del cierre de habla.
+
+    Ausente en la mayoría de las respuestas (puramente conversacionales) — solo
+    aparece cuando el modelo decidió que hay algo puntual para aislar."""
+    start = remainder.find(DELIVERABLE_START)
+    if start == -1:
+        return None
+    end = remainder.find(DELIVERABLE_END, start)
+    block = remainder[start + len(DELIVERABLE_START) : end if end != -1 else None].strip()
+    return block or None
+
+
 def split_speech(raw_text: str) -> LLMResponse:
-    """Separa el texto crudo del modelo en (text, speech) según los delimitadores."""
+    """Separa el texto crudo del modelo en (text, speech, deliverable) según los delimitadores."""
     start = raw_text.find(SPEECH_START)
     if start == -1:
         text = raw_text.strip()
         return LLMResponse(text=text, speech=fallback_speech(text))
     text = raw_text[:start].rstrip()
-    end = raw_text.find(SPEECH_END, start)
-    speech_block = raw_text[start + len(SPEECH_START) : end if end != -1 else None].strip()
-    if len(speech_block) > SPEECH_HARD_CAP_CHARS:
-        speech_block = fallback_speech(speech_block)
-    return LLMResponse(text=text, speech=speech_block or fallback_speech(text))
+    tail = raw_text[start + len(SPEECH_START) :]
+
+    deliverable_pos = tail.find(DELIVERABLE_START)
+    # El marcador de entregable, si aparece, siempre marca el final real del
+    # contenido hablado — incluso cuando el modelo se olvidó de cerrar
+    # FIN-HABLA antes de abrirlo (visto en un caso real: el modelo encadenó
+    # ---ENTREGABLE--- directo después de la narración, sin cerrar el
+    # marcador anterior). Sin este chequeo, esos marcadores quedaban crudos
+    # dentro del audio de "escuchar" y el entregable nunca se extraía.
+    speech_region = tail[:deliverable_pos] if deliverable_pos != -1 else tail
+    deliverable = _extract_deliverable(tail[deliverable_pos:]) if deliverable_pos != -1 else None
+
+    end = speech_region.find(SPEECH_END)
+    speech_block = (speech_region[:end] if end != -1 else speech_region).strip()
+
+    return LLMResponse(text=text, speech=speech_block or fallback_speech(text), deliverable=deliverable)
 
 
 def _mark_cache_breakpoint(message: dict) -> dict:

@@ -2,6 +2,8 @@ import time
 from pathlib import Path
 
 from snarf.capabilities.anthropic_llm import (
+    DELIVERABLE_END,
+    DELIVERABLE_START,
     SPEECH_END,
     SPEECH_START,
     AnthropicLLM,
@@ -61,19 +63,29 @@ SYSTEM_PREFIX = (
     "estructura que no aporta.\n\n"
     f"Al final de CADA respuesta, sin excepción, agregá un bloque delimitado exactamente "
     f"así:\n{SPEECH_START}\n<versión hablada>\n{SPEECH_END}\n"
-    "La versión hablada es lo que se sintetiza en voz cuando el fundador te escucha en "
-    "vez de leerte: el titular, la decisión, y lo que hace falta para actuar. SIEMPRE "
-    "menos de 400 caracteres, sin excepción — incluso cuando la respuesta en pantalla "
-    "sea un plan, un análisis o un entregable largo e importante. Que el tema sea "
-    "importante no es motivo para alargar la versión hablada: es motivo para que la "
-    "respuesta en pantalla sea completa y la hablada siga siendo solo el resumen — "
-    "nunca copies ahí el desarrollo entero. Solo si el fundador pide explícitamente "
-    "'contame todo en voz' o equivalente podés superar los 400 caracteres. Sin "
-    "markdown, sin listas numeradas leídas en voz alta, sin URLs deletreadas. Nunca es "
-    "un resumen que oculte información incómoda — si hay un riesgo o un dato faltante, "
-    "va en la versión hablada. Lo que se recorta es la explicación, nunca la "
-    "advertencia. El bloque de habla nunca aparece en pantalla — se separa antes de "
-    "mostrarte al fundador.\n\n"
+    "La versión hablada es la narración en voz de ESA MISMA respuesta que acabás de "
+    "mostrar en pantalla — no es un resumen acortado, cubre todo lo sustancial de lo "
+    "que está en pantalla, dicho con naturalidad para que se entienda escuchado en vez "
+    "de leído: sin markdown, sin listas numeradas leídas literalmente, sin URLs "
+    "deletreadas, sin encabezados leídos como tales. Si la respuesta en pantalla es "
+    "larga (un plan, un análisis extenso), la narración hablada también lo es — nunca la "
+    "acortes solo porque es larga. Nunca oculta información incómoda: un riesgo o un "
+    "dato faltante que está en pantalla también va en la versión hablada. El bloque de "
+    "habla nunca aparece en pantalla — se separa antes de mostrarte al fundador.\n\n"
+    f"Además, SOLO cuando la respuesta contenga un entregable puntual y pedido "
+    f"explícitamente (un plan, un documento, una copia, un texto concreto que el "
+    f"fundador pidió que le armaras) y sea claramente distinguible de la charla o el "
+    f"comentario alrededor, agregá un segundo bloque después del de habla, delimitado "
+    f"exactamente así:\n{DELIVERABLE_START}\n<solo el entregable, nada más>\n"
+    f"{DELIVERABLE_END}\n"
+    "Este bloque es SOLO el entregable en sí — el plan, el documento, la copia — "
+    "fraseado para voz igual que la narración hablada (sin markdown, sin URLs "
+    "deletreadas), lo más completo posible, sin nada de lo que dijiste antes (el "
+    "encuadre, la explicación de cómo está armado) ni de lo que planteás después. Es "
+    "para que el fundador pueda escuchar únicamente lo que pidió, nada de la "
+    "conversación alrededor. Si la respuesta es puramente conversacional y no hay "
+    "ningún entregable puntual que aislar, no incluyas este bloque — la mayoría de las "
+    "respuestas no lo necesitan. Tampoco aparece nunca en pantalla.\n\n"
     "Si una respuesta en pantalla no entra en el límite de longitud de un solo mensaje "
     "y se cortaría a mitad de camino, no la trunques en silencio: generá un documento "
     "real con drive_create_document (format='markdown') con el contenido completo, y "
@@ -1172,6 +1184,6 @@ class Orchestrator:
         self._memory.append(
             channel_name, user_input, response.text,
             conversation_id=conversation_id, project_id=project_id, input_audio_id=input_audio_id,
-            speech=response.speech,
+            speech=response.speech, deliverable=response.deliverable,
         )
         return response

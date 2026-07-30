@@ -2,6 +2,8 @@ from types import SimpleNamespace
 
 from snarf.capabilities.anthropic_llm import (
     CACHE_TTL,
+    DELIVERABLE_END,
+    DELIVERABLE_START,
     MAX_OUTPUT_TOKENS,
     SPEECH_END,
     SPEECH_START,
@@ -232,13 +234,44 @@ def test_fallback_speech_returns_short_text_unchanged_aside_from_markdown_stripp
     assert fallback_speech("Todo bien, corto y simple.") == "Todo bien, corto y simple."
 
 
-def test_split_speech_caps_a_runaway_speech_block_that_copies_the_whole_response():
-    """Bug real observado: en una respuesta larga e "importante" (un plan de
-    negocio), el modelo a veces pega el desarrollo entero dentro del bloque
-    de habla en vez del resumen corto pedido — sin este tope, el audio de
-    "resumen" queda idéntico al de "completa"."""
-    long_speech = "Este plan tiene muchos pasos. " * 40  # supera SPEECH_HARD_CAP_CHARS
+def test_split_speech_allows_a_long_speech_block_narrating_the_full_response():
+    """La narración hablada ya no es un resumen acortado (ver ADR de esta
+    ronda) — cubre todo lo sustancial de la respuesta en pantalla, así que
+    puede ser tan larga como haga falta. Nada debe recortarla."""
+    long_speech = "Este plan tiene muchos pasos. " * 40
     raw = f"Respuesta completa.\n{SPEECH_START}\n{long_speech}\n{SPEECH_END}\n"
     result = split_speech(raw)
-    assert len(result.speech) <= 400
-    assert result.speech != long_speech.strip()
+    assert result.speech == long_speech.strip()
+    assert result.deliverable is None
+
+
+def test_split_speech_extracts_the_deliverable_block_when_present():
+    raw = (
+        f"Acá tenés el plan completo.\n{SPEECH_START}\nversión hablada\n{SPEECH_END}\n"
+        f"{DELIVERABLE_START}\nsolo el plan, sin la charla alrededor\n{DELIVERABLE_END}\n"
+    )
+    result = split_speech(raw)
+    assert result.text == "Acá tenés el plan completo."
+    assert result.speech == "versión hablada"
+    assert result.deliverable == "solo el plan, sin la charla alrededor"
+
+
+def test_split_speech_deliverable_is_none_when_the_marker_is_absent():
+    raw = f"Respuesta puramente conversacional.\n{SPEECH_START}\nversión hablada\n{SPEECH_END}\n"
+    result = split_speech(raw)
+    assert result.deliverable is None
+
+
+def test_split_speech_extracts_deliverable_even_when_the_model_never_closes_habla():
+    """Bug real observado: el modelo a veces encadena ---ENTREGABLE--- justo
+    después de la narración sin cerrar ---FIN-HABLA--- antes. Sin manejar
+    este caso, los marcadores quedaban crudos dentro del audio de "escuchar"
+    y el entregable nunca se extraía (quedaba en None)."""
+    raw = (
+        f"Acá tenés el plan.\n{SPEECH_START}\nversión hablada sin cerrar\n\n"
+        f"{DELIVERABLE_START}\nsolo el plan\n{DELIVERABLE_END}\n"
+    )
+    result = split_speech(raw)
+    assert result.speech == "versión hablada sin cerrar"
+    assert DELIVERABLE_START not in result.speech
+    assert result.deliverable == "solo el plan"

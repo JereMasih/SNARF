@@ -64,6 +64,20 @@ def test_send_echo_mode_roundtrip(client):
     assert "hola" in res.json()["response"]
 
 
+def test_send_returns_the_deliverable_field_when_the_llm_produces_one(client, monkeypatch):
+    from snarf.capabilities.anthropic_llm import LLMResponse
+
+    monkeypatch.setattr(app_module.orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(
+        app_module.orchestrator._llm,
+        "generate",
+        lambda **kwargs: LLMResponse(text="acá tenés el plan", speech="te armé el plan", deliverable="solo el plan"),
+    )
+    res = client.post("/send", json={"text": "haceme un plan", "conversation_id": "conv-deliverable"})
+    assert res.status_code == 200
+    assert res.json()["deliverable"] == "solo el plan"
+
+
 def test_send_tags_the_memory_entry_with_the_conversations_assigned_project(client):
     # Proyectos Mark II: la asociación es persistente (assign_conversation),
     # ya no un parámetro por mensaje en /send.

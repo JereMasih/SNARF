@@ -39,6 +39,30 @@ def test_handle_stores_the_llm_speech_field_on_the_memory_entry(orchestrator, mo
     assert entry["speech"] == "versión hablada corta"
 
 
+def test_handle_stores_the_deliverable_field_on_the_memory_entry_when_present(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(
+        orchestrator._llm,
+        "generate",
+        lambda **kwargs: LLMResponse(text="acá tenés el plan", speech="te armé el plan", deliverable="solo el plan, sin charla"),
+    )
+    result = orchestrator.handle("text", "haceme un plan", conversation_id="c1")
+    assert result.deliverable == "solo el plan, sin charla"
+    entry = orchestrator.memory.get_conversation("c1")[0]
+    assert entry["deliverable"] == "solo el plan, sin charla"
+
+
+def test_handle_leaves_deliverable_as_none_for_purely_conversational_responses(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(
+        orchestrator._llm, "generate", lambda **kwargs: LLMResponse(text="hola, todo bien", speech="hola, todo bien")
+    )
+    result = orchestrator.handle("text", "hola", conversation_id="c1")
+    assert result.deliverable is None
+    entry = orchestrator.memory.get_conversation("c1")[0]
+    assert entry["deliverable"] is None
+
+
 def test_handle_degrades_gracefully_when_the_llm_call_fails(orchestrator, monkeypatch):
     # Regresión: un fallo real del LLM (crédito agotado, rate limit, red)
     # tiraba un 500 crudo hasta /send en vez de degradar como /transcribe.
