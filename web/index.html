@@ -861,6 +861,23 @@
     border-radius: 999px;
     cursor: pointer;
   }
+  /* Botón "escuchar completa" — más discreto que el de resumen: es la
+     opción secundaria, no la que se quiere destacar por default. */
+  .play-audio-btn-full {
+    background: transparent;
+    border-color: rgba(79,216,232,0.15);
+    opacity: 0.75;
+  }
+  .play-audio-btn-full:hover { opacity: 1; }
+  /* Placeholder mientras se genera automáticamente el resumen hablado
+     (turnos que llegaron por voz) — nunca hay botón que tocar acá, el
+     player lo reemplaza solo cuando está listo. */
+  .voice-note-slot {
+    display: inline-flex; align-items: center;
+    font-size: 0.65rem; letter-spacing: 0.04em; color: var(--glow-soft);
+    opacity: 0.6; margin-top: 0.5rem;
+  }
+  .voice-note-slot:empty { display: none; }
 
   /* --- reproductor de nota de voz embebido (por burbuja, estilo WhatsApp) ---
      Reemplaza al reproductor flotante único de antes: cada nota de voz
@@ -1455,14 +1472,10 @@ function setState(next, label) {
   modeFab.classList.toggle("locked", next === "listening" || next === "thinking");
 }
 function clearChat() { chatInner.innerHTML = ""; }
-// Genera (o recupera de caché, instantáneo) la nota de voz de una
-// respuesta de Snarf y reemplaza el botón por el reproductor embebido real
-// — antes esto reproducía directo en un reproductor flotante de un solo
-// uso, sin forma real de volver a escucharlo después de pausarlo/cerrarlo.
-async function generateVoiceNote(text, btn) {
-  const original = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = "generando nota de voz...";
+// Sintetiza voz para `text` y devuelve el audio_id, o null si no se pudo
+// (sin tocar ningún elemento del DOM — lo usan tanto el disparo automático
+// como el botón manual, cada uno decide qué hacer con el resultado).
+async function synthesizeVoiceNote(text) {
   try {
     const res = await apiFetch("/tts", {
       method: "POST",
@@ -1470,14 +1483,23 @@ async function generateVoiceNote(text, btn) {
       body: JSON.stringify({ text }),
     });
     const data = await res.json();
-    if (data.audio_id) {
-      btn.replaceWith(buildVoiceNotePlayer(data.audio_id, "respuesta-de-snarf"));
-    } else {
-      btn.textContent = "no disponible";
-      btn.disabled = false;
-    }
+    return data.audio_id || null;
   } catch (e) {
-    btn.textContent = "error, probá de nuevo";
+    return null;
+  }
+}
+// Genera (o recupera de caché, instantáneo) la nota de voz de `text` y
+// reemplaza `btn` por el reproductor embebido real — antes esto reproducía
+// directo en un reproductor flotante de un solo uso, sin forma real de
+// volver a escucharlo después de pausarlo/cerrarlo.
+async function generateVoiceNoteIntoButton(text, btn, downloadName) {
+  btn.disabled = true;
+  btn.textContent = "generando...";
+  const audioId = await synthesizeVoiceNote(text);
+  if (audioId) {
+    btn.replaceWith(buildVoiceNotePlayer(audioId, downloadName));
+  } else {
+    btn.textContent = "no disponible";
     btn.disabled = false;
   }
 }
@@ -1506,7 +1528,7 @@ function addCodeBlockCopyButtons(container) {
   });
 }
 
-function addMessage(text, who, withAudio, inputAudioId, speech) {
+function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak) {
   const div = document.createElement("div");
   div.className = "msg " + who;
   if (who === "snarf") {
@@ -1515,15 +1537,38 @@ function addMessage(text, who, withAudio, inputAudioId, speech) {
     const actions = document.createElement("div");
     actions.className = "msg-actions";
     if (withAudio) {
-      const audioBtn = document.createElement("button");
-      audioBtn.className = "play-audio-btn";
-      audioBtn.textContent = "🎙️ generar nota de voz";
-      // La nota de voz sintetiza la versión hablada breve (speech), no la
-      // respuesta completa a pantalla — el costo/latencia real de la voz
-      // depende de esto. Mensajes viejos (guardados antes de este cambio)
+      // Resumen hablado (speech): si este turno llegó por voz, se sintetiza
+      // solo, sin tocar nada — es gratis (tier local) y es lo esperable
+      // cuando ya le hablaste a Snarf. No se reproduce solo (no autoplay):
+      // aparece listo para tocar, sin sorprender con audio inesperado. Si
+      // el turno llegó por texto, sigue siendo un botón manual — no tiene
+      // sentido gastar CPU sintetizando algo que la mayoría de las veces no
+      // se va a escuchar. Mensajes viejos (guardados antes de este cambio)
       // no tienen speech propio: se degrada a la respuesta completa.
-      audioBtn.addEventListener("click", () => generateVoiceNote(speech || text, audioBtn));
-      actions.appendChild(audioBtn);
+      const summarySlot = document.createElement("span");
+      summarySlot.className = "voice-note-slot";
+      actions.appendChild(summarySlot);
+      if (autoSpeak && speech) {
+        summarySlot.textContent = "generando resumen en audio...";
+        synthesizeVoiceNote(speech).then((audioId) => {
+          if (audioId) summarySlot.replaceWith(buildVoiceNotePlayer(audioId, "respuesta-de-snarf"));
+          else summarySlot.remove();
+        });
+      } else {
+        const summaryBtn = document.createElement("button");
+        summaryBtn.className = "play-audio-btn";
+        summaryBtn.textContent = "🎤 escuchar resumen";
+        summaryBtn.addEventListener("click", () => generateVoiceNoteIntoButton(speech || text, summaryBtn, "respuesta-de-snarf"));
+        summarySlot.replaceWith(summaryBtn);
+      }
+
+      // Completa: la respuesta larga a pantalla, leída entera — siempre a
+      // pedido, nunca automática (a veces se quiere, a veces no).
+      const fullBtn = document.createElement("button");
+      fullBtn.className = "play-audio-btn play-audio-btn-full";
+      fullBtn.textContent = "🔊 completa";
+      fullBtn.addEventListener("click", () => generateVoiceNoteIntoButton(text, fullBtn, "respuesta-completa"));
+      actions.appendChild(fullBtn);
     }
     const copyBtn = document.createElement("button");
     copyBtn.className = "copy-msg-btn";
@@ -4086,7 +4131,7 @@ async function sendText(text, inputAudioId) {
     if (!res.ok) throw new Error("send HTTP " + res.status);
     const data = await res.json();
     hideTyping();
-    addMessage(data.response, "snarf", ttsAvailable, null, data.speech);
+    addMessage(data.response, "snarf", ttsAvailable, null, data.speech, Boolean(inputAudioId));
     setState("idle", idleLabel());
     // Sin esto, una conversación nueva se queda mostrando el placeholder
     // "(nueva conversación)" en las listas hasta que el usuario navega fuera
