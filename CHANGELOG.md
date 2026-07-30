@@ -491,3 +491,10 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 
 - Las 14 herramientas de Proyectos caían todas en un único nodo del cerebro — de lejos el más cargado, y el más opaco (no se veía qué parte estaba realmente activa). Usando el mismo `tool_name` que `activity_log` ya registraba sin costo nuevo, se separan en 3 nodos reales: gestión, tareas y notas, y conversaciones (Proyectos Mark II).
 - 414/414 tests (1 actualizado para cubrir los 3 nodos con tool_names reales distintos). Verificado con Playwright contra el snapshot real del backend. Ver ADR 0054.
+
+## [2026-07-29] Protocolo de crecimiento del cerebro + más nodos (Gmail/Calendar)
+
+- Se establece un protocolo permanente (comentario al inicio de `snarf/telemetry/brain.py`, referenciado desde la "Regla de crecimiento" de MASTER_MAP.md): cada tool/Capacidad/Especialista/canal nuevo evalúa en el mismo cambio si merece nodo propio en el cerebro, en vez de encajarlo por comodidad en uno ya existente — con un test nuevo que pone un techo real de tools por nodo "specialist" para que la decisión no se posponga para siempre.
+- Aplicado como segundo caso real: Gmail (7 tools → leer/organizar/enviar) y Calendar (8 tools → ver/editar) se separan igual que Proyectos, usando datos que ya se registraban sin costo nuevo.
+- El cerebro pasa de 17 nodos reales (al empezar esta sesión) a 22.
+- 415/415 tests. Verificado con Playwright contra el snapshot real. Ver ADR 0055.

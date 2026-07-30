@@ -263,7 +263,7 @@ def test_dashboard_brain_since_param_filters_to_new_events_only(client, monkeypa
     second = client.get(f"/dashboard/brain?since={first['server_time']}").json()
 
     assert len(second["events"]) == 1
-    assert second["events"][0]["node"] == "gmail"
+    assert second["events"][0]["node"] == "gmail_read"
 
 
 def test_dashboard_preferences_defaults_before_any_save(client, tmp_path, monkeypatch):

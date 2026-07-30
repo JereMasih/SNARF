@@ -14,6 +14,27 @@ def test_node_tier_covers_every_node_id():
     assert set(brain.NODE_TIER.keys()) == set(brain.NODE_IDS)
 
 
+def test_no_specialist_node_absorbs_too_many_tools():
+    """Protocolo de crecimiento del cerebro (ver el comentario al inicio de
+    brain.py y ADR 0054): un nodo "specialist" con demasiadas tools quedó
+    invisible sobre CUÁL subcapacidad estaba realmente activa (le pasó a
+    Proyectos con 14). Este techo obliga a decidir conscientemente si toca
+    dividir la próxima vez que se agregue una tool nueva, en vez de dejar
+    que un nodo crezca en silencio para siempre."""
+    MAX_TOOLS_PER_SPECIALIST_NODE = 8
+    by_node: dict[str, int] = {}
+    for tool, node in brain.TOOL_TO_NODE.items():
+        by_node[node] = by_node.get(node, 0) + 1
+    for node_id, tier in brain.NODE_TIER.items():
+        if tier != "specialist":
+            continue
+        count = by_node.get(node_id, 0)
+        assert count <= MAX_TOOLS_PER_SPECIALIST_NODE, (
+            f"'{node_id}' tiene {count} tools — evaluar si conviene dividirlo en subcapacidades "
+            f"reales (ver protocolo de crecimiento en snarf/telemetry/brain.py)"
+        )
+
+
 def test_snapshot_aggregates_activity_entries_into_capability_node_counts():
     entries = [
         {"timestamp": 1.0, "tool_name": "drive_list_files", "status": "ok"},
@@ -22,7 +43,7 @@ def test_snapshot_aggregates_activity_entries_into_capability_node_counts():
     ]
     result = brain.snapshot(entries, [], [], {})
     assert result["nodes"]["drive"]["count"] == 2
-    assert result["nodes"]["gmail"]["count"] == 1
+    assert result["nodes"]["gmail_read"]["count"] == 1
     assert result["nodes"]["orchestrator"]["count"] == 3
 
 
@@ -30,7 +51,9 @@ def test_snapshot_routes_gmail_digest_to_the_specialist_node_not_gmail():
     entries = [{"timestamp": 1.0, "tool_name": "gmail_summarize_inbox", "status": "ok"}]
     result = brain.snapshot(entries, [], [], {})
     assert result["nodes"]["specialist_gmail"]["count"] == 1
-    assert result["nodes"]["gmail"]["count"] == 0
+    assert result["nodes"]["gmail_read"]["count"] == 0
+    assert result["nodes"]["gmail_manage"]["count"] == 0
+    assert result["nodes"]["gmail_send"]["count"] == 0
 
 
 def test_snapshot_routes_project_tools_to_specialist_nodes_not_drive_or_knowledge():

@@ -234,3 +234,5 @@ Conocimiento histórico que deja de estar vigente pero nunca se elimina.
 ## Regla de crecimiento
 
 Si un nuevo elemento no encuentra lugar dentro del mapa, primero deberá evolucionar el mapa y después incorporarse el nuevo elemento.
+
+Esta misma regla aplica al cerebro de Snarf (la representación visual en vivo de Capacidades/Especialistas/Orchestrator, `snarf/telemetry/brain.py`): cada tool/Capacidad/Especialista/canal nuevo evalúa en el mismo cambio si merece su propio nodo, en vez de encajarlo por comodidad en uno ya existente. Protocolo completo y el porqué en el comentario al inicio de `brain.py`; `test_no_specialist_node_absorbs_too_many_tools` le pone un techo real al tier "specialist" para que la decisión no se posponga para siempre. Ver ADR 0054.

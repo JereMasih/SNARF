@@ -1,15 +1,41 @@
 CENTER_NODE = "orchestrator"
 
-# Mapea cada una de las 35 herramientas reales que despacha
-# Orchestrator._tool_handlers a la Capacidad que representa en el cerebro de
-# Snarf. Cubierto por test_brain.py::test_tool_to_node_covers_every_tool,
-# que lo compara contra la lista real de herramientas del Orchestrator —
-# para que una herramienta nueva no quede sin mapear en silencio.
+# ---------------------------------------------------------------------------
+# PROTOCOLO DE CRECIMIENTO DEL CEREBRO (permanente — ver ADR 0054)
 #
-# `gmail_summarize_inbox` rutea a "specialist_gmail", no a "gmail": es el
-# único Especialista Cognitivo real hoy (GmailDigestSpecialist, ADR 0025),
-# una capa arquitectónica distinta de la Capacidad Gmail cruda (COGNITION.md,
-# ADR 0003) — el cerebro refleja esa distinción real, no una arbitraria.
+# Cada vez que se agregue algo nuevo a Snarf que despache por acá (una tool,
+# una Capacidad, un Especialista Cognitivo, un canal de entrada/salida),
+# resolver ANTES de cerrar ese mismo cambio — nunca como tarea aparte para
+# "después":
+#
+# 1. Agregar su(s) tool_name(s) reales a TOOL_TO_NODE. El test
+#    test_tool_to_node_covers_every_orchestrator_tool ya revienta si se
+#    olvida — eso es la red de seguridad mínima (que nada quede sin
+#    mapear), no el criterio de calidad.
+# 2. Preguntar: ¿un usuario que mira el grafo reconocería esto como una
+#    SUBCAPACIDAD DISTINTA (algo que él pediría/notaría por separado), o es
+#    solo una operación más de una capacidad que ya tiene nodo? Ante la
+#    duda, preferir un nodo nuevo — el cerebro existe para mostrar
+#    crecimiento real, no para quedar cómodo y prolijo con pocos nodos.
+#    Ejemplo real: Proyectos (14 tools) y luego Gmail/Calendar se separaron
+#    en nodos por exactamente este criterio (gestión/tareas/conversaciones,
+#    lectura/organización/envío, ver/editar) — ninguno fue una decisión de
+#    "hay que dividir todo", fue "¿esto es una cosa distinta?".
+# 3. test_no_specialist_node_absorbs_too_many_tools pone un techo real
+#    (no solo un comentario que se puede ignorar) al tier "specialist": si
+#    un nodo ahí supera el límite, el test falla y OBLIGA a decidir
+#    conscientemente si toca dividir, en vez de acumular en silencio como
+#    pasó con Proyectos antes de ADR 0054. El tier "capability" (wrappers
+#    de API cruda) no tiene ese techo automático porque ahí SÍ puede haber
+#    operaciones legítimamente parecidas (CRUD de un mismo recurso) — el
+#    criterio del punto 2 sigue aplicando iagual, a criterio.
+# 4. Si se agrega un Especialista Cognitivo nuevo (capa distinta de una
+#    Capacidad cruda, ver COGNITION.md/ADR 0003), va al tier "specialist"
+#    aunque tenga una sola tool — el ejemplo real es specialist_gmail.
+# 5. MASTER_MAP.md ("Regla de crecimiento") ya dice que algo nuevo primero
+#    evoluciona el mapa antes de encajar a la fuerza — este protocolo es la
+#    misma regla, aplicada específicamente al cerebro.
+# ---------------------------------------------------------------------------
 TOOL_TO_NODE: dict[str, str] = {
     "list_conversations": "memory",
     "get_conversation": "memory",
@@ -30,13 +56,17 @@ TOOL_TO_NODE: dict[str, str] = {
     "drive_create_document": "documents",
     "drive_create_spreadsheet": "documents",
     "drive_create_presentation": "documents",
-    "gmail_list_messages": "gmail",
-    "gmail_read_message": "gmail",
-    "gmail_list_labels": "gmail",
-    "gmail_create_label": "gmail",
-    "gmail_modify_message_labels": "gmail",
-    "gmail_send_message": "gmail",
-    "gmail_delete_label": "gmail",
+    # Gmail crudo (Capacidad, no Especialista) separado por lo que un usuario
+    # reconocería como acciones distintas: leer/mirar, organizar, y enviar
+    # (esta última la única con efecto real hacia afuera — "canal de
+    # salida" real, no solo lectura).
+    "gmail_list_messages": "gmail_read",
+    "gmail_read_message": "gmail_read",
+    "gmail_list_labels": "gmail_read",
+    "gmail_create_label": "gmail_manage",
+    "gmail_modify_message_labels": "gmail_manage",
+    "gmail_delete_label": "gmail_manage",
+    "gmail_send_message": "gmail_send",
     "gmail_summarize_inbox": "specialist_gmail",
     # Proyectos tenía las 14 tools de este Especialista cayendo en un único
     # nodo — de lejos el más cargado del cerebro, y el más opaco: no se veía
@@ -59,14 +89,16 @@ TOOL_TO_NODE: dict[str, str] = {
     "project_assign_conversation": "specialist_projects_conversations",
     "project_unassign_conversation": "specialist_projects_conversations",
     "project_list_conversations": "specialist_projects_conversations",
-    "calendar_list_calendars": "calendar",
-    "calendar_list_upcoming_events": "calendar",
-    "calendar_search_events": "calendar",
-    "calendar_create_event": "calendar",
-    "calendar_create_calendar": "calendar",
-    "calendar_delete_calendar": "calendar",
-    "calendar_delete_event": "calendar",
-    "calendar_move_event": "calendar",
+    # Calendar separado en ver vs. editar — mismo criterio que Gmail: mirar
+    # el calendario es una acción distinta de crear/borrar/mover algo en él.
+    "calendar_list_calendars": "calendar_view",
+    "calendar_list_upcoming_events": "calendar_view",
+    "calendar_search_events": "calendar_view",
+    "calendar_create_event": "calendar_edit",
+    "calendar_create_calendar": "calendar_edit",
+    "calendar_delete_calendar": "calendar_edit",
+    "calendar_delete_event": "calendar_edit",
+    "calendar_move_event": "calendar_edit",
     "youtube_list_subscriptions": "youtube",
     "youtube_list_liked_videos": "youtube",
     "personality_set_sarcasm": "personality",
@@ -103,8 +135,11 @@ NODE_TIER: dict[str, str] = {
     "drive": "capability",
     "knowledge": "capability",
     "documents": "capability",
-    "gmail": "capability",
-    "calendar": "capability",
+    "gmail_read": "capability",
+    "gmail_manage": "capability",
+    "gmail_send": "capability",
+    "calendar_view": "capability",
+    "calendar_edit": "capability",
     "youtube": "capability",
     "llm": "capability",
     "stt": "capability",
