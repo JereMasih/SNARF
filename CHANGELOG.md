@@ -435,3 +435,14 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - El modal chico de detalle de proyecto se retira: entrar a un proyecto desde la barra lateral ahora la escala para mostrar solo sus conversaciones, y el área de chat muestra el "home" del proyecto (estadísticas, resumen, prompt con contador de caracteres, tareas, notas) mientras no haya ninguna conversación abierta.
 - Dos bugs reales encontrados con Playwright y corregidos: `file_count` contaba las propias subcarpetas del proyecto como archivos; volver a "todos los proyectos" cerraba la barra lateral entera en vez de solo la lista.
 - 398/398 tests. Verificado de punta a punta con Playwright contra una instancia real aislada (Drive/LLM reales), limpiado sin dejar rastro en producción. Ver ADR 0047.
+
+## [2026-07-29] Proyectos usable de verdad en escritorio, menú contextual, copiar y cerebro vivo
+
+- **Bug raíz encontrado usando la interfaz real**: entrar a un proyecto en escritorio dejaba "una pantalla sin nada" — `enterProject()` llamaba `showChat()`, que apaga el modo Jarvis; en escritorio eso oculta la grilla donde vive reparentado el chat y muestra el `#viewChat` original, vacío desde el arranque. Corregido: `showChat()` solo se llama fuera de escritorio.
+- El cajón del hamburguesa en escritorio ya no duplica el historial de conversaciones/proyectos (redundante con el bloque fijo de la grilla) — queda solo para configuración y cerrar sesión.
+- Nuevo botón fijo "🏠 home del proyecto" para volver sin salir de la conversación.
+- El icono suelto 📁/✕ se reemplaza por un menú contextual (⋮, mismo patrón visual que el menú de usuario) — suma "mover a otro proyecto" dentro de la vista de un proyecto, que antes faltaba.
+- Título "(nueva conversación)" que se quedaba pegado para siempre: `sendText()` ahora refresca las listas al completar el primer mensaje.
+- Botones de copiar en las respuestas de Snarf: la respuesta completa, y cada bloque de código/entregable por separado (sin arrastrar el comentario alrededor).
+- El widget colapsado del cerebro de Snarf ahora hace poll propio cada 4s (antes una foto fija) — se siente vivo sin tener que abrir la pantalla completa. Cada nodo del grafo reemplaza su título de texto por un ícono, con el nombre completo como tooltip.
+- 398/398 tests (sin cambios de backend esta ronda). Verificado con Playwright en escritorio contra una instancia real aislada. Ver ADR 0048.

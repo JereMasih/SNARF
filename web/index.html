@@ -255,6 +255,14 @@
     body.jarvis-mode .dash-widget-body {
       display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-y: auto;
     }
+    /* El historial de conversaciones/proyectos ya vive como bloque propio
+       de la grilla (#dashHistoryParked) — mostrarlo TAMBIÉN acá, dentro del
+       cajón del hamburguesa, era pura redundancia (mismo contenido, dos
+       lugares). El cajón en escritorio queda solo para lo que no tiene otro
+       camino: configuración del dashboard y cerrar sesión. Selector con
+       #sidebar a propósito: #dashHistoryParked reusa las mismas clases
+       .sidebar-tabs/.sidebar-tab-panel y no debe verse afectado. */
+    body.jarvis-mode #sidebar .sidebar-tabs, body.jarvis-mode #sidebar .sidebar-tab-panel { display: none; }
   }
   .dash-grid-desktop { display: none; }
 
@@ -397,19 +405,34 @@
   .project-home-prompt-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 0.4rem; }
   .project-home-prompt-footer span { font-size: 0.66rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 
-  /* --- mover/quitar una conversación de un proyecto (spec Mark II) --- */
+  /* --- mover/quitar una conversación de un proyecto (spec Mark II) ---
+     Mismo patrón visual que .user-menu/.user-menu-popover (botón + popover
+     con .open en el wrapper) en vez del icono suelto 📁 de la primera
+     versión — un solo menú contextual (⋮) por fila para todas las acciones. */
   .conv-item-row { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; }
   .conv-item-row .conv-item-main { flex: 1 1 auto; min-width: 0; cursor: pointer; }
-  .conv-item-action {
-    flex: 0 0 auto; background: none; border: none; color: var(--text-dim);
-    cursor: pointer; font-size: 0.78rem; padding: 0.15rem 0.35rem; border-radius: 6px; line-height: 1;
+  .conv-item-menu { position: relative; flex-shrink: 0; }
+  .conv-item-menu-btn {
+    width: 22px; height: 22px; border-radius: 6px; border: none; background: none;
+    color: var(--text-dim); font-size: 0.85rem; cursor: pointer; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
   }
-  .conv-item-action:hover { color: var(--text); background: rgba(79,216,232,0.15); }
-  .conv-move-select {
-    margin: 0.3rem 0 0; width: 100%; font-family: inherit; font-size: 0.68rem;
-    background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid rgba(79,216,232,0.3);
-    border-radius: 6px; padding: 0.3rem;
+  .conv-item-menu-btn:hover { color: var(--text); background: rgba(79,216,232,0.15); }
+  .conv-item-menu-popover {
+    position: absolute; right: 0; top: calc(100% + 4px); min-width: 165px;
+    background: rgba(5,10,12,0.96); border: 1px solid rgba(79,216,232,0.3);
+    border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 2px;
+    opacity: 0; transform: translateY(-4px); pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease; z-index: 5;
   }
+  .conv-item-menu.open .conv-item-menu-popover { opacity: 1; transform: none; pointer-events: auto; }
+  .conv-item-menu-item {
+    display: block; width: 100%; background: none; border: none; color: var(--text-dim);
+    font-family: inherit; font-size: 0.72rem; padding: 0.5rem 0.6rem; border-radius: 8px;
+    cursor: pointer; text-align: left;
+  }
+  .conv-item-menu-item:hover { background: rgba(79,216,232,0.1); color: var(--text); }
+  .conv-item-menu-empty { padding: 0.5rem 0.6rem; font-size: 0.68rem; color: var(--text-dim); opacity: 0.6; }
   .project-field { display: flex; flex-direction: column; gap: 0.4rem; }
   .project-field-label { font-size: 0.66rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
   .project-field textarea {
@@ -569,6 +592,10 @@
      que tiene que dominar visualmente. */
   .brain-edge { stroke: var(--glow-dim); stroke-opacity: 0.13; stroke-width: 0.7; fill: none; }
   .brain-node-label { fill: var(--text-dim); font-size: 11px; text-anchor: middle; }
+  /* Ícono en vez de nombre de texto (pedido del fundador, más limpio de
+     mirar) — el nombre completo sigue disponible como tooltip nativo
+     (<title> SVG) al pasar el mouse. */
+  .brain-node-label-icon { font-size: 15px; }
   /* Pulso puntual por evento real — currentColor toma el color propio del
      nodo de origen (ver brainColorClassFor), salvo que sea un error o un
      archivo con categoría real conocida, que pisan ese color a propósito. */
@@ -595,6 +622,26 @@
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
   }
+  /* Mismo slot que .mode-fab (right:16px) — nunca coinciden: el fab de modo
+     se oculta en escritorio (body.jarvis-mode .mode-fab) y este botón solo
+     se muestra cuando hay una conversación de proyecto cargada, nunca
+     mientras se mira el propio home. */
+  .project-home-btn {
+    display: none;
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    right: 16px;
+    z-index: 6;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    border: 1px solid rgba(79,216,232,0.3);
+    background: rgba(5,10,12,0.6);
+    color: var(--glow);
+    font-size: 1rem;
+    align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  .project-home-btn.visible { display: flex; }
 
   /* --- dashboard --- */
   .dash-mobile-stack {
@@ -701,10 +748,35 @@
     font-size: 0.82em;
   }
   .msg.snarf pre {
+    position: relative;
     background: rgba(0,0,0,0.4); border: 1px solid rgba(79,216,232,0.2);
     border-radius: 8px; padding: 0.6rem 0.7rem; overflow-x: auto; margin: 0 0 0.5rem;
   }
   .msg.snarf pre code { background: none; padding: 0; }
+  /* Copiar un bloque de código/entregable puntual, sin arrastrar el resto
+     del mensaje (el comentario de Snarf alrededor del texto) — distinto del
+     botón "copiar respuesta" de más abajo, que copia todo. */
+  .copy-code-btn {
+    position: absolute; top: 6px; right: 6px;
+    background: rgba(5,10,12,0.7); border: 1px solid rgba(79,216,232,0.3);
+    color: var(--glow-soft); font-family: inherit; font-size: 0.62rem;
+    padding: 0.2rem 0.5rem; border-radius: 999px; cursor: pointer;
+  }
+  .copy-code-btn:hover { background: rgba(79,216,232,0.15); }
+  .msg-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
+  .msg-actions .play-audio-btn, .msg-actions .copy-msg-btn { margin-top: 0; }
+  .copy-msg-btn {
+    display: flex; width: fit-content; align-items: center; gap: 0.3rem;
+    background: rgba(79,216,232,0.1);
+    border: 1px solid rgba(79,216,232,0.3);
+    color: var(--glow-soft);
+    font-family: inherit;
+    font-size: 0.65rem;
+    letter-spacing: 0.04em;
+    padding: 0.3rem 0.6rem;
+    border-radius: 999px;
+    cursor: pointer;
+  }
   .msg.snarf strong { color: var(--text); }
   .msg.snarf table {
     width: 100%; border-collapse: collapse; margin: 0 0 0.5rem; font-size: 0.8rem;
@@ -959,6 +1031,7 @@
 
   <button class="menu-btn" id="menuBtn"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
   <button class="dash-btn" id="dashBtn" title="Dashboard"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg></button>
+  <button class="project-home-btn" id="projectHomeBtn" title="home del proyecto">🏠</button>
   <button class="mode-fab" id="modeFab"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="5" width="15" height="10" rx="1.5"/><line x1="5.5" y1="8.5" x2="5.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="8.5" y1="8.5" x2="8.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="11.5" y1="8.5" x2="11.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="14.5" y1="8.5" x2="14.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="6" y1="12" x2="14" y2="12" stroke-linecap="round"/></svg></button>
   <div class="mode-popover" id="modePopover">
     <button class="mode-option" data-mode="click"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="1.6" fill="currentColor" stroke="none"/></svg> Toque</button>
@@ -1156,6 +1229,7 @@ const micBtn = document.getElementById("micBtn");
 const attachBtn = document.getElementById("attachBtn");
 const fileInput = document.getElementById("fileInput");
 const dashBtn = document.getElementById("dashBtn");
+const projectHomeBtn = document.getElementById("projectHomeBtn");
 const viewChat = document.getElementById("viewChat");
 const viewDashboard = document.getElementById("viewDashboard");
 const dashboardInner = document.getElementById("dashboardInner");
@@ -1298,18 +1372,52 @@ async function fetchAndPlay(text, btn) {
     if (btn.textContent === "generando audio...") btn.textContent = original;
   }
 }
+async function copyTextToClipboard(text, btn) {
+  const original = btn.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = "✓ copiado";
+  } catch (e) {
+    btn.textContent = "no se pudo copiar";
+  }
+  setTimeout(() => { btn.textContent = original; }, 1600);
+}
+
+// Botón de copiar propio por cada bloque ```código``` — para pedir un texto,
+// prompt o entregable puntual sin arrastrar el comentario de Snarf alrededor.
+function addCodeBlockCopyButtons(container) {
+  container.querySelectorAll("pre").forEach((pre) => {
+    const code = pre.querySelector("code");
+    if (!code) return;
+    const btn = document.createElement("button");
+    btn.className = "copy-code-btn";
+    btn.textContent = "📋 copiar";
+    btn.addEventListener("click", () => copyTextToClipboard(code.textContent, btn));
+    pre.appendChild(btn);
+  });
+}
+
 function addMessage(text, who, withAudio) {
   const div = document.createElement("div");
   div.className = "msg " + who;
   if (who === "snarf") {
     div.innerHTML = renderMarkdown(text);
+    addCodeBlockCopyButtons(div);
+    const actions = document.createElement("div");
+    actions.className = "msg-actions";
     if (withAudio) {
-      const btn = document.createElement("button");
-      btn.className = "play-audio-btn";
-      btn.textContent = "▶ escuchar";
-      btn.addEventListener("click", () => fetchAndPlay(text, btn));
-      div.appendChild(btn);
+      const audioBtn = document.createElement("button");
+      audioBtn.className = "play-audio-btn";
+      audioBtn.textContent = "▶ escuchar";
+      audioBtn.addEventListener("click", () => fetchAndPlay(text, audioBtn));
+      actions.appendChild(audioBtn);
     }
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "copy-msg-btn";
+    copyBtn.textContent = "📋 copiar respuesta";
+    copyBtn.addEventListener("click", () => copyTextToClipboard(text, copyBtn));
+    actions.appendChild(copyBtn);
+    div.appendChild(actions);
   } else {
     div.textContent = text;
   }
@@ -1407,6 +1515,80 @@ function closeSidebar() { sidebar.classList.remove("open"); sidebarOverlay.class
 menuBtn.addEventListener("click", openSidebar);
 sidebarOverlay.addEventListener("click", closeSidebar);
 
+/* Menú contextual (⋮) por fila de conversación — mismo patrón que
+   .user-menu/.user-menu-popover (wrapper con clase .open, cerrado por un
+   click afuera). Reemplaza el icono 📁 suelto de la primera versión: ahora
+   es un solo punto de entrada para todas las acciones de la fila. */
+function closeAllConvMenus() {
+  document.querySelectorAll(".conv-item-menu.open").forEach((m) => m.classList.remove("open"));
+}
+document.addEventListener("click", closeAllConvMenus);
+
+function buildConvMenu(actions) {
+  const wrap = document.createElement("div");
+  wrap.className = "conv-item-menu";
+  const btn = document.createElement("button");
+  btn.className = "conv-item-menu-btn";
+  btn.title = "opciones";
+  btn.textContent = "⋮";
+  const popover = document.createElement("div");
+  popover.className = "conv-item-menu-popover";
+  function renderRootActions() {
+    popover.innerHTML = "";
+    actions.forEach((a) => {
+      const item = document.createElement("button");
+      item.className = "conv-item-menu-item";
+      item.textContent = a.label;
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        a.onClick(popover);
+      });
+      popover.appendChild(item);
+    });
+  }
+  renderRootActions();
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const willOpen = !wrap.classList.contains("open");
+    closeAllConvMenus();
+    if (willOpen) renderRootActions();
+    wrap.classList.toggle("open", willOpen);
+  });
+  wrap.appendChild(btn);
+  wrap.appendChild(popover);
+  return wrap;
+}
+
+// Reemplaza el <select> anidado de la primera versión: clickear "mover a
+// ..." transforma el mismo popover en la lista de proyectos disponibles
+// (excluyendo el proyecto actual si la conversación ya está dentro de uno).
+async function showMoveSubmenu(popover, conversationIdToMove, excludeProjectId) {
+  popover.innerHTML = '<div class="conv-item-menu-empty">cargando...</div>';
+  const res = await apiFetch("/projects");
+  let projects = await res.json();
+  if (excludeProjectId) projects = projects.filter((p) => p.id !== excludeProjectId);
+  if (!projects.length) {
+    popover.innerHTML = '<div class="conv-item-menu-empty">no hay otros proyectos</div>';
+    return;
+  }
+  popover.innerHTML = "";
+  projects.forEach((p) => {
+    const item = document.createElement("button");
+    item.className = "conv-item-menu-item";
+    item.textContent = p.name;
+    item.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await apiFetch(`/conversations/${conversationIdToMove}/project`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: p.id }),
+      });
+      closeAllConvMenus();
+      refreshConvLists();
+      refreshProjectList();
+    });
+    popover.appendChild(item);
+  });
+}
+
 function renderConvListInto(container, convs) {
   container.innerHTML = "";
   if (!convs.length) {
@@ -1416,41 +1598,25 @@ function renderConvListInto(container, convs) {
   convs.forEach(c => {
     const div = document.createElement("div");
     div.className = "conv-item" + (c.conversation_id === conversationId ? " active" : "");
-    div.innerHTML = `
-      <div class="conv-item-row">
-        <span class="conv-item-main">${escapeHtml(c.title || "(sin título)")}<span class="conv-date">${relativeTime(c.last_activity)}</span></span>
-        <button class="conv-item-action" data-action="move" title="mover a un proyecto">📁</button>
-      </div>`;
-    div.querySelector(".conv-item-main").addEventListener("click", () => loadConversation(c.conversation_id));
-    div.querySelector('[data-action="move"]').addEventListener("click", (e) => {
-      e.stopPropagation();
-      openMoveToProjectPicker(c.conversation_id, div);
+    const row = document.createElement("div");
+    row.className = "conv-item-row";
+    const main = document.createElement("span");
+    main.className = "conv-item-main";
+    main.innerHTML = `${escapeHtml(c.title || "(sin título)")}<span class="conv-date">${relativeTime(c.last_activity)}</span>`;
+    main.addEventListener("click", () => {
+      // Esta lista es siempre de conversaciones SIN proyecto (GET
+      // /conversations pide unassigned_only=true) — entrar acá nunca deja
+      // currentProjectId de una visita anterior colgado.
+      currentProjectId = null;
+      loadConversation(c.conversation_id);
     });
+    row.appendChild(main);
+    row.appendChild(buildConvMenu([
+      { label: "mover a un proyecto", onClick: (popover) => showMoveSubmenu(popover, c.conversation_id, null) },
+    ]));
+    div.appendChild(row);
     container.appendChild(div);
   });
-}
-
-async function openMoveToProjectPicker(conversationIdToMove, rowEl) {
-  const existing = rowEl.querySelector(".conv-move-select");
-  if (existing) { existing.remove(); return; }
-  const res = await apiFetch("/projects");
-  const projects = await res.json();
-  if (!projects.length) { alert("todavía no hay proyectos creados"); return; }
-  const select = document.createElement("select");
-  select.className = "conv-move-select";
-  select.innerHTML =
-    '<option value="">mover a un proyecto...</option>' +
-    projects.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
-  select.addEventListener("click", (e) => e.stopPropagation());
-  select.addEventListener("change", async () => {
-    if (!select.value) return;
-    await apiFetch(`/conversations/${conversationIdToMove}/project`, {
-      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: select.value }),
-    });
-    refreshConvLists();
-    refreshProjectList();
-  });
-  rowEl.appendChild(select);
 }
 async function refreshConvLists() {
   const targets = [convList, dashConvList].filter((el) => el && el.isConnected);
@@ -1480,6 +1646,7 @@ async function loadConversation(id) {
     addMessage("no se pudo cargar la conversación: " + (e.message || e), "snarf");
   }
   setState("idle", idleLabel());
+  updateProjectHomeBtnVisibility();
 }
 
 function startNewConversation() {
@@ -1491,6 +1658,7 @@ function startNewConversation() {
   setState("idle", idleLabel());
   refreshConvLists();
   refreshProjectList();
+  updateProjectHomeBtnVisibility();
 }
 newConvBtn.addEventListener("click", startNewConversation);
 dashNewConvBtn.addEventListener("click", startNewConversation);
@@ -1543,18 +1711,22 @@ function renderProjectConversationsInto(container, conversations) {
   conversations.forEach((c) => {
     const div = document.createElement("div");
     div.className = "conv-item" + (c.conversation_id === conversationId ? " active" : "");
-    div.innerHTML = `
-      <div class="conv-item-row">
-        <span class="conv-item-main">${escapeHtml(c.title || "(sin título)")}<span class="conv-date">${relativeTime(c.last_activity)}</span></span>
-        <button class="conv-item-action" data-action="unassign" title="quitar del proyecto">✕</button>
-      </div>`;
-    div.querySelector(".conv-item-main").addEventListener("click", () => loadConversation(c.conversation_id));
-    div.querySelector('[data-action="unassign"]').addEventListener("click", async (e) => {
-      e.stopPropagation();
-      await apiFetch(`/conversations/${c.conversation_id}/project`, { method: "DELETE" });
-      refreshProjectList();
-      refreshConvLists();
-    });
+    const row = document.createElement("div");
+    row.className = "conv-item-row";
+    const main = document.createElement("span");
+    main.className = "conv-item-main";
+    main.innerHTML = `${escapeHtml(c.title || "(sin título)")}<span class="conv-date">${relativeTime(c.last_activity)}</span>`;
+    main.addEventListener("click", () => loadConversation(c.conversation_id));
+    row.appendChild(main);
+    row.appendChild(buildConvMenu([
+      { label: "mover a otro proyecto", onClick: (popover) => showMoveSubmenu(popover, c.conversation_id, currentProjectId) },
+      { label: "quitar del proyecto", onClick: async () => {
+          await apiFetch(`/conversations/${c.conversation_id}/project`, { method: "DELETE" });
+          refreshProjectList();
+          refreshConvLists();
+        } },
+    ]));
+    div.appendChild(row);
     container.appendChild(div);
   });
 }
@@ -1728,15 +1900,28 @@ async function showProjectHome(id) {
   }
 }
 
+// Visible solo mientras hay una conversación de proyecto abierta (nunca
+// mientras se mira el propio home, donde ya está de más).
+function updateProjectHomeBtnVisibility() {
+  projectHomeBtn.classList.toggle("visible", Boolean(currentProjectId) && Boolean(conversationId));
+}
+
 async function enterProject(id) {
   currentProjectId = id;
   conversationId = null;
   pendingProjectHomeId = id;
-  showChat();
+  // showChat() apaga el modo Jarvis (ver applyJarvisMode) — correcto en
+  // mobile, donde "chat" y "dashboard" son dos vistas separadas. En
+  // escritorio el chat vive siempre reparentado DENTRO de la grilla del
+  // dashboard; apagar Jarvis ahí solo oculta esa grilla y muestra el
+  // #viewChat original (vacío desde que se reparentó su contenido al
+  // arrancar) — pantalla en blanco real, bug encontrado en vivo.
+  if (!isDesktopDashboard()) showChat();
   closeSidebar();
   setState("idle", idleLabel());
   await refreshProjectList();
   await showProjectHome(id);
+  updateProjectHomeBtnVisibility();
 }
 
 function exitProject() {
@@ -1752,7 +1937,19 @@ function exitProject() {
   setState("idle", idleLabel());
   refreshProjectList();
   refreshConvLists();
+  updateProjectHomeBtnVisibility();
 }
+
+// Vuelve al home del proyecto actual sin salir de él (botón 🏠 fijo,
+// visible mientras haya una conversación de proyecto cargada).
+async function goToProjectHome() {
+  if (!currentProjectId) return;
+  conversationId = null;
+  pendingProjectHomeId = currentProjectId;
+  await showProjectHome(currentProjectId);
+  updateProjectHomeBtnVisibility();
+}
+projectHomeBtn.addEventListener("click", goToProjectHome);
 
 async function startNewProjectConversation(projectId) {
   conversationId = crypto.randomUUID();
@@ -1764,6 +1961,7 @@ async function startNewProjectConversation(projectId) {
   closeSidebar();
   setState("idle", idleLabel());
   refreshProjectList();
+  updateProjectHomeBtnVisibility();
 }
 
 async function createProject() {
@@ -1898,6 +2096,7 @@ function showChat() {
   dashBtn.innerHTML = ICONS.dashboard;
   applyJarvisMode();
   stopGmailDigestPolling();
+  stopBrainMiniPolling();
   closeBrainFullscreen();
   closeChatFocus();
 }
@@ -2175,10 +2374,11 @@ function startGmailDigestPolling() {
   gmailPollTimer = setInterval(() => checkGmailForNewMail(), GMAIL_DIGEST_POLL_MS);
 }
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) { stopGmailDigestPolling(); return; }
+  if (document.hidden) { stopGmailDigestPolling(); stopBrainMiniPolling(); return; }
   if (currentView === "dashboard") {
     checkGmailForNewMail();
     startGmailDigestPolling();
+    if (!brainPanel.classList.contains("open")) startBrainMiniPolling();
   }
 });
 
@@ -2342,6 +2542,29 @@ const BRAIN_NODE_LABELS = {
   personality: "Personalidad",
   orchestrator: "Orchestrator",
 };
+// El fundador pidió reemplazar el título de texto de cada nodo por un
+// carácter/ícono — más limpio de mirar en el grafo. El nombre completo
+// (BRAIN_NODE_LABELS) no se pierde: queda como tooltip nativo (<title> SVG)
+// al pasar el mouse, y sigue usándose tal cual en el feed de eventos.
+const BRAIN_NODE_ICONS = {
+  orchestrator: "⚙️",
+  input_text: "⌨️",
+  input_voice: "🎙️",
+  input_file: "📎",
+  specialist_gmail: "🗞️",
+  specialist_projects: "🗂️",
+  memory: "💾",
+  drive: "📁",
+  knowledge: "📚",
+  documents: "📄",
+  gmail: "✉️",
+  calendar: "📅",
+  youtube: "▶️",
+  llm: "🧠",
+  stt: "👂",
+  tts: "🔊",
+  personality: "🎭",
+};
 // Color real por nodo (paleta de la marca del fundador, ver CSS) — cada
 // tier tiene su propio color base; currentColor lo propaga a fill/stroke/
 // resplandor de nodo, edge y pulso sin repetir la lógica en tres lugares.
@@ -2469,6 +2692,35 @@ async function loadBrainWidgetInto(root) {
   // En el body, no en el head — así el asa de arrastre (que vive en el head)
   // nunca dispara la apertura de pantalla completa al reordenar el widget.
   body.addEventListener("click", openBrainFullscreen);
+  startBrainMiniPolling();
+}
+
+// El widget colapsado antes era una foto fija (una sola carga, refrescada
+// solo junto con el resto del dashboard) — el fundador señaló que así nunca
+// se veía "vivo" ni crecer con el uso real, salvo que abrieras la pantalla
+// completa. Ahora refresca sola mientras el dashboard está a la vista, igual
+// que el resto de los widgets con polling propio (Gmail); se pausa cuando el
+// panel de pantalla completa está abierto (ese ya tiene su propio poll más
+// rico, con pulsos y flujo animado) para no pedir el mismo snapshot dos veces.
+const BRAIN_MINI_POLL_MS = 4000;
+let brainMiniPollTimer = null;
+function stopBrainMiniPolling() {
+  if (brainMiniPollTimer) { clearInterval(brainMiniPollTimer); brainMiniPollTimer = null; }
+}
+async function refreshBrainMiniWidget() {
+  const body = document.querySelector('[data-widget-id="brain"] .dash-widget-body');
+  if (!body || !body.isConnected) { stopBrainMiniPolling(); return; }
+  try {
+    const res = await apiFetch("/dashboard/brain");
+    const data = await res.json();
+    body.innerHTML = brainMiniBodyHTML(data);
+  } catch (e) {
+    // poll silencioso: se reintenta en el próximo ciclo.
+  }
+}
+function startBrainMiniPolling() {
+  stopBrainMiniPolling();
+  brainMiniPollTimer = setInterval(refreshBrainMiniWidget, BRAIN_MINI_POLL_MS);
 }
 
 // Pantalla completa: grafo grande construido una sola vez (buildBrainGraphSkeleton)
@@ -2517,8 +2769,11 @@ function buildBrainGraphSkeleton() {
   const centerLabel = document.createElementNS(SVG_NS, "text");
   centerLabel.setAttribute("x", cx);
   centerLabel.setAttribute("y", cy + 48);
-  centerLabel.setAttribute("class", "brain-node-label");
-  centerLabel.textContent = "Orchestrator";
+  centerLabel.setAttribute("class", "brain-node-label brain-node-label-icon");
+  centerLabel.textContent = BRAIN_NODE_ICONS.orchestrator;
+  const centerTitle = document.createElementNS(SVG_NS, "title");
+  centerTitle.textContent = BRAIN_NODE_LABELS.orchestrator;
+  centerLabel.appendChild(centerTitle);
   nodesG.appendChild(centerLabel);
 
   layout.forEach((p) => {
@@ -2554,8 +2809,11 @@ function buildBrainGraphSkeleton() {
     const label = document.createElementNS(SVG_NS, "text");
     label.setAttribute("x", p.x.toFixed(1));
     label.setAttribute("y", (p.y + (p.y > cy ? 24 : -18)).toFixed(1));
-    label.setAttribute("class", "brain-node-label");
-    label.textContent = BRAIN_NODE_LABELS[p.id];
+    label.setAttribute("class", "brain-node-label brain-node-label-icon");
+    label.textContent = BRAIN_NODE_ICONS[p.id] || "●";
+    const title = document.createElementNS(SVG_NS, "title");
+    title.textContent = BRAIN_NODE_LABELS[p.id] || p.id;
+    label.appendChild(title);
     nodesG.appendChild(label);
   });
 
@@ -2566,10 +2824,11 @@ function buildBrainGraphSkeleton() {
 
 function brainFeedRowHTML(ev) {
   const isError = ev.status !== "ok";
+  const icon = BRAIN_NODE_ICONS[ev.node] || "●";
   const label = BRAIN_NODE_LABELS[ev.node] || ev.node;
   return `<div class="brain-feed-row">
     <span class="dash-dot ${isError ? "off" : "ok"}"></span>
-    <span class="brain-feed-label">${escapeHtml(label)} · ${escapeHtml(ev.label || "")}</span>
+    <span class="brain-feed-label">${icon} ${escapeHtml(label)} · ${escapeHtml(ev.label || "")}</span>
     <span class="brain-feed-time">${relativeTime(ev.timestamp)}</span>
   </div>`;
 }
@@ -2964,6 +3223,7 @@ async function pollBrain() {
   }
 }
 async function openBrainFullscreen() {
+  stopBrainMiniPolling(); // pantalla completa tiene su propio poll, más rico — no pedir el mismo snapshot dos veces
   brainOverlay.classList.add("open");
   brainPanel.classList.add("open");
   if (!brainGraphBuilt) {
@@ -2991,6 +3251,7 @@ function closeBrainFullscreen() {
   brainCamera.y = brainCamera.targetY = 250;
   brainCamera.zoom = brainCamera.targetZoom = 1;
   brainSince = null;
+  if (currentView === "dashboard") startBrainMiniPolling();
 }
 brainOverlay.addEventListener("click", closeBrainFullscreen);
 brainCloseBtn.addEventListener("click", closeBrainFullscreen);
@@ -3460,6 +3721,13 @@ async function sendText(text) {
     hideTyping();
     addMessage(data.response, "snarf", ttsAvailable);
     setState("idle", idleLabel());
+    // Sin esto, una conversación nueva se queda mostrando el placeholder
+    // "(nueva conversación)" en las listas hasta que el usuario navega fuera
+    // y vuelve — recién acá existe una entrada real de la que derivar el
+    // título de verdad (primer mensaje).
+    refreshConvLists();
+    refreshProjectList();
+    updateProjectHomeBtnVisibility();
   } catch (e) {
     hideTyping();
     setState("error", "error: " + (e.message || e));
