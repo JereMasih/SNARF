@@ -488,6 +488,15 @@
   .brain-mini svg { width: 100%; max-width: 160px; height: auto; }
   .brain-mini-stat { font-size: 0.78rem; color: var(--text); text-align: center; }
   .brain-mini-stat-sub { font-size: 0.68rem; color: var(--text-dim); text-align: center; }
+  /* Mini-animación del cerebro dentro del indicador de "pensando" — chica,
+     clickeable, invita a mirar el cerebro completo mientras se espera. */
+  .thinking-brain-preview {
+    width: 44px; height: 44px; margin-top: 0.35rem; cursor: pointer;
+    border-radius: 50%; transition: transform 0.15s ease, filter 0.15s ease;
+    filter: drop-shadow(0 0 6px rgba(79,216,232,0.35));
+  }
+  .thinking-brain-preview:hover { transform: scale(1.08); filter: drop-shadow(0 0 10px rgba(79,216,232,0.55)); }
+  .thinking-brain-preview svg { width: 100%; height: 100%; }
 
   /* El color de cada nodo/edge viene de `color` (currentColor) — una clase
      por Capacidad/tier se lo asigna una sola vez al construir el grafo, acá
@@ -1664,15 +1673,47 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak) {
   chat.scrollTop = chat.scrollHeight;
   return div;
 }
+// Mientras Snarf piensa, el indicador de "..." suma una mini-animación del
+// cerebro real (mismo SVG chico del widget del dashboard, con datos reales
+// de /dashboard/brain) — clickeable, para asomarse al cerebro completo
+// mientras se espera en vez de mirar tres puntitos fijos. Se pide sola,
+// sin bloquear los tres puntitos (que aparecen ya, sin esperar la red).
+async function loadThinkingBrainPreview(bubble) {
+  try {
+    const res = await apiFetch("/dashboard/brain");
+    const data = await res.json();
+    if (bubble !== typingBubble || !bubble.isConnected) return; // la respuesta ya llegó — no insertar nada obsoleto
+    const preview = document.createElement("div");
+    preview.className = "thinking-brain-preview";
+    preview.title = "ver el cerebro de Snarf";
+    preview.innerHTML = brainMiniSvgMarkup(data);
+    preview.addEventListener("click", () => {
+      brainOpenedFromThinking = true;
+      openBrainFullscreen();
+    });
+    bubble.appendChild(preview);
+  } catch (e) {
+    // silencioso: el indicador de tres puntitos ya está solo, no hace falta más
+  }
+}
+// true mientras el cerebro está abierto porque se tocó ESTA mini-animación
+// (no el widget del dashboard) — es la señal para forzar la vuelta al chat
+// automáticamente apenas la respuesta esté lista (ver hideTyping).
+let brainOpenedFromThinking = false;
 function showTyping() {
   typingBubble = document.createElement("div");
   typingBubble.className = "msg snarf";
   typingBubble.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
   chatInner.appendChild(typingBubble);
   chat.scrollTop = chat.scrollHeight;
+  loadThinkingBrainPreview(typingBubble);
 }
 function hideTyping() {
   if (typingBubble) { typingBubble.remove(); typingBubble = null; }
+  if (brainOpenedFromThinking) {
+    brainOpenedFromThinking = false;
+    if (isBrainOpen()) closeBrainFullscreen();
+  }
 }
 
 function setMode(next, autoFocus = true) {
@@ -3037,7 +3078,10 @@ function brainStateClass(node) {
 // — se refresca junto con el resto del dashboard, igual que Drive/Calendar).
 // El estado activo/idle/fantasma de cada nodo se calcula igual que en
 // pantalla completa, así el widget ya se ve "vivo" en vez de una foto muerta.
-function brainMiniBodyHTML(data) {
+// Extraído de brainMiniBodyHTML (que le suma las 2 líneas de stats, para el
+// widget del dashboard) para poder reusar SOLO el grafo chico en otros
+// lugares (ver thinkingBrainPreviewHTML) sin duplicar el layout/rendering.
+function brainMiniSvgMarkup(data) {
   const nodes = data.nodes;
   const cx = 80, cy = 80;
   const layout = brainLayoutAllNodes(cx, cy, 20, 38, 64);
@@ -3057,15 +3101,20 @@ function brainMiniBodyHTML(data) {
   const centerNode = nodes.orchestrator || { count: 0, last_timestamp: null };
   const centerStateCls = brainStateClass(centerNode);
   const centerR = brainNodeRadius(centerNode.count, 8, 14, 2);
+  return `
+    <svg viewBox="0 0 160 160">
+      ${rendered.map((r) => r.edge).join("")}
+      ${rendered.map((r) => r.node).join("")}
+      <circle class="brain-node-center brain-mini-center brain-color-white ${centerStateCls}" cx="${cx}" cy="${cy}" r="${centerR.toFixed(1)}" />
+    </svg>`;
+}
+function brainMiniBodyHTML(data) {
+  const nodes = data.nodes;
   const total = brainTotalEvents(nodes);
   const lastEvent = data.events.length ? data.events[data.events.length - 1] : null;
   return `
     <div class="brain-mini">
-      <svg viewBox="0 0 160 160">
-        ${rendered.map((r) => r.edge).join("")}
-        ${rendered.map((r) => r.node).join("")}
-        <circle class="brain-node-center brain-mini-center brain-color-white ${centerStateCls}" cx="${cx}" cy="${cy}" r="${centerR.toFixed(1)}" />
-      </svg>
+      ${brainMiniSvgMarkup(data)}
       <div class="brain-mini-stat">${total} evento${total === 1 ? "" : "s"} registrado${total === 1 ? "" : "s"}</div>
       <div class="brain-mini-stat-sub">${lastEvent ? "última actividad: " + brainRelativeLabel(lastEvent.timestamp) : "todavía sin actividad registrada"}</div>
     </div>`;

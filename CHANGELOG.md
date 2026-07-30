@@ -535,3 +535,9 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - El scroll del chat ya no "se escapa" hacia el resto de la página al llegar al final.
 - Bug real en mobile: un toque rápido en el micrófono podía dejar la interfaz grabando sin ninguna forma de pararla (race real entre el permiso de micrófono y el toque). Ahora hace falta mantener presionado de verdad para que arranque a grabar, y mientras graba el ícono cambia a un cuadrado rojo de stop.
 - 445/445 tests. Verificado con Playwright y micrófono simulado. Ver ADR 0059.
+
+## [2026-07-30] Mini-cerebro clickeable durante "pensando", vuelta automática al chat
+
+- El indicador de "pensando" (tres puntitos) suma una mini-animación real del cerebro (mismos datos de `/dashboard/brain`) — clickeable, abre el cerebro completo mientras se espera una respuesta.
+- Al llegar la respuesta, si el cerebro se había abierto desde acá, se cierra solo y vuelve al chat — sin que haga falta cerrarlo a mano.
+- 445/445 tests (sin cambios de backend). Verificado con Playwright: la mini-animación aparece, el click abre el cerebro completo, y se cierra solo apenas llega la respuesta real. Ver ADR 0060 — nota: usa el mismo overlay flotante existente en mobile y desktop; la versión "contenida dentro de la caja de chat" específica de escritorio queda pendiente.
