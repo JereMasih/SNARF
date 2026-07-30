@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import Cookie, Depends, FastAPI, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -210,14 +210,22 @@ async def transcribe(file: UploadFile, user_id: str = Depends(require_user)):
 
 
 @app.post("/send", response_model=SendResponse)
-def send(payload: SendRequest, user_id: str = Depends(require_user)):
+def send(payload: SendRequest, background_tasks: BackgroundTasks, user_id: str = Depends(require_user)):
     input_log.record("text")
+    # Se chequea ANTES de handle() (que ya va a agregar la entrada de este
+    # turno) si esta conversación todavía no tenía ningún mensaje — así se
+    # sabe si este es el primer intercambio real, sin ambigüedad.
+    is_first_turn = bool(payload.conversation_id) and not orchestrator.memory.get_conversation(payload.conversation_id)
     # El proyecto de la conversación (si tiene uno asignado) se resuelve solo
     # dentro de orchestrator.handle() por conversation_id — ver Proyectos
     # Mark II. Ya no viaja como parámetro por mensaje.
     result = orchestrator.handle(
         "visual", payload.text, conversation_id=payload.conversation_id, input_audio_id=payload.input_audio_id
     )
+    if is_first_turn:
+        # En background: nombrar la conversación es un nice-to-have, no debe
+        # sumarle latencia a la respuesta que el fundador está esperando.
+        background_tasks.add_task(orchestrator.generate_conversation_title, payload.conversation_id)
     return SendResponse(response=result.text, speech=result.speech, deliverable=result.deliverable)
 
 

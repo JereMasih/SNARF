@@ -5,10 +5,16 @@ from pathlib import Path
 
 DEFAULT_PATH = Path("data/episodic_memory.jsonl")
 DEFAULT_PROJECT_LINKS_PATH = Path("data/conversation_projects.json")
+DEFAULT_TITLES_PATH = Path("data/conversation_titles.json")
 
 
 class EpisodicMemory:
-    def __init__(self, path: Path = DEFAULT_PATH, project_links_path: Path = DEFAULT_PROJECT_LINKS_PATH):
+    def __init__(
+        self,
+        path: Path = DEFAULT_PATH,
+        project_links_path: Path = DEFAULT_PROJECT_LINKS_PATH,
+        titles_path: Path = DEFAULT_TITLES_PATH,
+    ):
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.touch(exist_ok=True)
@@ -19,6 +25,12 @@ class EpisodicMemory:
         # se sobreescribe con cada asignación/reasignación/desasignación.
         self._project_links_path = project_links_path
         self._project_links_path.parent.mkdir(parents=True, exist_ok=True)
+        # Título generado automáticamente (LLM barato, ver
+        # Orchestrator.generate_conversation_title) apenas ocurre el primer
+        # intercambio real de una conversación — mismo criterio de archivo
+        # aparte que project_links, nunca se deriva reescaneando el log.
+        self._titles_path = titles_path
+        self._titles_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _read_project_links(self) -> dict:
         if not self._project_links_path.exists():
@@ -46,6 +58,23 @@ class EpisodicMemory:
         links.pop(conversation_id, None)
         self._write_project_links(links)
         return {"conversation_id": conversation_id, "from_project_id": from_project_id, "to_project_id": None}
+
+    def _read_titles(self) -> dict:
+        if not self._titles_path.exists():
+            return {}
+        content = self._titles_path.read_text(encoding="utf-8").strip()
+        return json.loads(content) if content else {}
+
+    def _write_titles(self, titles: dict) -> None:
+        self._titles_path.write_text(json.dumps(titles, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def set_title(self, conversation_id: str, title: str) -> None:
+        titles = self._read_titles()
+        titles[conversation_id] = title
+        self._write_titles(titles)
+
+    def get_title(self, conversation_id: str) -> str | None:
+        return self._read_titles().get(conversation_id)
 
     def append(
         self,
@@ -90,6 +119,7 @@ class EpisodicMemory:
         # del log — ese tag es auditoría de qué proyecto estaba vigente
         # cuando se escribió CADA mensaje, no "cuál es el proyecto actual".
         links = self._read_project_links()
+        titles = self._read_titles()
 
         def current_project(cid: str) -> str | None:
             return links.get(cid, {}).get("project_id")
@@ -106,7 +136,12 @@ class EpisodicMemory:
             if cid not in by_id:
                 by_id[cid] = {
                     "conversation_id": cid,
-                    "title": entry["input"][:60],
+                    # El título generado automáticamente (ver
+                    # Orchestrator.generate_conversation_title) reemplaza el
+                    # substring crudo del primer mensaje apenas está listo —
+                    # hasta entonces (o si el LLM no está disponible), se
+                    # degrada a ese substring, nunca queda sin título.
+                    "title": titles.get(cid) or entry["input"][:60],
                     "started_at": entry["timestamp"],
                     "last_activity": entry["timestamp"],
                 }

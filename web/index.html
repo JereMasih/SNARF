@@ -163,6 +163,16 @@
     text-align: left;
   }
   .conv-list { overflow-y: auto; overscroll-behavior: contain; flex: 1 1 auto; padding: 0 8px; }
+  /* Swipe hacia abajo desde arriba del todo para refrescar el historial —
+     crece de 0 a su alto real en vez de seguir el dedo 1:1 (más simple,
+     igual responde al gesto real). */
+  .pull-refresh-indicator {
+    max-height: 0; overflow: hidden; opacity: 0;
+    font-size: 0.68rem; letter-spacing: 0.03em; color: var(--text-dim); text-align: center;
+    transition: max-height 0.15s ease, opacity 0.15s ease;
+  }
+  .pull-refresh-indicator.visible { max-height: 28px; opacity: 1; padding: 0.4rem 0; }
+  .pull-refresh-indicator.ready { color: var(--glow-soft); }
   .conv-item {
     padding: 0.65rem 0.7rem;
     border-radius: 8px;
@@ -1030,6 +1040,17 @@
     text-transform: uppercase; letter-spacing: 0.2em; font-size: 0.7rem;
     color: var(--text-dim); min-height: 1.2em; text-align: center; padding: 0 1rem;
   }
+  /* Aparece solo tras un error real de red/servicio en el envío de una nota
+     de voz (transcripción o /send) donde ya tenemos lo necesario (el audio
+     grabado, o la transcripción si ya se había obtenido) para reintentar sin
+     forzar a grabar todo de nuevo. */
+  .retry-btn {
+    display: flex; align-items: center; gap: 0.3rem; width: fit-content;
+    background: rgba(232,90,90,0.1); border: 1px solid rgba(232,90,90,0.35);
+    color: #e88a8a; font-family: inherit; font-size: 0.68rem; letter-spacing: 0.03em;
+    padding: 0.3rem 0.7rem; border-radius: 999px; cursor: pointer;
+  }
+  .retry-btn:hover { background: rgba(232,90,90,0.18); }
   .review { width: 100%; max-width: 480px; display: none; flex-direction: column; gap: 0.5rem; }
   .review.visible { display: flex; }
   .review textarea {
@@ -1226,6 +1247,7 @@
     </div>
     <div class="sidebar-tab-panel active" data-tab-panel="conversations">
       <button class="new-conv-btn" id="newConvBtn">+ nueva conversación</button>
+      <div class="pull-refresh-indicator" id="convListPullIndicator">↓ deslizá para actualizar</div>
       <div class="conv-list" id="convList"></div>
     </div>
     <div class="sidebar-tab-panel" data-tab-panel="projects">
@@ -1304,6 +1326,7 @@
 
     <div class="control-bar">
       <div class="status" id="status">click para grabar</div>
+      <button class="retry-btn" id="retryBtn" hidden>↻ reintentar</button>
       <div class="review" id="review">
         <textarea id="reviewText"></textarea>
         <div class="actions">
@@ -1359,6 +1382,7 @@
     </div>
     <div class="sidebar-tab-panel active" data-tab-panel="conversations">
       <button class="new-conv-btn" id="dashNewConvBtn">+ nueva conversación</button>
+      <div class="pull-refresh-indicator" id="dashConvListPullIndicator">↓ deslizá para actualizar</div>
       <div class="conv-list" id="dashConvList"></div>
     </div>
     <div class="sidebar-tab-panel" data-tab-panel="projects">
@@ -1387,6 +1411,7 @@ const ICONS = {
 
 const orbWrap = document.getElementById("orbWrap");
 const statusEl = document.getElementById("status");
+const retryBtn = document.getElementById("retryBtn");
 const chat = document.getElementById("chat");
 const chatInner = document.getElementById("chatInner");
 const controlBar = document.querySelector("#viewChat .control-bar");
@@ -1402,6 +1427,7 @@ const sidebar = document.getElementById("sidebar");
 const sidebarOverlay = document.getElementById("sidebarOverlay");
 const newConvBtn = document.getElementById("newConvBtn");
 const convList = document.getElementById("convList");
+const convListPullIndicator = document.getElementById("convListPullIndicator");
 const newProjectBtn = document.getElementById("newProjectBtn");
 const projectList = document.getElementById("projectList");
 const dashProjectList = document.getElementById("dashProjectList");
@@ -1425,6 +1451,7 @@ const viewDashboard = document.getElementById("viewDashboard");
 const dashboardInner = document.getElementById("dashboardInner");
 const dashGridDesktop = document.getElementById("dashGridDesktop");
 const dashConvList = document.getElementById("dashConvList");
+const dashConvListPullIndicator = document.getElementById("dashConvListPullIndicator");
 const dashNewConvBtn = document.getElementById("dashNewConvBtn");
 const userMenu = document.getElementById("userMenu");
 const userMenuBtn = document.getElementById("userMenuBtn");
@@ -1538,6 +1565,22 @@ function renderMarkdown(text) {
   }).join("");
   return html;
 }
+
+// Reintentar una nota de voz que falló por un error real de red/servicio
+// ("Load failed" es el mensaje típico de Safari) sin perder lo ya obtenido:
+// si la transcripción ya se había logrado, reintentar solo reenvía eso, no
+// vuelve a grabar ni a transcribir de nuevo.
+let pendingRetry = null;
+function setRetry(fn) {
+  pendingRetry = fn;
+  retryBtn.hidden = !fn;
+}
+function clearRetry() { setRetry(null); }
+retryBtn.addEventListener("click", () => {
+  const fn = pendingRetry;
+  clearRetry();
+  if (fn) fn();
+});
 
 /* ---------- chat helpers ---------- */
 function idleLabel() {
@@ -2049,6 +2092,49 @@ async function refreshConvLists() {
     targets.forEach((t) => { t.innerHTML = '<div class="conv-empty">error cargando conversaciones</div>'; });
   }
 }
+
+// Swipe hacia abajo desde arriba del todo del listado para refrescarlo — el
+// indicador vive AFUERA de `listEl` (como hermano, justo antes) porque
+// renderConvListInto() hace `container.innerHTML = ""` en cada refresh, y
+// borraría cualquier cosa insertada adentro.
+const PULL_REFRESH_THRESHOLD_PX = 60;
+function enablePullToRefresh(listEl, indicatorEl, onRefresh) {
+  let startY = 0;
+  let pulling = false;
+  listEl.addEventListener("pointerdown", (e) => {
+    if (listEl.scrollTop > 0) return; // solo dispara si ya no hay más para scrollear hacia arriba
+    startY = e.clientY;
+    pulling = true;
+  });
+  listEl.addEventListener("pointermove", (e) => {
+    if (!pulling) return;
+    const dy = e.clientY - startY;
+    if (dy <= 0 || listEl.scrollTop > 0) {
+      pulling = false;
+      indicatorEl.classList.remove("visible", "ready");
+      return;
+    }
+    indicatorEl.classList.add("visible");
+    const ready = dy > PULL_REFRESH_THRESHOLD_PX;
+    indicatorEl.classList.toggle("ready", ready);
+    indicatorEl.textContent = ready ? "↑ soltá para actualizar" : "↓ deslizá para actualizar";
+  });
+  const finish = async (e) => {
+    if (!pulling) return;
+    const dy = e && e.clientY != null ? e.clientY - startY : 0;
+    pulling = false;
+    if (dy > PULL_REFRESH_THRESHOLD_PX) {
+      indicatorEl.textContent = "actualizando...";
+      await onRefresh();
+    }
+    indicatorEl.classList.remove("visible", "ready");
+    indicatorEl.textContent = "↓ deslizá para actualizar";
+  };
+  listEl.addEventListener("pointerup", finish);
+  listEl.addEventListener("pointercancel", finish);
+}
+enablePullToRefresh(convList, convListPullIndicator, refreshConvLists);
+enablePullToRefresh(dashConvList, dashConvListPullIndicator, refreshConvLists);
 
 async function loadConversation(id) {
   conversationId = id;
@@ -4303,21 +4389,34 @@ async function transcribeBlob(blob) {
   return { transcript: data.transcript || "", error: data.error || null, audioId: data.audio_id || null };
 }
 
-async function sendText(text, inputAudioId) {
-  if (!text.trim()) { setState("idle", idleLabel()); return; }
-  if (pendingProjectHomeId) {
-    // Se tipeó directo sobre el "home" de un proyecto, sin usar el botón
-    // dedicado — genera y asigna la conversación recién ahora, para no
-    // crear una conversación fantasma solo por haber entrado a mirar.
-    conversationId = crypto.randomUUID();
-    await apiFetch(`/conversations/${conversationId}/project`, {
-      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: pendingProjectHomeId }),
-    });
-    pendingProjectHomeId = null;
-    clearChat();
-    refreshProjectList();
+// Intenta transcribir `blob` y llama a onSuccess(transcript, audioId) si
+// sale bien. Si falla (error real de red — "Load failed" es el mensaje
+// típico de Safari — o el STT en sí falla), ofrece reintentar con el MISMO
+// audio ya grabado en vez de forzar a grabar todo de nuevo (bug real
+// reportado: la nota de voz se perdía por completo ante cualquier falla).
+async function attemptTranscribe(blob, onSuccess) {
+  let result;
+  try {
+    result = await transcribeBlob(blob);
+  } catch (err) {
+    setState("error", "no se pudo transcribir: " + (err.message || err));
+    setRetry(() => attemptTranscribe(blob, onSuccess));
+    return;
   }
-  addMessage(text, "user", false, inputAudioId);
+  if (result.error) {
+    setState("error", result.error);
+    setRetry(() => attemptTranscribe(blob, onSuccess));
+    return;
+  }
+  if (!result.transcript.trim()) { setState("idle", "no se escuchó nada, probá de nuevo"); return; }
+  await onSuccess(result.transcript, result.audioId);
+}
+
+// Solo el POST a /send y el manejo de la respuesta — separado de sendText()
+// para poder reintentarlo (bug real reportado: "Load failed" de Safari en
+// una nota de voz) sin volver a agregar la burbuja del usuario, que ya
+// quedó en pantalla desde el primer intento.
+async function postAndHandleSend(text, inputAudioId) {
   setState("thinking", "pensando...");
   showTyping();
   try {
@@ -4340,26 +4439,46 @@ async function sendText(text, inputAudioId) {
     updateProjectHomeBtnVisibility();
   } catch (e) {
     hideTyping();
-    setState("error", "error: " + (e.message || e));
+    setState("error", "no se pudo enviar: " + (e.message || e));
+    setRetry(() => postAndHandleSend(text, inputAudioId));
   }
 }
 
+async function sendText(text, inputAudioId) {
+  if (!text.trim()) { setState("idle", idleLabel()); return; }
+  if (pendingProjectHomeId) {
+    // Se tipeó directo sobre el "home" de un proyecto, sin usar el botón
+    // dedicado — genera y asigna la conversación recién ahora, para no
+    // crear una conversación fantasma solo por haber entrado a mirar.
+    conversationId = crypto.randomUUID();
+    await apiFetch(`/conversations/${conversationId}/project`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: pendingProjectHomeId }),
+    });
+    pendingProjectHomeId = null;
+    clearChat();
+    refreshProjectList();
+  }
+  clearRetry();
+  addMessage(text, "user", false, inputAudioId);
+  await postAndHandleSend(text, inputAudioId);
+}
+
+function showTranscriptForReview(transcript) {
+  reviewText.value = transcript;
+  autoResizeTextarea(reviewText);
+  review.classList.add("visible");
+  setState("idle", "revisá y enviá");
+}
 async function handleClickMode() {
   unlockAudio();
-  if (state === "error") setState("idle", idleLabel());
+  if (state === "error") { clearRetry(); setState("idle", idleLabel()); }
   if (state === "idle") {
     try { await startRecording(); } catch (e) { setState("error", "sin micrófono: " + (e.message || e)); }
   } else if (state === "listening") {
     setState("thinking", "transcribiendo...");
     try {
       const blob = await stopRecording();
-      const { transcript, error } = await transcribeBlob(blob);
-      if (error) { setState("error", error); return; }
-      if (!transcript.trim()) { setState("idle", "no se escuchó nada, probá de nuevo"); return; }
-      reviewText.value = transcript;
-      autoResizeTextarea(reviewText);
-      review.classList.add("visible");
-      setState("idle", "revisá y enviá");
+      await attemptTranscribe(blob, (transcript) => showTranscriptForReview(transcript));
     } catch (e) { setState("error", "error: " + (e.message || e)); }
   }
 }
@@ -4475,19 +4594,19 @@ async function finishRecording(cancelled) {
     updateSendMicToggle();
     return;
   }
+  clearRetry();
   setState("thinking", "transcribiendo...");
   try {
     const blob = await stopRecording();
-    const { transcript, error, audioId } = await transcribeBlob(blob);
-    if (error) { setState("error", error); return; }
-    if (!transcript.trim()) { setState("idle", "no se escuchó nada, probá de nuevo"); return; }
-    // Si ya había un borrador escrito antes (o durante) de grabar, se manda
-    // junto con la transcripción como un solo mensaje — no se pierde ni se
-    // manda aparte.
-    const draft = textInput.value.trim();
-    textInput.value = "";
-    autoResizeTextarea(textInput);
-    await sendText(draft ? `${draft}\n${transcript}` : transcript, audioId);
+    await attemptTranscribe(blob, async (transcript, audioId) => {
+      // Si ya había un borrador escrito antes (o durante) de grabar, se manda
+      // junto con la transcripción como un solo mensaje — no se pierde ni se
+      // manda aparte.
+      const draft = textInput.value.trim();
+      textInput.value = "";
+      autoResizeTextarea(textInput);
+      await sendText(draft ? `${draft}\n${transcript}` : transcript, audioId);
+    });
   } catch (err) {
     setState("error", "error: " + (err.message || err));
   } finally {
@@ -4534,7 +4653,7 @@ async function beginActualRecording(pointerId) {
 }
 micBtn.addEventListener("pointerdown", (e) => {
   unlockAudio();
-  if (state === "error") setState("idle", idleLabel());
+  if (state === "error") { clearRetry(); setState("idle", idleLabel()); }
   if (state !== "idle") return; // ya grabando o procesando: ignorar un segundo press
   recordPointerId = e.pointerId;
   recordStartX = e.clientX;

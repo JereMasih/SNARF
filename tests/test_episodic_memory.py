@@ -9,7 +9,7 @@ def make_memory(tmp_path, monkeypatch):
     que el orden de las entradas en los asserts sea siempre predecible."""
     counter = itertools.count()
     monkeypatch.setattr(episodic.time, "time", lambda: next(counter))
-    return EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json")
+    return EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json", titles_path=tmp_path / "conversation_titles.json")
 
 
 def test_append_and_recent_roundtrip(tmp_path, monkeypatch):
@@ -91,6 +91,21 @@ def test_list_conversations_orders_by_last_activity_desc(tmp_path, monkeypatch):
     convs = memory.list_conversations()
     assert [c["conversation_id"] for c in convs] == ["c1", "c2"]
     assert convs[0]["title"] == "primera"
+
+
+def test_set_and_get_title_roundtrip(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    assert memory.get_title("c1") is None
+    memory.set_title("c1", "Plan de negocios para Instagram")
+    assert memory.get_title("c1") == "Plan de negocios para Instagram"
+
+
+def test_list_conversations_prefers_the_generated_title_over_the_raw_substring(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "necesito ayuda con algo importante y largo de verdad", "r", conversation_id="c1")
+    memory.set_title("c1", "Ayuda con un tema importante")
+    convs = memory.list_conversations()
+    assert convs[0]["title"] == "Ayuda con un tema importante"
 
 
 def test_list_conversations_ignores_entries_without_conversation_id(tmp_path, monkeypatch):
@@ -219,7 +234,7 @@ def test_search_empty_query_returns_nothing(tmp_path, monkeypatch):
 
 
 def test_stats_on_empty_memory(tmp_path):
-    memory = EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json")
+    memory = EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json", titles_path=tmp_path / "conversation_titles.json")
     stats = memory.stats()
     assert stats["total_messages"] == 0
     assert stats["total_conversations"] == 0
@@ -242,7 +257,7 @@ def test_stats_counts_messages_and_conversations(tmp_path, monkeypatch):
 
 
 def test_stats_activity_by_day_counts_todays_messages(tmp_path):
-    memory = EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json")
+    memory = EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json", titles_path=tmp_path / "conversation_titles.json")
     memory.append("text", "hoy", "respuesta", conversation_id="c1")
     stats = memory.stats()
     today_bucket = stats["activity_by_day"][-1]

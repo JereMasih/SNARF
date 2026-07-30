@@ -16,7 +16,7 @@ CORRECT_PASSWORD = "correct-password"
 def raw_client(tmp_path, monkeypatch):
     """Cliente SIN login automático — para probar el propio flujo de auth,
     a diferencia de test_app.py que asume una sesión ya iniciada."""
-    monkeypatch.setattr(app_module.orchestrator, "_memory", EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json"))
+    monkeypatch.setattr(app_module.orchestrator, "_memory", EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json", titles_path=tmp_path / "conversation_titles.json"))
     monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
     monkeypatch.setenv("SNARF_ACCESS_PASSWORD", CORRECT_PASSWORD)
     monkeypatch.setenv("SESSION_SECRET", "a-test-secret")
@@ -79,7 +79,7 @@ def test_login_with_non_ascii_password_succeeds(tmp_path, monkeypatch):
     # Regresión: secrets.compare_digest no acepta str no-ASCII directamente
     # (tildes, ñ) — antes tiraba un 500 en vez de comparar la contraseña.
     non_ascii_password = "contraseña-con-ñ-y-tildé"
-    monkeypatch.setattr(app_module.orchestrator, "_memory", EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json"))
+    monkeypatch.setattr(app_module.orchestrator, "_memory", EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json", titles_path=tmp_path / "conversation_titles.json"))
     monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
     monkeypatch.setenv("SNARF_ACCESS_PASSWORD", non_ascii_password)
     monkeypatch.setenv("SESSION_SECRET", "a-test-secret")
@@ -115,7 +115,7 @@ def test_login_fails_closed_without_session_secret(tmp_path, monkeypatch):
     # _client debe forzarse a None ANTES de instanciar TestClient: entrar al
     # context manager dispara el hook de startup (orchestrator.warmup()), que
     # sin esto haría una llamada real a la API de Anthropic.
-    monkeypatch.setattr(app_module.orchestrator, "_memory", EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json"))
+    monkeypatch.setattr(app_module.orchestrator, "_memory", EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json", titles_path=tmp_path / "conversation_titles.json"))
     monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
     monkeypatch.setenv("SNARF_ACCESS_PASSWORD", CORRECT_PASSWORD)
     monkeypatch.delenv("SESSION_SECRET", raising=False)
@@ -125,7 +125,7 @@ def test_login_fails_closed_without_session_secret(tmp_path, monkeypatch):
 
 
 def test_login_fails_closed_without_access_password_configured(tmp_path, monkeypatch):
-    monkeypatch.setattr(app_module.orchestrator, "_memory", EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json"))
+    monkeypatch.setattr(app_module.orchestrator, "_memory", EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json", titles_path=tmp_path / "conversation_titles.json"))
     monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
     monkeypatch.delenv("SNARF_ACCESS_PASSWORD", raising=False)
     monkeypatch.setenv("SESSION_SECRET", "a-test-secret")

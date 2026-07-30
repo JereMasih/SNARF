@@ -19,9 +19,14 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(
         app_module.orchestrator,
         "_memory",
-        EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json"),
+        EpisodicMemory(path=tmp_path / "memory.jsonl", project_links_path=tmp_path / "conversation_projects.json", titles_path=tmp_path / "conversation_titles.json"),
     )
     monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
+    # _title_llm es una Capacidad de LLM SEPARADA (modelo barato, ver
+    # generate_conversation_title) — /send la dispara sola como background
+    # task en el primer turno de cualquier conversación, así que sin este
+    # neutralizado los tests de /send dispararían llamadas reales.
+    monkeypatch.setattr(app_module.orchestrator._title_llm, "_client", None)
     # Fuerza TODA la capa de voz a "nada disponible" sin importar credenciales
     # reales del .env ni si el contenedor Docker de Kokoro está corriendo en
     # esta máquina — los tests nunca deben depender de un servicio externo
@@ -62,6 +67,15 @@ def test_send_echo_mode_roundtrip(client):
     res = client.post("/send", json={"text": "hola", "conversation_id": "abc"})
     assert res.status_code == 200
     assert "hola" in res.json()["response"]
+
+
+def test_send_schedules_title_generation_only_on_the_first_turn(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(app_module.orchestrator, "generate_conversation_title", lambda cid: calls.append(cid))
+    client.post("/send", json={"text": "primer mensaje", "conversation_id": "conv-titulo"})
+    assert calls == ["conv-titulo"]
+    client.post("/send", json={"text": "segundo mensaje", "conversation_id": "conv-titulo"})
+    assert calls == ["conv-titulo"]  # no se vuelve a disparar en turnos siguientes
 
 
 def test_send_returns_the_deliverable_field_when_the_llm_produces_one(client, monkeypatch):

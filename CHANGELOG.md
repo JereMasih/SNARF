@@ -567,3 +567,10 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - `pointercancel` ahora limpia el pointer activo siempre (no solo si ya estaba grabando), y `beginActualRecording` vuelve a chequear que el gesto siga vivo apenas `getUserMedia()` resuelve — si no, descarta el stream y pide un gesto nuevo, en vez de arrancar a grabar sin forma de pararlo.
 - Los íconos ▶/⏸ del mini reproductor de audio (antes glifos de texto/emoji) pasan a ser SVG propios, coherentes con el resto del branding.
 - 467/467 tests (sin cambios de backend). Verificado con Playwright simulando la carrera exacta del permiso. Ver ADR 0064.
+
+## [2026-07-30] Reintentar nota de voz, pull-to-refresh del historial, título automático
+
+- Bug real reportado: una nota de voz que falla con "Load failed" (error de red real) ya no se pierde — un botón "reintentar" reenvía el mismo audio grabado (o la transcripción, si ya se había obtenido) sin forzar a grabar todo de nuevo. Aplica también, de yapa, a mensajes de texto que fallan al enviarse.
+- El historial de conversaciones (barra lateral y dashboard) ahora se puede refrescar deslizando hacia abajo desde arriba del todo del listado.
+- Cada conversación se nombra sola apenas ocurre su primer intercambio real (LLM barato, en background, sin sumarle latencia a la respuesta) — reemplaza el substring crudo de los primeros 60 caracteres.
+- 475/475 tests. Verificado con Playwright: falla de red real simulada + reintento exitoso con el mismo audio, y gesto de pull-to-refresh disparando un nuevo `GET /conversations`. Ver ADR 0065 — incluye un hallazgo operativo urgente sin relación con el código: la cuenta real de Anthropic se quedó sin crédito.

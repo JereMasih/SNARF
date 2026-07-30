@@ -52,6 +52,14 @@ DRIVE_VISION_MODEL = "claude-haiku-4-5"
 DRIVE_INDEX_DATA_DIR = Path("data/drive_index")
 LOCAL_FILES_DATA_DIR = Path("data/local_files")
 
+CONVERSATION_TITLE_SYSTEM_PROMPT = (
+    "Generás títulos cortos para conversaciones de chat, a partir de su primer "
+    "intercambio real. Respondé ÚNICAMENTE con el título en sí — sin comillas, "
+    "sin punto final, sin explicación alrededor — de máximo 6 palabras, en "
+    "español, que resuma de qué se trata para reconocerla en una lista."
+)
+CONVERSATION_TITLE_MAX_CHARS = 60
+
 SYSTEM_PREFIX = (
     "Sos Snarf. A continuación se incluyen, en orden de jerarquía, los documentos "
     "que definen tu identidad, tu gobernanza y tu personalidad. Actuá en todo momento "
@@ -825,6 +833,10 @@ class Orchestrator:
         # más chico y barato alcanza, y este Especialista puede elegir su
         # propia Capacidad de LLM sin afectar la de Snarf.
         self._gmail_digest = GmailDigestSpecialist(self._gmail, AnthropicLLM(model=GMAIL_DIGEST_MODEL), user_id)
+        # Nombrar automáticamente una conversación apenas ocurre su primer
+        # intercambio (ver generate_conversation_title): mismo criterio de
+        # modelo barato para tarea acotada — nunca el modelo principal.
+        self._title_llm = AnthropicLLM(model=GMAIL_DIGEST_MODEL)
 
         # Pipeline de vectorización de Drive (ver ADR 0028): mismo criterio de
         # "modelo barato para tarea acotada" que el digest de Gmail, esta vez
@@ -1187,3 +1199,28 @@ class Orchestrator:
             speech=response.speech, deliverable=response.deliverable,
         )
         return response
+
+    def generate_conversation_title(self, conversation_id: str) -> None:
+        """Genera y persiste un título corto para esta conversación a partir de
+        su primer intercambio real. Pensada para llamarse una sola vez, como
+        tarea de background apenas responde el primer mensaje (ver /send en
+        app.py) — nunca bloquea ni rompe nada: si el LLM barato no está
+        disponible o la llamada falla, la conversación se queda con el
+        fallback existente (substring del primer mensaje, ver
+        EpisodicMemory.list_conversations)."""
+        if not self._title_llm.available:
+            return
+        entries = self._memory.get_conversation(conversation_id)
+        if not entries:
+            return
+        first = entries[0]
+        listing = f"Usuario: {first['input']}\n\nRespuesta: {first['response'][:500]}"
+        try:
+            title = self._title_llm.generate(
+                system=CONVERSATION_TITLE_SYSTEM_PROMPT, messages=[{"role": "user", "content": listing}]
+            ).text
+        except Exception:
+            return
+        title = title.strip().strip('"').strip("'").rstrip(".")
+        if title:
+            self._memory.set_title(conversation_id, title[:CONVERSATION_TITLE_MAX_CHARS])

@@ -39,6 +39,47 @@ def test_handle_stores_the_llm_speech_field_on_the_memory_entry(orchestrator, mo
     assert entry["speech"] == "versión hablada corta"
 
 
+def test_generate_conversation_title_persists_a_short_title(orchestrator, monkeypatch):
+    orchestrator.handle("text", "necesito un plan para mi marca de Instagram", conversation_id="c1")
+    monkeypatch.setattr(orchestrator._title_llm, "_client", object())  # available=True
+    monkeypatch.setattr(
+        orchestrator._title_llm, "generate", lambda **kwargs: LLMResponse(text="Plan de marca en Instagram", speech="")
+    )
+    orchestrator.generate_conversation_title("c1")
+    assert orchestrator.memory.get_title("c1") == "Plan de marca en Instagram"
+
+
+def test_generate_conversation_title_strips_quotes_and_trailing_period(orchestrator, monkeypatch):
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    monkeypatch.setattr(orchestrator._title_llm, "_client", object())  # available=True
+    monkeypatch.setattr(orchestrator._title_llm, "generate", lambda **kwargs: LLMResponse(text='"Saludo inicial."', speech=""))
+    orchestrator.generate_conversation_title("c1")
+    assert orchestrator.memory.get_title("c1") == "Saludo inicial"
+
+
+def test_generate_conversation_title_does_nothing_when_the_cheap_llm_is_unavailable(orchestrator):
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    orchestrator.generate_conversation_title("c1")  # _title_llm sin API key en este fixture
+    assert orchestrator.memory.get_title("c1") is None
+
+
+def test_generate_conversation_title_degrades_gracefully_when_the_llm_call_fails(orchestrator, monkeypatch):
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    monkeypatch.setattr(orchestrator._title_llm, "_client", object())  # available=True
+
+    def boom(**kwargs):
+        raise RuntimeError("rate limit")
+
+    monkeypatch.setattr(orchestrator._title_llm, "generate", boom)
+    orchestrator.generate_conversation_title("c1")  # nunca debe romper
+    assert orchestrator.memory.get_title("c1") is None
+
+
+def test_generate_conversation_title_does_nothing_for_a_conversation_with_no_entries(orchestrator):
+    orchestrator.generate_conversation_title("conversacion-inexistente")
+    assert orchestrator.memory.get_title("conversacion-inexistente") is None
+
+
 def test_handle_stores_the_deliverable_field_on_the_memory_entry_when_present(orchestrator, monkeypatch):
     monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
     monkeypatch.setattr(
