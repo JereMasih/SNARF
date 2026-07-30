@@ -1098,6 +1098,12 @@
     cursor: pointer;
     transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
+  /* micBtn y textSendBtn se comportan como un único multibotón: nunca están
+     los dos visibles a la vez salvo el instante de bloqueo (mic desaparece,
+     quedan tacho+flecha). El [hidden] de acá pisa el display:flex de
+     .text-row .icon-btn de arriba porque es más específico (mismo origen
+     "autor", gana la especificidad, no alcanza con el atributo solo). */
+  .text-row .icon-btn[hidden] { display: none; }
   .text-row #micBtn.recording {
     background: rgba(232,90,90,0.16); border-color: var(--error); color: var(--error);
     animation: pulse-fast 1s ease-in-out infinite;
@@ -4227,14 +4233,31 @@ function autoResizeTextarea(el) {
   el.style.height = "auto";
   el.style.height = el.scrollHeight + "px";
 }
-textInput.addEventListener("input", () => autoResizeTextarea(textInput));
+textInput.addEventListener("input", () => { autoResizeTextarea(textInput); updateSendMicToggle(); });
 reviewText.addEventListener("input", () => autoResizeTextarea(reviewText));
+
+// El mic queda siempre alcanzable (aunque ya haya texto escrito — grabar una
+// nota de voz encima de un borrador es un caso real que hay que soportar, no
+// un either/or estilo WhatsApp puro) EXCEPTO durante una grabación
+// bloqueada, donde le cede el lugar a tachito+flecha (ya está grabando, no
+// hace nada nuevo tocarlo de nuevo). La flecha de enviar aparece apenas hay
+// algo real para mandar: un borrador escrito, o una grabación bloqueada
+// lista para terminar — nunca durante el gesto de mantener presionado
+// todavía sin bloquear, para no distraer a mitad del gesto.
+function updateSendMicToggle() {
+  const locked = recordLocked && state === "listening";
+  const activelyHolding = state === "listening" && !locked;
+  const hasDraft = textInput.value.trim().length > 0;
+  micBtn.hidden = locked;
+  textSendBtn.hidden = activelyHolding || (!hasDraft && !locked);
+}
 
 function sendFromTextInput() {
   const text = textInput.value;
   textInput.value = "";
   autoResizeTextarea(textInput);
   unlockAudio();
+  updateSendMicToggle();
   sendText(text).then(() => textInput.focus());
 }
 textSendBtn.addEventListener("click", () => {
@@ -4286,6 +4309,7 @@ async function finishRecording(cancelled) {
   if (cancelled) {
     try { await stopRecording(); } catch (e) {}
     setState("idle", idleLabel());
+    updateSendMicToggle();
     return;
   }
   setState("thinking", "transcribiendo...");
@@ -4294,9 +4318,17 @@ async function finishRecording(cancelled) {
     const { transcript, error, audioId } = await transcribeBlob(blob);
     if (error) { setState("error", error); return; }
     if (!transcript.trim()) { setState("idle", "no se escuchó nada, probá de nuevo"); return; }
-    await sendText(transcript, audioId);
+    // Si ya había un borrador escrito antes (o durante) de grabar, se manda
+    // junto con la transcripción como un solo mensaje — no se pierde ni se
+    // manda aparte.
+    const draft = textInput.value.trim();
+    textInput.value = "";
+    autoResizeTextarea(textInput);
+    await sendText(draft ? `${draft}\n${transcript}` : transcript, audioId);
   } catch (err) {
     setState("error", "error: " + (err.message || err));
+  } finally {
+    updateSendMicToggle();
   }
 }
 
@@ -4324,6 +4356,7 @@ micBtn.addEventListener("pointerdown", async (e) => {
   recordLockHint.classList.remove("locked");
   recordLockHint.textContent = "▲ deslizá para bloquear";
   startRecordTimer();
+  updateSendMicToggle();
 });
 micBtn.addEventListener("pointermove", (e) => {
   if (e.pointerId !== recordPointerId || state !== "listening" || recordLocked) return;
@@ -4337,6 +4370,7 @@ micBtn.addEventListener("pointermove", (e) => {
     recordHint.classList.remove("fading");
     recordHint.textContent = "manos libres — tocá enviar";
     recordCancelBtn.hidden = false;
+    updateSendMicToggle();
     return;
   }
   recordHint.classList.toggle("fading", dx < -RECORD_CANCEL_THRESHOLD_PX);
@@ -4391,6 +4425,7 @@ if (isDesktopDashboard()) {
 }
 
 setMode(mode, false);
+updateSendMicToggle();
 
 fetch("/status").then(r => r.json()).then(s => {
   ttsAvailable = !!s.tts_available;

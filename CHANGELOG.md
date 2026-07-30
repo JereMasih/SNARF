@@ -515,3 +515,9 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - En la burbuja de audio: la duración total ahora se ve ANTES de tocar play (no solo durante), los reproductores de audio quedan siempre arriba del texto completo (nunca abajo, mezclados con los botones), y tocar "escuchar resumen" o "escuchar completa" ahora reproduce automático apenas está listo (tocar el botón ya es la confirmación de que se lo quiere escuchar).
 - Íconos SVG propios (mic / parlante) en los botones de audio, mismo estilo que el resto de la interfaz — nunca emoji.
 - 444/444 tests. Verificado con Playwright: orden correcto de la burbuja, duración visible y correcta en todo momento, autoplay real, y dos reproductores con duraciones reales distintas (12s vs 38s) confirmando que resumen y completa son contenido genuinamente distinto. Ver ADR 0056 (actualizado).
+
+## [2026-07-30] Multibotón mic/enviar y envío combinado texto+voz
+
+- El botón de grabar y el de enviar estaban siempre los dos visibles, sin ningún criterio — se leía como dos botones sueltos en vez de uno. Ahora se muestran según el estado real: solo mic si no hay nada escrito, mic+flecha si hay un borrador (a propósito: permite grabar una nota de voz encima de texto ya escrito), solo mic mientras se graba sin bloquear, tachito+flecha si la grabación quedó bloqueada en manos libres.
+- Si había texto escrito antes de grabar, se perdía en silencio al enviar la nota de voz — ahora se manda todo junto, texto + transcripción, como un solo mensaje.
+- 444/444 tests (sin cambios de backend). Verificado con Playwright simulando el gesto completo (mantener presionado, deslizar arriba para bloquear, soltar el dedo, tocar enviar) y el envío combinado con una transcripción de prueba. Ver ADR 0057.
