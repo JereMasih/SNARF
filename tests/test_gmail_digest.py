@@ -1,3 +1,4 @@
+from snarf.capabilities.anthropic_llm import LLMResponse
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 
 
@@ -17,7 +18,7 @@ class FakeLLM:
 
     def generate(self, system, messages):
         self.calls.append((system, messages))
-        return self._response
+        return LLMResponse(text=self._response, speech=self._response)
 
 
 def make_specialist(tmp_path, monkeypatch, messages=None, llm_available=True, llm_response="interpretado"):

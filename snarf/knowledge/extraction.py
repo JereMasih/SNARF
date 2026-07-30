@@ -110,7 +110,7 @@ class ContentExtractor:
             },
             {"type": "text", "text": VISION_PROMPT},
         ]
-        text = self._vision_llm.generate(system=VISION_SYSTEM_PROMPT, messages=[{"role": "user", "content": content}])
+        text = self._vision_llm.generate(system=VISION_SYSTEM_PROMPT, messages=[{"role": "user", "content": content}]).text
         return ExtractionResult(text)
 
     def _extract_audio(self, file_id: str) -> ExtractionResult:

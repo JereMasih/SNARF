@@ -878,6 +878,11 @@
     opacity: 0.6; margin-top: 0.5rem;
   }
   .voice-note-slot:empty { display: none; }
+  /* Contenedor de los reproductores de audio de una respuesta — siempre
+     arriba del texto (la comunicación primaria cuando hay audio es el
+     audio), vacío y sin ocupar espacio cuando todavía no se generó ninguno. */
+  .voice-note-players:not(:empty) { margin-bottom: 0.6rem; display: flex; flex-direction: column; gap: 0.4rem; }
+  .msg-text :first-child { margin-top: 0; }
 
   /* --- reproductor de nota de voz embebido (por burbuja, estilo WhatsApp) ---
      Reemplaza al reproductor flotante único de antes: cada nota de voz
@@ -1317,6 +1322,7 @@ const ICONS = {
   drag: '<svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor" stroke="none"><circle cx="7" cy="5" r="1.1"/><circle cx="13" cy="5" r="1.1"/><circle cx="7" cy="10" r="1.1"/><circle cx="13" cy="10" r="1.1"/><circle cx="7" cy="15" r="1.1"/><circle cx="13" cy="15" r="1.1"/></svg>',
   resize: '<svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 17H8M17 17V8M17 17 11 11"/></svg>',
   expand: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3H4a1 1 0 0 0-1 1v3M13 3h3a1 1 0 0 1 1 1v3M17 13v3a1 1 0 0 1-1 1h-3M3 13v3a1 1 0 0 0 1 1h3"/></svg>',
+  speaker: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8v4h3l4 3.5V4.5L6 8H3Z"/><path d="M13.3 7.2a4 4 0 0 1 0 5.6"/><path d="M15.6 5a7.2 7.2 0 0 1 0 10"/></svg>',
 };
 
 const orbWrap = document.getElementById("orbWrap");
@@ -1491,13 +1497,19 @@ async function synthesizeVoiceNote(text) {
 // Genera (o recupera de caché, instantáneo) la nota de voz de `text` y
 // reemplaza `btn` por el reproductor embebido real — antes esto reproducía
 // directo en un reproductor flotante de un solo uso, sin forma real de
-// volver a escucharlo después de pausarlo/cerrarlo.
-async function generateVoiceNoteIntoButton(text, btn, downloadName) {
+// volver a escucharlo después de pausarlo/cerrarlo. El reproductor se
+// inserta en `playersContainer` (arriba del texto de la burbuja, no donde
+// estaba el botón) y arranca solo: tocar el botón ya es la confirmación de
+// que se quiere escuchar — si no, se le pone pausa.
+async function generateVoiceNoteAndPlay(text, btn, downloadName, playersContainer) {
   btn.disabled = true;
   btn.textContent = "generando...";
   const audioId = await synthesizeVoiceNote(text);
   if (audioId) {
-    btn.replaceWith(buildVoiceNotePlayer(audioId, downloadName));
+    const player = buildVoiceNotePlayer(audioId, downloadName);
+    playersContainer.appendChild(player);
+    btn.remove();
+    player.querySelector(".vn-play-btn").click();
   } else {
     btn.textContent = "no disponible";
     btn.disabled = false;
@@ -1532,8 +1544,20 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak) {
   const div = document.createElement("div");
   div.className = "msg " + who;
   if (who === "snarf") {
-    div.innerHTML = renderMarkdown(text);
-    addCodeBlockCopyButtons(div);
+    // Los reproductores de audio (resumen y/o completa) van SIEMPRE arriba
+    // del texto — la comunicación primaria cuando hay audio es el audio, la
+    // respuesta completa en pantalla queda debajo, y los botones en su lugar
+    // de siempre, debajo de todo.
+    const playersContainer = document.createElement("div");
+    playersContainer.className = "voice-note-players";
+    div.appendChild(playersContainer);
+
+    const textEl = document.createElement("div");
+    textEl.className = "msg-text";
+    textEl.innerHTML = renderMarkdown(text);
+    div.appendChild(textEl);
+    addCodeBlockCopyButtons(textEl);
+
     const actions = document.createElement("div");
     actions.className = "msg-actions";
     if (withAudio) {
@@ -1543,13 +1567,14 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak) {
       // aparece listo para tocar, sin sorprender con audio inesperado. Si
       // el turno llegó por texto, sigue siendo un botón manual — no tiene
       // sentido gastar CPU sintetizando algo que la mayoría de las veces no
-      // se va a escuchar. Mensajes viejos (guardados antes de este cambio)
-      // no tienen speech propio: se degrada a la respuesta completa.
-      const summarySlot = document.createElement("span");
-      summarySlot.className = "voice-note-slot";
-      actions.appendChild(summarySlot);
+      // se va a escuchar; al tocarlo sí arranca solo (ya es una confirmación
+      // explícita). Mensajes viejos (guardados antes de este cambio) no
+      // tienen speech propio: se degrada a la respuesta completa.
       if (autoSpeak && speech) {
+        const summarySlot = document.createElement("span");
+        summarySlot.className = "voice-note-slot";
         summarySlot.textContent = "generando resumen en audio...";
+        playersContainer.appendChild(summarySlot);
         synthesizeVoiceNote(speech).then((audioId) => {
           if (audioId) summarySlot.replaceWith(buildVoiceNotePlayer(audioId, "respuesta-de-snarf"));
           else summarySlot.remove();
@@ -1557,17 +1582,17 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak) {
       } else {
         const summaryBtn = document.createElement("button");
         summaryBtn.className = "play-audio-btn";
-        summaryBtn.textContent = "🎤 escuchar resumen";
-        summaryBtn.addEventListener("click", () => generateVoiceNoteIntoButton(speech || text, summaryBtn, "respuesta-de-snarf"));
-        summarySlot.replaceWith(summaryBtn);
+        summaryBtn.innerHTML = `${ICONS.mic} escuchar resumen`;
+        summaryBtn.addEventListener("click", () => generateVoiceNoteAndPlay(speech || text, summaryBtn, "respuesta-de-snarf", playersContainer));
+        actions.appendChild(summaryBtn);
       }
 
       // Completa: la respuesta larga a pantalla, leída entera — siempre a
       // pedido, nunca automática (a veces se quiere, a veces no).
       const fullBtn = document.createElement("button");
       fullBtn.className = "play-audio-btn play-audio-btn-full";
-      fullBtn.textContent = "🔊 completa";
-      fullBtn.addEventListener("click", () => generateVoiceNoteIntoButton(text, fullBtn, "respuesta-completa"));
+      fullBtn.innerHTML = `${ICONS.speaker} escuchar completa`;
+      fullBtn.addEventListener("click", () => generateVoiceNoteAndPlay(text, fullBtn, "respuesta-completa", playersContainer));
       actions.appendChild(fullBtn);
     }
     const copyBtn = document.createElement("button");
@@ -1666,10 +1691,17 @@ function refreshActiveVoiceNoteProgress() {
 }
 function deactivateVoiceNotePlayer() {
   if (!activeVoiceNotePlayer) return;
-  const { playBtn, fill, timeEl } = activeVoiceNotePlayer;
+  const { playBtn, fill, timeEl, knownDuration } = activeVoiceNotePlayer;
+  // sharedAudio.duration (todavía el de ESTE player, recién acá se desactiva
+  // — el nuevo src se asigna después) es más confiable que el knownDuration
+  // capturado al activar: si se tocó play enseguida de generarlo, el probe
+  // de metadata todavía no había resuelto en ese momento.
+  const totalDuration = Number.isFinite(sharedAudio.duration) && sharedAudio.duration > 0 ? sharedAudio.duration : knownDuration;
   playBtn.textContent = "▶";
   fill.style.width = "0%";
-  timeEl.textContent = "0:00";
+  // Vuelve a mostrar la duración total conocida (no un "0:00" a secas) — no
+  // hace falta perderla al pausar/cambiar a otra burbuja.
+  timeEl.textContent = formatVoiceNoteTime(0) + " / " + formatVoiceNoteTime(totalDuration || 0);
   activeVoiceNotePlayer = null;
 }
 sharedAudio.addEventListener("timeupdate", refreshActiveVoiceNoteProgress);
@@ -1699,6 +1731,18 @@ function buildVoiceNotePlayer(audioId, downloadName) {
   let speedIndex = SPEEDS.indexOf(1.25);
   speedBtn.textContent = SPEEDS[speedIndex] + "x";
 
+  // Se conoce la duración total desde antes de tocar play — un <audio>
+  // liviano aparte (nunca sharedAudio, que solo puede tener un src activo a
+  // la vez) solo para leer metadata, sin descargar ni reproducir nada real.
+  let knownDuration = 0;
+  const probe = new Audio();
+  probe.preload = "metadata";
+  probe.src = "/audio/" + audioId;
+  probe.addEventListener("loadedmetadata", () => {
+    knownDuration = probe.duration;
+    if (!isActive()) timeEl.textContent = formatVoiceNoteTime(0) + " / " + formatVoiceNoteTime(knownDuration);
+  });
+
   const isActive = () => activeVoiceNotePlayer && activeVoiceNotePlayer.wrap === wrap;
   playBtn.addEventListener("click", () => {
     unlockAudio();
@@ -1707,7 +1751,7 @@ function buildVoiceNotePlayer(audioId, downloadName) {
       return;
     }
     deactivateVoiceNotePlayer();
-    activeVoiceNotePlayer = { wrap, playBtn, fill, timeEl };
+    activeVoiceNotePlayer = { wrap, playBtn, fill, timeEl, knownDuration };
     sharedAudio.src = "/audio/" + audioId;
     sharedAudio.playbackRate = SPEEDS[speedIndex];
     sharedAudio.currentTime = 0;

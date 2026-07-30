@@ -1,3 +1,4 @@
+from snarf.capabilities.anthropic_llm import LLMResponse
 from snarf.specialists.project_manager import PROJECT_PROMPT_MAX_LENGTH, ProjectManager
 
 
@@ -29,7 +30,7 @@ class FakeLLM:
         self.calls.append((system, messages))
         if self._raise_error:
             raise RuntimeError("fallo simulado")
-        return self._response
+        return LLMResponse(text=self._response, speech=self._response)
 
 
 class FakeIndexer:

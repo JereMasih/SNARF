@@ -45,7 +45,7 @@ class GmailDigestSpecialist(Specialist):
                 f"- De: {m.get('from', '')} | Asunto: {m.get('subject', '')} | {m.get('snippet', '')[:160]}"
                 for m in messages
             )
-            digest_text = self._llm.generate(system=SYSTEM_PROMPT, messages=[{"role": "user", "content": listing}])
+            digest_text = self._llm.generate(system=SYSTEM_PROMPT, messages=[{"role": "user", "content": listing}]).text
 
         digest = {
             "generated_at": time.time(),

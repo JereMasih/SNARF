@@ -127,7 +127,7 @@ class ProjectManager:
             response = self._llm.generate(
                 system=SUBFOLDER_SUGGESTION_SYSTEM_PROMPT, messages=[{"role": "user", "content": name}]
             )
-            names = [n.strip() for n in response.split(",") if n.strip()][:4]
+            names = [n.strip() for n in response.text.split(",") if n.strip()][:4]
             return names or ["Archivos"]
         except Exception:
             return ["Archivos"]
@@ -253,7 +253,7 @@ class ProjectManager:
             try:
                 summary_text = self._llm.generate(
                     system=SUMMARY_SYSTEM_PROMPT, messages=[{"role": "user", "content": "\n".join(context_lines)}]
-                )
+                ).text
             except Exception as exc:
                 summary_text = f"No se pudo generar el resumen: {exc}"
 

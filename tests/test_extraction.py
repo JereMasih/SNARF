@@ -1,3 +1,4 @@
+from snarf.capabilities.anthropic_llm import LLMResponse
 from snarf.knowledge.extraction import ContentExtractor, categorize_mime
 
 
@@ -29,7 +30,7 @@ class FakeVisionLLM:
 
     def generate(self, system, messages):
         self.calls.append((system, messages))
-        return self.response
+        return LLMResponse(text=self.response, speech=self.response)
 
 
 class FakeStt:
