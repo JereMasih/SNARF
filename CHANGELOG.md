@@ -486,3 +486,8 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Más niebla de luz volumétrica (partículas grandes, lentas y tenues, distintas de las puntuales de siempre) y más partículas en general.
 - El zoom de cámara al enfocar un nodo activo ya no es siempre el mismo valor exacto — varía dentro de un rango en cada evento.
 - 414/414 tests (sin cambios de backend). Verificado con Playwright: el edge activo ya no anima guiones, y dos capturas separadas por 600ms muestran las partículas de flujo en posiciones distintas. Ver ADR 0053.
+
+## [2026-07-29] Proyectos se separa en 3 nodos reales del cerebro (sin costo nuevo)
+
+- Las 14 herramientas de Proyectos caían todas en un único nodo del cerebro — de lejos el más cargado, y el más opaco (no se veía qué parte estaba realmente activa). Usando el mismo `tool_name` que `activity_log` ya registraba sin costo nuevo, se separan en 3 nodos reales: gestión, tareas y notas, y conversaciones (Proyectos Mark II).
+- 414/414 tests (1 actualizado para cubrir los 3 nodos con tool_names reales distintos). Verificado con Playwright contra el snapshot real del backend. Ver ADR 0054.

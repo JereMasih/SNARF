@@ -33,10 +33,16 @@ def test_snapshot_routes_gmail_digest_to_the_specialist_node_not_gmail():
     assert result["nodes"]["gmail"]["count"] == 0
 
 
-def test_snapshot_routes_project_tools_to_the_specialist_node_not_drive_or_knowledge():
-    entries = [{"timestamp": 1.0, "tool_name": "project_create", "status": "ok"}]
+def test_snapshot_routes_project_tools_to_specialist_nodes_not_drive_or_knowledge():
+    entries = [
+        {"timestamp": 1.0, "tool_name": "project_create", "status": "ok"},
+        {"timestamp": 2.0, "tool_name": "project_add_task", "status": "ok"},
+        {"timestamp": 3.0, "tool_name": "project_assign_conversation", "status": "ok"},
+    ]
     result = brain.snapshot(entries, [], [], {})
-    assert result["nodes"]["specialist_projects"]["count"] == 1
+    assert result["nodes"]["specialist_projects_manage"]["count"] == 1
+    assert result["nodes"]["specialist_projects_tasks"]["count"] == 1
+    assert result["nodes"]["specialist_projects_conversations"]["count"] == 1
     assert result["nodes"]["drive"]["count"] == 0
     assert result["nodes"]["knowledge"]["count"] == 0
 
