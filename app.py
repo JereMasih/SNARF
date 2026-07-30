@@ -17,6 +17,7 @@ from snarf.capabilities.elevenlabs_stt import ElevenLabsSTT
 from snarf.capabilities.elevenlabs_tts import ElevenLabsTTS
 from snarf.capabilities.google_auth import TOKENS_DIR as GOOGLE_TOKENS_DIR
 from snarf.core.orchestrator import DEFAULT_USER_ID, LOCAL_FILES_DATA_DIR, Orchestrator
+from snarf.memory.audio_store import MIME_BY_EXT, AudioStore
 from snarf.runtime.dashboard_prefs import load_prefs, save_prefs
 from snarf.runtime.personality_prefs import load_prefs as load_personality_prefs, save_prefs as save_personality_prefs
 from snarf.runtime import data_backup
@@ -35,18 +36,31 @@ app = FastAPI()
 stt = ElevenLabsSTT()
 tts = ElevenLabsTTS()
 orchestrator = Orchestrator(user_id=DEFAULT_USER_ID)
+audio_store = AudioStore()
 
 def _google_connected(user_id: str) -> bool:
     return (GOOGLE_TOKENS_DIR / f"{user_id}.json").exists()
 
 
 BACKUP_INTERVAL_SECONDS = 6 * 3600
+# Política de retención acordada con el fundador: transcripciones/respuestas
+# de texto se guardan para siempre (episodic_memory.jsonl, de siempre); los
+# archivos de audio en sí (notas de voz + respuestas de Snarf cacheadas) se
+# purgan a los 7 días — son la parte cara en espacio, no en información.
+AUDIO_PURGE_MAX_AGE_SECONDS = 7 * 24 * 3600
+AUDIO_PURGE_INTERVAL_SECONDS = 6 * 3600
 
 
 async def _periodic_backup_loop():
     while True:
         await asyncio.sleep(BACKUP_INTERVAL_SECONDS)
         data_backup.backup_now()
+
+
+async def _periodic_audio_purge_loop():
+    while True:
+        await asyncio.sleep(AUDIO_PURGE_INTERVAL_SECONDS)
+        audio_store.purge_older_than(AUDIO_PURGE_MAX_AGE_SECONDS)
 
 
 @app.on_event("startup")
@@ -59,11 +73,14 @@ async def warmup():
     if not os.environ.get("PYTEST_CURRENT_TEST"):
         data_backup.backup_now()
         asyncio.create_task(_periodic_backup_loop())
+        audio_store.purge_older_than(AUDIO_PURGE_MAX_AGE_SECONDS)
+        asyncio.create_task(_periodic_audio_purge_loop())
 
 
 class SendRequest(BaseModel):
     text: str
     conversation_id: str | None = None
+    input_audio_id: str | None = None
 
 
 class SendResponse(BaseModel):
@@ -158,6 +175,12 @@ async def transcribe(file: UploadFile, user_id: str = Depends(require_user)):
     if len(audio_bytes) < 2000:
         return {"transcript": ""}
     input_log.record("voice")
+    # Se guarda la nota de voz real ANTES de intentar transcribir — así el
+    # audio sigue existiendo (reproducible como nota de voz en el chat, con
+    # su transcripción como desplegable) incluso si el STT falla o devuelve
+    # vacío; se purga solo a los 7 días si nunca termina en un mensaje real.
+    ext = (file.filename or "audio.webm").rsplit(".", 1)[-1] if "." in (file.filename or "") else "webm"
+    audio_id = audio_store.save(audio_bytes, ext)
     try:
         text = stt.transcribe(audio_bytes, filename=file.filename or "audio.webm")
     except Exception as exc:
@@ -167,8 +190,8 @@ async def transcribe(file: UploadFile, user_id: str = Depends(require_user)):
         # etc.) — sin este campo, la interfaz no puede distinguir ambos casos
         # y termina diciéndole al usuario "no se escuchó nada" cuando en
         # realidad el micrófono funcionó perfecto.
-        return {"transcript": "", "error": "no se pudo transcribir: el servicio de voz no está disponible ahora"}
-    return {"transcript": text}
+        return {"transcript": "", "error": "no se pudo transcribir: el servicio de voz no está disponible ahora", "audio_id": audio_id}
+    return {"transcript": text, "audio_id": audio_id}
 
 
 @app.post("/send", response_model=SendResponse)
@@ -177,7 +200,9 @@ def send(payload: SendRequest, user_id: str = Depends(require_user)):
     # El proyecto de la conversación (si tiene uno asignado) se resuelve solo
     # dentro de orchestrator.handle() por conversation_id — ver Proyectos
     # Mark II. Ya no viaja como parámetro por mensaje.
-    response_text = orchestrator.handle("visual", payload.text, conversation_id=payload.conversation_id)
+    response_text = orchestrator.handle(
+        "visual", payload.text, conversation_id=payload.conversation_id, input_audio_id=payload.input_audio_id
+    )
     return SendResponse(response=response_text)
 
 
@@ -185,8 +210,23 @@ def send(payload: SendRequest, user_id: str = Depends(require_user)):
 def synthesize_speech(payload: TTSRequest, user_id: str = Depends(require_user)):
     if not tts.available:
         return TTSResponse(audio_base64=None)
-    audio_bytes = tts.synthesize(payload.text)
+    # Caché por contenido: la misma respuesta ya sintetizada antes no vuelve
+    # a pagar una llamada real a ElevenLabs — "escuchar" varias veces la
+    # misma respuesta es instantáneo después de la primera vez.
+    audio_bytes = audio_store.get_cached_tts(payload.text)
+    if audio_bytes is None:
+        audio_bytes = tts.synthesize(payload.text)
+        audio_store.save_tts(payload.text, audio_bytes)
     return TTSResponse(audio_base64=base64.b64encode(audio_bytes).decode("ascii"))
+
+
+@app.get("/audio/{audio_id}")
+def get_audio(audio_id: str, user_id: str = Depends(require_user)):
+    path = audio_store.path_for(audio_id)
+    if path is None:
+        raise HTTPException(404, "audio no encontrado (puede haber sido purgado ya)")
+    ext = audio_id.rsplit(".", 1)[-1].lower()
+    return FileResponse(path, media_type=MIME_BY_EXT.get(ext, "application/octet-stream"))
 
 
 @app.post("/files/upload")

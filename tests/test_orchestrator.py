@@ -19,6 +19,11 @@ def test_echo_mode_without_api_key_and_persists_to_memory(orchestrator):
     assert orchestrator.memory.get_conversation("c1")[0]["response"] == response
 
 
+def test_handle_stores_the_input_audio_id_on_the_memory_entry(orchestrator):
+    orchestrator.handle("voice", "hola snarf", conversation_id="c1", input_audio_id="abc123.webm")
+    assert orchestrator.memory.get_conversation("c1")[0]["input_audio_id"] == "abc123.webm"
+
+
 def test_handle_degrades_gracefully_when_the_llm_call_fails(orchestrator, monkeypatch):
     # Regresión: un fallo real del LLM (crédito agotado, rate limit, red)
     # tiraba un 500 crudo hasta /send en vez de degradar como /transcribe.

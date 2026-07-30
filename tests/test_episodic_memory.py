@@ -21,6 +21,20 @@ def test_append_and_recent_roundtrip(tmp_path, monkeypatch):
     assert entries[0]["response"] == "respuesta"
 
 
+def test_append_persists_input_audio_id(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("voice", "hola", "respuesta", conversation_id="c1", input_audio_id="abc123.webm")
+    entries = memory.recent(10, conversation_id="c1")
+    assert entries[0]["input_audio_id"] == "abc123.webm"
+
+
+def test_append_defaults_input_audio_id_to_none(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "hola", "respuesta", conversation_id="c1")
+    entries = memory.recent(10, conversation_id="c1")
+    assert entries[0]["input_audio_id"] is None
+
+
 def test_recent_filters_by_conversation_id(tmp_path, monkeypatch):
     memory = make_memory(tmp_path, monkeypatch)
     memory.append("text", "de c1", "r1", conversation_id="c1")

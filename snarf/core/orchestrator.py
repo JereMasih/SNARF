@@ -1044,6 +1044,7 @@ class Orchestrator:
         channel_name: str,
         user_input: str,
         conversation_id: str | None = None,
+        input_audio_id: str | None = None,
     ) -> str:
         # project_id ya no viaja como parámetro por mensaje (eso no alcanzaba:
         # una conversación recién creada sin mensajes no tenía nada que
@@ -1094,5 +1095,8 @@ class Orchestrator:
                 # gracia igual que /transcribe, en vez de romper la request.
                 response = f"[error real del LLM, no pude responder: {exc}]"
 
-        self._memory.append(channel_name, user_input, response, conversation_id=conversation_id, project_id=project_id)
+        self._memory.append(
+            channel_name, user_input, response,
+            conversation_id=conversation_id, project_id=project_id, input_audio_id=input_audio_id,
+        )
         return response

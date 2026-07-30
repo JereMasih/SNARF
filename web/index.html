@@ -758,6 +758,19 @@
     -webkit-backdrop-filter: blur(4px) saturate(1.2);
     border: 1px solid rgba(79,216,232,0.4); border-bottom-right-radius: 4px;
   }
+  /* Nota de voz estilo WhatsApp: el audio real es el mensaje, la
+     transcripción queda disponible pero oculta por default. */
+  .voice-note-row { display: flex; align-items: center; gap: 0.5rem; }
+  .voice-note-row .play-audio-btn { margin-top: 0; }
+  .voice-note-toggle {
+    background: none; border: none; color: var(--text-dim);
+    font-family: inherit; font-size: 0.68rem; cursor: pointer; padding: 0.2rem 0.3rem;
+  }
+  .voice-note-toggle:hover { color: var(--text); }
+  .voice-note-transcript {
+    margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid rgba(79,216,232,0.15);
+    color: var(--text-dim); font-size: 0.8rem;
+  }
   .msg.snarf {
     align-self: flex-start;
     background: radial-gradient(ellipse at center, rgba(200,235,240,0.06) 0%, rgba(10,14,15,0.12) 55%, rgba(4,7,8,0.18) 100%);
@@ -1488,7 +1501,7 @@ function addCodeBlockCopyButtons(container) {
   });
 }
 
-function addMessage(text, who, withAudio) {
+function addMessage(text, who, withAudio, inputAudioId) {
   const div = document.createElement("div");
   div.className = "msg " + who;
   if (who === "snarf") {
@@ -1509,6 +1522,33 @@ function addMessage(text, who, withAudio) {
     copyBtn.addEventListener("click", () => copyTextToClipboard(text, copyBtn));
     actions.appendChild(copyBtn);
     div.appendChild(actions);
+  } else if (inputAudioId) {
+    // Nota de voz real, estilo WhatsApp: reproducible las veces que haga
+    // falta (reusa el mismo reproductor flotante que "escuchar" en las
+    // respuestas de Snarf), con la transcripción disponible como
+    // desplegable en vez de mostrarse siempre — el audio es el mensaje.
+    div.classList.add("voice-note");
+    const playBtn = document.createElement("button");
+    playBtn.className = "play-audio-btn";
+    playBtn.textContent = "▶ nota de voz";
+    playBtn.addEventListener("click", () => playAudio("/audio/" + inputAudioId).catch(() => { playBtn.textContent = "no se pudo reproducir"; }));
+    const toggleBtn = document.createElement("button");
+    toggleBtn.className = "voice-note-toggle";
+    toggleBtn.textContent = "▾ transcripción";
+    const transcriptEl = document.createElement("div");
+    transcriptEl.className = "voice-note-transcript";
+    transcriptEl.textContent = text;
+    transcriptEl.hidden = true;
+    toggleBtn.addEventListener("click", () => {
+      transcriptEl.hidden = !transcriptEl.hidden;
+      toggleBtn.textContent = (transcriptEl.hidden ? "▾" : "▴") + " transcripción";
+    });
+    const row = document.createElement("div");
+    row.className = "voice-note-row";
+    row.appendChild(playBtn);
+    row.appendChild(toggleBtn);
+    div.appendChild(row);
+    div.appendChild(transcriptEl);
   } else {
     div.textContent = text;
   }
@@ -1730,7 +1770,7 @@ async function loadConversation(id) {
     const res = await apiFetch("/conversations/" + id);
     const entries = await res.json();
     entries.forEach(e => {
-      addMessage(e.input, "user");
+      addMessage(e.input, "user", false, e.input_audio_id);
       addMessage(e.response, "snarf", ttsAvailable);
     });
   } catch (e) {
@@ -3801,10 +3841,13 @@ async function transcribeBlob(blob) {
   // transcripción vacía real (audio corto o silencio genuino), que no trae
   // este campo. Sin la distinción, un fallo de servicio se mostraba como
   // "no se escuchó nada" — engañoso, porque reintentar no soluciona nada.
-  return { transcript: data.transcript || "", error: data.error || null };
+  // data.audio_id: el backend ya guardó la nota de voz real (aunque falle
+  // el STT o el audio no traiga voz) — permite mostrarla como nota de voz
+  // reproducible, no solo como texto transcripto.
+  return { transcript: data.transcript || "", error: data.error || null, audioId: data.audio_id || null };
 }
 
-async function sendText(text) {
+async function sendText(text, inputAudioId) {
   if (!text.trim()) { setState("idle", idleLabel()); return; }
   if (pendingProjectHomeId) {
     // Se tipeó directo sobre el "home" de un proyecto, sin usar el botón
@@ -3818,14 +3861,14 @@ async function sendText(text) {
     clearChat();
     refreshProjectList();
   }
-  addMessage(text, "user");
+  addMessage(text, "user", false, inputAudioId);
   setState("thinking", "pensando...");
   showTyping();
   try {
     const res = await apiFetch("/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, conversation_id: conversationId }),
+      body: JSON.stringify({ text, conversation_id: conversationId, input_audio_id: inputAudioId || null }),
     });
     if (!res.ok) throw new Error("send HTTP " + res.status);
     const data = await res.json();
@@ -3946,10 +3989,10 @@ async function finishRecording(cancelled) {
   setState("thinking", "transcribiendo...");
   try {
     const blob = await stopRecording();
-    const { transcript, error } = await transcribeBlob(blob);
+    const { transcript, error, audioId } = await transcribeBlob(blob);
     if (error) { setState("error", error); return; }
     if (!transcript.trim()) { setState("idle", "no se escuchó nada, probá de nuevo"); return; }
-    await sendText(transcript);
+    await sendText(transcript, audioId);
   } catch (err) {
     setState("error", "error: " + (err.message || err));
   }

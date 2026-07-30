@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app as app_module
+from snarf.memory.audio_store import AudioStore
 from snarf.memory.episodic import EpisodicMemory
 from snarf.telemetry import activity_log, input_log, usage_tracker
 
@@ -21,6 +22,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module.orchestrator._llm, "_client", None)
     monkeypatch.setattr(app_module.stt, "_api_key", None)
     monkeypatch.setattr(app_module.tts, "_api_key", None)
+    monkeypatch.setattr(app_module, "audio_store", AudioStore(directory=tmp_path / "audio"))
     monkeypatch.setattr(usage_tracker, "DEFAULT_PATH", tmp_path / "usage_log.jsonl")
     monkeypatch.setattr(activity_log, "DEFAULT_PATH", tmp_path / "activity_log.jsonl")
     monkeypatch.setattr(input_log, "DEFAULT_PATH", tmp_path / "input_log.jsonl")
@@ -132,6 +134,61 @@ def test_transcribe_does_not_record_input_log_entry_for_too_short_audio(client, 
     monkeypatch.setattr(app_module.stt, "_api_key", "fake-key-for-test")
     client.post("/transcribe", files={"file": ("audio.webm", b"short", "audio/webm")})
     assert input_log.recent() == []
+
+
+def test_transcribe_stores_the_real_audio_and_returns_its_id(client, monkeypatch):
+    monkeypatch.setattr(app_module.stt, "_api_key", "fake-key-for-test")
+    monkeypatch.setattr(app_module.stt, "transcribe", lambda *a, **kw: "texto transcripto")
+    res = client.post("/transcribe", files={"file": ("audio.webm", b"x" * 5000, "audio/webm")})
+    audio_id = res.json()["audio_id"]
+    assert audio_id.endswith(".webm")
+    assert app_module.audio_store.path_for(audio_id) is not None
+
+
+def test_transcribe_stores_the_audio_even_when_stt_itself_fails(client, monkeypatch):
+    # La nota de voz real sigue siendo reproducible en el chat aunque el
+    # servicio de transcripción falle — solo se pierde la transcripción, no
+    # el audio en sí.
+    monkeypatch.setattr(app_module.stt, "_api_key", "fake-key-for-test")
+
+    def boom(*a, **kw):
+        raise RuntimeError("ElevenLabs STT 401: quota_exceeded")
+
+    monkeypatch.setattr(app_module.stt, "transcribe", boom)
+    res = client.post("/transcribe", files={"file": ("audio.webm", b"x" * 5000, "audio/webm")})
+    audio_id = res.json()["audio_id"]
+    assert app_module.audio_store.path_for(audio_id) is not None
+
+
+def test_get_audio_serves_a_stored_file(client):
+    audio_id = app_module.audio_store.save(b"fake audio bytes", "webm")
+    res = client.get(f"/audio/{audio_id}")
+    assert res.status_code == 200
+    assert res.content == b"fake audio bytes"
+    assert res.headers["content-type"] == "audio/webm"
+
+
+def test_get_audio_404s_for_an_unknown_or_unsafe_id(client):
+    assert client.get("/audio/does-not-exist.mp3").status_code == 404
+    assert client.get("/audio/..%2f..%2fetc%2fpasswd").status_code == 404
+
+
+def test_send_persists_the_input_audio_id_on_the_memory_entry(client):
+    client.post("/send", json={"text": "hola", "conversation_id": "conv-voice", "input_audio_id": "abc123.webm"})
+    entry = app_module.orchestrator.memory.get_conversation("conv-voice")[0]
+    assert entry["input_audio_id"] == "abc123.webm"
+
+
+def test_tts_caches_by_content_and_does_not_resynthesize_the_same_text(client, monkeypatch):
+    monkeypatch.setattr(app_module.tts, "_api_key", "fake-key-for-test")
+    calls = []
+    monkeypatch.setattr(app_module.tts, "synthesize", lambda text: calls.append(text) or b"real audio bytes")
+
+    first = client.post("/tts", json={"text": "hola de nuevo"})
+    second = client.post("/tts", json={"text": "hola de nuevo"})
+
+    assert first.json() == second.json()
+    assert len(calls) == 1  # la segunda vez sirvió del caché, no volvió a pagar una síntesis real
 
 
 def test_tts_without_credentials_returns_no_audio(client):

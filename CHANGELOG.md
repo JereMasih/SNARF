@@ -457,3 +457,11 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - "+ nueva conversación" ahora también disponible en la barra lateral dentro de un proyecto (antes solo en el home); "borrar proyecto" se reubica al final del home, lejos de una acción de uso diario.
 - Backlog real de "Incubadora de Ideas" revisado en Drive — sin conflictos con el trabajo de esta sesión.
 - 398/398 tests (sin cambios de backend). Verificado con Playwright en escritorio y en mobile (con micrófono falso). Ver ADR 0049.
+
+## [2026-07-29] Notas de voz reproducibles (estilo WhatsApp) y caché de audio de Snarf
+
+- Nuevo `snarf/memory/audio_store.py`: las notas de voz del usuario ahora se guardan como archivos reales (`data/audio/`, nunca en el log de texto) y quedan reproducibles en el chat como una nota de voz — botón de reproducir + transcripción disponible debajo como desplegable, en vez de mostrarse siempre.
+- Las respuestas de Snarf siguen mostrándose como texto igual que siempre (sin cambio de interfaz ahí) — lo que cambia es que escucharlas varias veces ya no vuelve a pagar ni esperar una síntesis nueva de ElevenLabs: `/tts` cachea por contenido del texto.
+- Protocolo de limpieza real: las transcripciones y respuestas de texto se guardan para siempre como siempre; los archivos de audio en sí (notas de voz + caché de TTS) se purgan solos a los 7 días — a pedido explícito del fundador, priorizando espacio sobre "replay histórico" de audios viejos.
+- Nuevo endpoint `GET /audio/{id}` (con validación estricta contra path traversal).
+- 414/414 tests (16 nuevos). Verificado con Playwright contra una instancia real aislada: guardado/servido de audio real, 404 ante ids inválidos, render del bubble de nota de voz con su desplegable, y caché de TTS confirmada con un contador real de llamadas a síntesis. Ver ADR 0050.
