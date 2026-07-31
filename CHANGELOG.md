@@ -593,3 +593,9 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Nuevas Capacidades `OpenAICompatibleLLM` (cubre OpenAI, xAI/Grok y Llama vía Groq, mismo formato de tool-calling los tres) y `GeminiLLM`, con la misma interfaz que `AnthropicLLM` — verificadas campo por campo contra los SDKs reales instalados.
 - `snarf/runtime/llm_routing.py`: qué proveedor/modelo usa cada rol (conversación principal, Gmail, visión de Drive, resumen de proyectos, título de conversación) — default = exactamente el comportamiento de siempre, configurable desde un selector nuevo en configuración ("LLM por rol"), con los proveedores sin credencial real marcados como tales.
 - 529/529 tests. Verificado con Playwright: los 5 roles muestran su default correcto, los proveedores sin API key aparecen deshabilitados, y un cambio persiste tras un reload. Ver ADR 0068 — los adaptadores nuevos todavía no tienen un smoke-test con una llamada real (faltan las credenciales).
+
+## [2026-07-30] Paneo 3D: profundidad real entre los anillos del cerebro
+
+- Pendiente de varias rondas: el núcleo del cerebro (Orchestrator) y cada anillo (Entrada/Especialistas/Capacidades) ahora reaccionan con intensidad distinta al mismo desvío orbital de cámara — lo "cercano" se mueve más que el "fondo", dando sensación de volumen real en vez de un dibujo plano. Sin WebGL, con SVG puro.
+- Encontrado y resuelto un choque técnico real: los nodos ya pulsan con animaciones CSS propias sobre `transform`, que le ganan a un `transform` puesto por JS — se resolvió envolviendo cada nodo en su propio `<g>` para que el paralaje y el pulso convivan sin pisarse.
+- 529/529 tests (sin cambios de backend). Verificado con Playwright: desplazamiento real medido (núcleo ~31 unidades vs. ~3.6 en el anillo externo, más de 8x de diferencia), cero errores de consola, el zoom-foco existente intacto. Ver ADR 0069.

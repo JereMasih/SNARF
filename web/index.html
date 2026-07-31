@@ -3314,6 +3314,7 @@ function startBrainMiniPolling() {
 let brainGraphBuilt = false;
 let brainNodeEls = {};
 let brainIconEls = {};
+let brainNodeGroupEls = {};
 let brainEdgePaths = {};
 let brainEdgeFlowPaths = {};
 let brainPollTimer = null;
@@ -3330,6 +3331,7 @@ function buildBrainGraphSkeleton() {
   nodesG.innerHTML = "";
   brainNodeEls = {};
   brainIconEls = {};
+  brainNodeGroupEls = {};
   brainEdgePaths = {};
   brainEdgeFlowPaths = {};
 
@@ -3345,17 +3347,28 @@ function buildBrainGraphSkeleton() {
     edgesG.appendChild(ring);
   });
 
+  // Cada nodo (círculo + ícono) va envuelto en su propio <g> — es ESE grupo
+  // el que recibe el transform de paralaje por profundidad (ver
+  // applyBrainDepthParallax), nunca el círculo/ícono directo: esos ya tienen
+  // su propia animación CSS de transform (brain-breathe/brain-heartbeat) y
+  // un transform puesto por JS ahí se ignoraría (una animación CSS activa
+  // le gana al atributo transform de SVG, no se combinan). El wrapper evita
+  // el choque sin tocar esas animaciones.
+  const centerGroup = document.createElementNS(SVG_NS, "g");
+  nodesG.appendChild(centerGroup);
+  brainNodeGroupEls.orchestrator = centerGroup;
+
   const centerCircle = document.createElementNS(SVG_NS, "circle");
   centerCircle.setAttribute("cx", cx);
   centerCircle.setAttribute("cy", cy);
   centerCircle.setAttribute("r", 30);
   centerCircle.setAttribute("class", "brain-node-center brain-color-white");
-  nodesG.appendChild(centerCircle);
+  centerGroup.appendChild(centerCircle);
   brainNodeEls.orchestrator = centerCircle;
 
   const centerIcon = createBrainNodeIconEl("orchestrator", cx, cy + 48, 22);
   centerIcon.classList.add("brain-color-white");
-  nodesG.appendChild(centerIcon);
+  centerGroup.appendChild(centerIcon);
   brainIconEls.orchestrator = centerIcon;
 
   layout.forEach((p) => {
@@ -3380,18 +3393,22 @@ function buildBrainGraphSkeleton() {
     flowsG.appendChild(flowPath);
     brainEdgeFlowPaths[p.id] = flowPath;
 
+    const group = document.createElementNS(SVG_NS, "g");
+    nodesG.appendChild(group);
+    brainNodeGroupEls[p.id] = group;
+
     const circle = document.createElementNS(SVG_NS, "circle");
     circle.setAttribute("cx", p.x.toFixed(1));
     circle.setAttribute("cy", p.y.toFixed(1));
     circle.setAttribute("r", isSpecialist || isInput ? 14 : 11);
     circle.setAttribute("class", `brain-node ${colorCls}${isSpecialist ? " brain-node-specialist" : ""}`);
-    nodesG.appendChild(circle);
+    group.appendChild(circle);
     brainNodeEls[p.id] = circle;
 
     const iconY = p.y + (p.y > cy ? 24 : -18);
     const icon = createBrainNodeIconEl(p.id, p.x, iconY, 17);
     icon.classList.add(colorCls);
-    nodesG.appendChild(icon);
+    group.appendChild(icon);
     brainIconEls[p.id] = icon;
   });
 
@@ -3858,22 +3875,57 @@ function spawnActiveFlowParticles(dt) {
     }
   });
 }
+// Paneo 3D / profundidad entre anillos (pedido explícito del fundador,
+// estilo holograma Jarvis/Ultron): el mismo desvío orbital de cámara
+// (driftX/driftY) se aplica a cada nodo con una intensidad distinta según
+// su anillo — el núcleo (orchestrator) es el que más se corre (lee como lo
+// "más cerca"), el anillo de Capacidades el que casi no se mueve (lee como
+// fondo lejano). Es lo que revela que el grafo tiene volumen real en vez de
+// ser un dibujo plano, sin necesitar WebGL ni tocar la lógica de datos.
+function brainDepthFactorFor(id) {
+  if (id === "orchestrator") return 1.7;
+  if (BRAIN_INPUT_ORDER.includes(id)) return 1.0;
+  if (BRAIN_SPECIALIST_ORDER.includes(id)) return 0.55;
+  return 0.2; // anillo de Capacidades — el más externo, el más "de fondo"
+}
+function applyBrainDepthParallax(driftX, driftY) {
+  const centerFactor = brainDepthFactorFor("orchestrator");
+  const centerDx = driftX * centerFactor, centerDy = driftY * centerFactor;
+  Object.entries(brainNodeGroupEls).forEach(([id, group]) => {
+    const factor = brainDepthFactorFor(id);
+    const dx = driftX * factor, dy = driftY * factor;
+    group.setAttribute("transform", `translate(${dx.toFixed(2)} ${dy.toFixed(2)})`);
+    if (id === "orchestrator") return;
+    const node = brainNodeEls[id];
+    if (!node) return;
+    const baseX = parseFloat(node.getAttribute("cx"));
+    const baseY = parseFloat(node.getAttribute("cy"));
+    const d = `M ${(250 + centerDx).toFixed(1)} ${(250 + centerDy).toFixed(1)} L ${(baseX + dx).toFixed(1)} ${(baseY + dy).toFixed(1)}`;
+    const edge = brainEdgePaths[id];
+    const flow = brainEdgeFlowPaths[id];
+    if (edge) edge.setAttribute("d", d);
+    if (flow) flow.setAttribute("d", d);
+  });
+}
 function updateBrainCamera(dt) {
   const ease = 1 - Math.pow(0.0005, dt);
   brainCamera.x += (brainCamera.targetX - brainCamera.x) * ease;
   brainCamera.y += (brainCamera.targetY - brainCamera.y) * ease;
   brainCamera.zoom += (brainCamera.targetZoom - brainCamera.zoom) * ease;
 
-  // Deriva ambiental sutil, siempre presente — la sensación de flotar en el
-  // espacio digital pedida, nunca del todo estática ni cuando no hay foco.
+  // Órbita lenta, siempre presente — la sensación de flotar en el espacio
+  // digital pedida, nunca del todo estática ni cuando no hay foco. Radio
+  // más grande que el wobble original (antes ±3, apenas perceptible): acá
+  // es lo que le da recorrido real al paneo 3D de applyBrainDepthParallax.
   brainCamera.driftPhase += dt * 0.12;
-  const driftX = Math.sin(brainCamera.driftPhase) * 3;
-  const driftY = Math.cos(brainCamera.driftPhase * 0.83) * 3;
+  const driftX = Math.sin(brainCamera.driftPhase) * 18;
+  const driftY = Math.cos(brainCamera.driftPhase * 0.83) * 18;
   const wobble = 1 + Math.sin(brainCamera.driftPhase) * 0.012;
 
   const origin = brainViewboxToCanvas(brainCamera.x + driftX, brainCamera.y + driftY);
   brainGraphInner.style.transformOrigin = `${origin.x}px ${origin.y}px`;
   brainGraphInner.style.transform = `scale(${(brainCamera.zoom * wobble).toFixed(4)})`;
+  applyBrainDepthParallax(driftX, driftY);
 }
 function renderBrainFrame(ts) {
   if (brainLastFrameTs == null) brainLastFrameTs = ts;
