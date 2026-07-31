@@ -48,7 +48,10 @@ class KokoroTTS(TTSProvider):
                 "voice": voice or self._voice,
                 "response_format": audio_format,
             },
-            timeout=30,
+            # 30s real, en producción, no alcanzó: un timeout real de "Read
+            # timed out" en el log apunta a un cold-start del contenedor tras
+            # estar inactivo (la síntesis en caliente tarda ~2-3s).
+            timeout=60,
         )
         if not response.ok:
             raise RuntimeError(f"Kokoro TTS {response.status_code}: {response.text}")

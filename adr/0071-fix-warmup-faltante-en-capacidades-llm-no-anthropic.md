@@ -20,3 +20,7 @@ Se agrega `.warmup()` a `OpenAICompatibleLLM` y `GeminiLLM`, mismo criterio que 
 ## Consecuencias
 
 - Rutear cualquier rol a cualquier proveedor disponible ya no puede crashear el arranque del servidor, sin importar qué se haya guardado en `data/llm_routing.json`.
+
+## Adenda — timeout real de Kokoro TTS
+
+El fundador reportó voz fallando en producción. El log real mostró un `ConnectionError: Read timed out` contra el contenedor Kokoro (detrás de un túnel SSH en :8880) al sintetizar — la síntesis en caliente mide ~2-3s, consistente con un cold-start del contenedor tras estar inactivo superando el timeout de 30s. Se sube a 60s en `KokoroTTS.speak()`. Verificado con 5 llamadas reales seguidas post-fix, todas OK (~3s cada una).

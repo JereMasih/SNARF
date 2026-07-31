@@ -22,3 +22,4 @@ data/audio/
 data_backups/
 credentials/
 server.log
+logs/

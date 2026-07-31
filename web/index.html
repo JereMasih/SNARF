@@ -3316,6 +3316,12 @@ let brainNodeEls = {};
 let brainIconEls = {};
 let brainNodeGroupEls = {};
 let brainNodeBaseRadius = {}; // radio original de cada nodo (antes de que un frame lo escale por profundidad)
+// x/y/z originales de cada nodo, cacheados una sola vez al construir el
+// esqueleto — evita leer cx/cy del DOM (getAttribute + parseFloat) en cada
+// uno de los ~60 frames por segundo del render loop, un read-then-write
+// real sobre decenas de nodos que causaba lag perceptible (bug real
+// reportado tras esta ronda, ver ADR).
+let brainNodeBasePos = {};
 let brainEdgePaths = {};
 let brainEdgeFlowPaths = {};
 let brainPollTimer = null;
@@ -3334,6 +3340,7 @@ function buildBrainGraphSkeleton() {
   brainIconEls = {};
   brainNodeGroupEls = {};
   brainNodeBaseRadius = {};
+  brainNodeBasePos = {};
   brainEdgePaths = {};
   brainEdgeFlowPaths = {};
 
@@ -3368,6 +3375,7 @@ function buildBrainGraphSkeleton() {
   centerGroup.appendChild(centerCircle);
   brainNodeEls.orchestrator = centerCircle;
   brainNodeBaseRadius.orchestrator = 30;
+  brainNodeBasePos.orchestrator = { x: cx, y: cy, z: brainZForNode("orchestrator") };
 
   const centerIcon = createBrainNodeIconEl("orchestrator", cx, cy + 48, 22);
   centerIcon.classList.add("brain-color-white");
@@ -3409,6 +3417,7 @@ function buildBrainGraphSkeleton() {
     group.appendChild(circle);
     brainNodeEls[p.id] = circle;
     brainNodeBaseRadius[p.id] = baseRadius;
+    brainNodeBasePos[p.id] = { x: p.x, y: p.y, z: brainZForNode(p.id) };
 
     const iconY = p.y + (p.y > cy ? 24 : -18);
     const icon = createBrainNodeIconEl(p.id, p.x, iconY, 17);
@@ -3641,10 +3650,12 @@ const BRAIN_MESH_SATELLITES_PER_NODE = 9;
 const BRAIN_MESH_NEIGHBORS = 4;
 let brainMeshPoints = [];
 let brainMeshLinks = [];
+let brainMeshLinksByColor = new Map(); // agrupados una sola vez al construir la malla — dibujar un solo path por color en vez de un stroke() por link (hasta ~500 links/frame) es lo que evita el lag real reportado en dispositivos más débiles
 
 function initBrainMesh() {
   brainMeshPoints = [];
   brainMeshLinks = [];
+  brainMeshLinksByColor = new Map();
   Object.entries(brainNodeEls).forEach(([id, el]) => {
     const cx = parseFloat(el.getAttribute("cx")) || 250;
     const cy = parseFloat(el.getAttribute("cy")) || 250;
@@ -3680,6 +3691,11 @@ function initBrainMesh() {
       if (!brainMeshLinks.some((l) => l.key === key)) brainMeshLinks.push({ key, a: i, b: j });
     });
   }
+  brainMeshLinks.forEach((link) => {
+    const color = brainMeshPoints[link.a].color;
+    if (!brainMeshLinksByColor.has(color)) brainMeshLinksByColor.set(color, []);
+    brainMeshLinksByColor.get(color).push(link);
+  });
 }
 function drawBrainAura(ctx, ts) {
   const t = ts / 1000;
@@ -3701,25 +3717,31 @@ function drawBrainMesh(ctx, ts) {
   const t = ts / 1000;
   ctx.globalCompositeOperation = "lighter";
   ctx.lineWidth = Math.max(0.5, 0.9 * brainCanvasTransform.scale);
-  brainMeshLinks.forEach(({ a, b }) => {
-    const pa = brainMeshPoints[a];
-    const pb = brainMeshPoints[b];
-    const ax = pa.x + Math.sin(t * 0.6 + pa.phase) * 2.4;
-    const ay = pa.y + Math.cos(t * 0.5 + pa.phase) * 2.4;
-    const bx = pb.x + Math.sin(t * 0.6 + pb.phase) * 2.4;
-    const by = pb.y + Math.cos(t * 0.5 + pb.phase) * 2.4;
-    const projA = project3D(ax, ay, pa.z || 0);
-    const projB = project3D(bx, by, pb.z || 0);
-    const posA = brainViewboxToCanvas(projA.x, projA.y);
-    const posB = brainViewboxToCanvas(projB.x, projB.y);
-    const jitter = Math.sin(t * 0.8 + pa.phase + pb.phase) * 5 * brainCanvasTransform.scale;
-    const midX = (posA.x + posB.x) / 2 + jitter;
-    const midY = (posA.y + posB.y) / 2 - jitter;
-    ctx.strokeStyle = pa.color;
-    ctx.globalAlpha = 0.19;
+  ctx.globalAlpha = 0.19;
+  // Un solo beginPath()/stroke() por color (no por link, hasta ~500/frame) —
+  // cada stroke() de Canvas 2D tiene overhead fijo de rasterizado; agrupar
+  // por color (ya precomputado en initBrainMesh) es lo que evita el lag real
+  // reportado en dispositivos más débiles sin cambiar nada visual.
+  brainMeshLinksByColor.forEach((links, color) => {
+    ctx.strokeStyle = color;
     ctx.beginPath();
-    ctx.moveTo(posA.x, posA.y);
-    ctx.quadraticCurveTo(midX, midY, posB.x, posB.y);
+    links.forEach(({ a, b }) => {
+      const pa = brainMeshPoints[a];
+      const pb = brainMeshPoints[b];
+      const ax = pa.x + Math.sin(t * 0.6 + pa.phase) * 2.4;
+      const ay = pa.y + Math.cos(t * 0.5 + pa.phase) * 2.4;
+      const bx = pb.x + Math.sin(t * 0.6 + pb.phase) * 2.4;
+      const by = pb.y + Math.cos(t * 0.5 + pb.phase) * 2.4;
+      const projA = project3D(ax, ay, pa.z || 0);
+      const projB = project3D(bx, by, pb.z || 0);
+      const posA = brainViewboxToCanvas(projA.x, projA.y);
+      const posB = brainViewboxToCanvas(projB.x, projB.y);
+      const jitter = Math.sin(t * 0.8 + pa.phase + pb.phase) * 5 * brainCanvasTransform.scale;
+      const midX = (posA.x + posB.x) / 2 + jitter;
+      const midY = (posA.y + posB.y) / 2 - jitter;
+      ctx.moveTo(posA.x, posA.y);
+      ctx.quadraticCurveTo(midX, midY, posB.x, posB.y);
+    });
     ctx.stroke();
   });
   ctx.globalAlpha = 1;
@@ -3999,17 +4021,14 @@ function brainLerpColor(colorA, colorB, t) {
 // ANTES de dibujar el canvas del mismo frame (ver renderBrainFrame), así
 // ambas capas comparten exactamente la misma geometría, siempre.
 function applyBrain3DProjection() {
-  const centerZ = brainZForNode("orchestrator");
-  const centerProj = project3D(250, 250, centerZ);
+  const centerProj = project3D(250, 250, brainNodeBasePos.orchestrator.z);
   Object.entries(brainNodeGroupEls).forEach(([id, group]) => {
     const node = brainNodeEls[id];
-    if (!node) return;
-    const baseX = parseFloat(node.getAttribute("cx"));
-    const baseY = parseFloat(node.getAttribute("cy"));
+    const pos = brainNodeBasePos[id];
+    if (!node || !pos) return;
     const baseR = brainNodeBaseRadius[id] || 11;
-    const z = brainZForNode(id);
-    const proj = project3D(baseX, baseY, z);
-    group.setAttribute("transform", `translate(${(proj.x - baseX).toFixed(2)} ${(proj.y - baseY).toFixed(2)})`);
+    const proj = project3D(pos.x, pos.y, pos.z);
+    group.setAttribute("transform", `translate(${(proj.x - pos.x).toFixed(2)} ${(proj.y - pos.y).toFixed(2)})`);
     node.setAttribute("r", (baseR * proj.scale).toFixed(2));
     group.style.opacity = Math.max(0.4, Math.min(1, proj.scale)).toFixed(2);
     if (id === "orchestrator") return;

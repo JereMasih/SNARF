@@ -27,3 +27,11 @@ Proyección de perspectiva real, una sola fuente de verdad para SVG y canvas —
 ## Consecuencias
 
 - El paralaje 2D del ADR 0069 queda reemplazado por este mecanismo — ese ADR sigue documentando el hallazgo del choque CSS-animation-vs-transform-JS (envolver cada nodo en su propio `<g>`), que esta ronda reutiliza sin cambios.
+
+## Adenda — investigación de lag reportado (sin causa encontrada en este código)
+
+El fundador reportó que el panel "se traba o tarda en cargar" (Mac e iPhone). Se investigó a fondo contra producción real (Playwright + instrumentación de tiempos):
+
+- Se encontraron y corrigieron dos ineficiencias reales de todos modos: `applyBrain3DProjection` leía `cx`/`cy` del DOM (`getAttribute`+`parseFloat`) en cada uno de los ~60 frames/segundo, intercalado con escrituras — un patrón de layout thrashing evitable. Se cachean las coordenadas base una sola vez al construir el esqueleto (`brainNodeBasePos`). `drawBrainMesh` hacía un `beginPath()`/`stroke()` por cada uno de hasta ~500 links de la malla por frame — se agrupan por color una sola vez en `initBrainMesh` (`brainMeshLinksByColor`) y se dibuja un solo `stroke()` por color.
+- Instrumentando tiempos reales: ninguna de las dos correcciones, ni el resto de las funciones del cerebro (`renderBrainFrame` completo incluido, con partículas/malla/aura reales) explica el costo medido — `renderBrainFrame` completo mide ~0.5ms por llamada. Deshabilitando por completo el cerebro (incluso antes de abrir el panel) el frame time medido en el navegador no bajó de forma significativa — evidencia de que la causa, si es real, no está en este código.
+- No se encontró la causa raíz — queda como pendiente de investigación aparte si el fundador confirma que persiste tras este deploy (candidatos: algo del dashboard más amplio, no específico del cerebro).
