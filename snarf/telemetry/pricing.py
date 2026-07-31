@@ -33,6 +33,54 @@ VOYAGE_RATES_PER_MILLION_TOKENS = {
 VOYAGE_FREE_TOKENS_PER_ACCOUNT = 200_000_000
 
 
+# Precios reales de proveedores alternativos de LLM, investigados con
+# búsqueda web el 2026-07-30 (ver ADR de "LLM multi-proveedor") — nunca
+# estimados de memoria (Principio VI de FOUNDATION.md). Un modelo pedido que
+# no está en la tabla usa el DEFAULT_* de ese proveedor (el más económico
+# conocido, para no sobreestimar el gasto real por un modelo nuevo sin
+# tarifa registrada todavía).
+GEMINI_RATES_PER_MILLION_TOKENS = {
+    "gemini-3-pro-preview": (2.0, 12.0),
+    "gemini-3.1-pro-preview": (2.0, 12.0),
+    "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-2.5-flash-lite": (0.10, 0.40),
+    "gemini-3.1-flash-lite": (0.25, 1.50),
+}
+DEFAULT_GEMINI_RATE = GEMINI_RATES_PER_MILLION_TOKENS["gemini-2.5-flash-lite"]
+
+OPENAI_RATES_PER_MILLION_TOKENS = {
+    "gpt-5": (0.625, 5.0),
+    "gpt-5.4": (2.50, 15.0),
+    "gpt-5.5": (5.0, 30.0),
+    "gpt-5.6-sol": (5.0, 30.0),
+    "gpt-5.6-terra": (2.50, 15.0),
+    "gpt-5.6-luna": (1.0, 6.0),
+}
+DEFAULT_OPENAI_RATE = OPENAI_RATES_PER_MILLION_TOKENS["gpt-5"]
+
+XAI_RATES_PER_MILLION_TOKENS = {
+    "grok-4.5": (2.0, 6.0),
+    "grok-4.3": (1.25, 2.50),
+    "grok-4.1-fast": (0.20, 0.50),
+}
+DEFAULT_XAI_RATE = XAI_RATES_PER_MILLION_TOKENS["grok-4.1-fast"]
+
+GROQ_LLAMA_RATES_PER_MILLION_TOKENS = {
+    "llama-4-maverick": (0.20, 0.60),
+    "llama-4-scout": (0.08, 0.30),
+}
+DEFAULT_GROQ_LLAMA_RATE = GROQ_LLAMA_RATES_PER_MILLION_TOKENS["llama-4-scout"]
+
+
+def estimate_generic_llm_cost(
+    rates: dict, default_rate: tuple, model: str, input_tokens: int, output_tokens: int
+) -> float:
+    """Estimador simple (input+output, sin descuento de cache) para
+    proveedores sin la mecánica de cache_control propia de Anthropic."""
+    input_rate, output_rate = rates.get(model, default_rate)
+    return (input_tokens / 1_000_000) * input_rate + (output_tokens / 1_000_000) * output_rate
+
+
 def estimate_anthropic_cost(
     model: str,
     input_tokens: int,

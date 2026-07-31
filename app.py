@@ -20,6 +20,7 @@ from snarf.memory.audio_store import MIME_BY_EXT, AudioStore
 from snarf.runtime.dashboard_prefs import load_prefs, save_prefs
 from snarf.runtime.personality_prefs import load_prefs as load_personality_prefs, save_prefs as save_personality_prefs
 from snarf.runtime.user_profile import load_profile as load_user_profile, save_profile as save_user_profile
+from snarf.runtime import llm_routing
 from snarf.runtime import data_backup
 from snarf.knowledge.extraction import categorize_mime
 from snarf.telemetry import activity_log, brain, input_log, usage_tracker
@@ -381,6 +382,16 @@ def get_personality_preferences(user_id: str = Depends(require_user)):
 @app.put("/personality/preferences")
 def put_personality_preferences(payload: PersonalityPreferences, user_id: str = Depends(require_user)):
     return save_personality_prefs(user_id, payload.model_dump())
+
+
+@app.get("/llm-routing")
+def get_llm_routing(user_id: str = Depends(require_user)):
+    return {"routing": llm_routing.load_routing(), "available_providers": llm_routing.available_providers()}
+
+
+@app.put("/llm-routing")
+def put_llm_routing(payload: dict[str, dict], user_id: str = Depends(require_user)):
+    return {"routing": llm_routing.save_routing(payload), "available_providers": llm_routing.available_providers()}
 
 
 @app.get("/profile")

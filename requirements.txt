@@ -1,4 +1,6 @@
 anthropic==0.120.0
+openai==2.51.0
+google-genai==2.16.0
 python-dotenv==1.2.2
 requests==2.34.2
 sounddevice==0.5.5

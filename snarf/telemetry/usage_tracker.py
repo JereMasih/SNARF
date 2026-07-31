@@ -42,6 +42,27 @@ def record_anthropic_call(
     )
 
 
+# vendor -> (tabla de tarifas, tarifa default) — ver pricing.py, precios
+# reales investigados el 2026-07-30, nunca estimados.
+_GENERIC_LLM_RATES = {
+    "gemini": (pricing.GEMINI_RATES_PER_MILLION_TOKENS, pricing.DEFAULT_GEMINI_RATE),
+    "openai": (pricing.OPENAI_RATES_PER_MILLION_TOKENS, pricing.DEFAULT_OPENAI_RATE),
+    "xai": (pricing.XAI_RATES_PER_MILLION_TOKENS, pricing.DEFAULT_XAI_RATE),
+    "groq_llama": (pricing.GROQ_LLAMA_RATES_PER_MILLION_TOKENS, pricing.DEFAULT_GROQ_LLAMA_RATE),
+}
+
+
+def record_generic_llm_call(
+    vendor: str, model: str, input_tokens: int, output_tokens: int, path: Path | None = None
+) -> None:
+    """Registra el uso real de un proveedor de LLM alternativo a Anthropic
+    (Gemini, OpenAI, xAI, Llama vía Groq) — mismo criterio de costo real
+    nunca inventado, solo sin el descuento de cache propio de Anthropic."""
+    rates, default_rate = _GENERIC_LLM_RATES.get(vendor, (pricing.OPENAI_RATES_PER_MILLION_TOKENS, pricing.DEFAULT_OPENAI_RATE))
+    cost = pricing.estimate_generic_llm_cost(rates, default_rate, model, input_tokens, output_tokens)
+    record(vendor, model, cost, {"input_tokens": input_tokens, "output_tokens": output_tokens}, path=path)
+
+
 def record_elevenlabs_stt_call(duration_seconds: float | None, path: Path | None = None) -> None:
     cost = pricing.estimate_stt_cost(duration_seconds) if duration_seconds is not None else None
     record("elevenlabs", "stt_scribe", cost, {"duration_seconds": duration_seconds}, path=path)

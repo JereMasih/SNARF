@@ -42,6 +42,29 @@ def test_record_anthropic_call_persists_estimated_cost(tmp_path):
     assert entries[0]["cost_usd"] > 0
 
 
+def test_estimate_generic_llm_cost_uses_the_given_rate():
+    cost = pricing.estimate_generic_llm_cost(
+        pricing.GEMINI_RATES_PER_MILLION_TOKENS, pricing.DEFAULT_GEMINI_RATE, "gemini-2.5-flash-lite", 1_000_000, 1_000_000
+    )
+    input_rate, output_rate = pricing.GEMINI_RATES_PER_MILLION_TOKENS["gemini-2.5-flash-lite"]
+    assert cost == input_rate + output_rate
+
+
+def test_estimate_generic_llm_cost_falls_back_to_default_for_an_unknown_model():
+    cost = pricing.estimate_generic_llm_cost(pricing.XAI_RATES_PER_MILLION_TOKENS, pricing.DEFAULT_XAI_RATE, "modelo-nuevo-sin-tarifa", 1_000_000, 0)
+    assert cost == pricing.DEFAULT_XAI_RATE[0]
+
+
+def test_record_generic_llm_call_persists_estimated_cost(tmp_path):
+    path = tmp_path / "usage.jsonl"
+    usage_tracker.record_generic_llm_call("gemini", "gemini-2.5-flash-lite", 1000, 500, path=path)
+    entries = usage_tracker._read_all(path)
+    assert len(entries) == 1
+    assert entries[0]["vendor"] == "gemini"
+    assert entries[0]["model"] == "gemini-2.5-flash-lite"
+    assert entries[0]["cost_usd"] > 0
+
+
 def test_record_elevenlabs_stt_call_without_duration_has_no_cost_estimate(tmp_path):
     path = tmp_path / "usage.jsonl"
     usage_tracker.record_elevenlabs_stt_call(None, path=path)

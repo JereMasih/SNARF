@@ -390,6 +390,40 @@ def test_personality_preferences_put_then_get_roundtrip(client, tmp_path, monkey
     assert get_res.json() == put_res.json()
 
 
+def test_llm_routing_defaults_before_any_save(client, tmp_path, monkeypatch):
+    from snarf.runtime import llm_routing
+
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    res = client.get("/llm-routing")
+    assert res.status_code == 200
+    assert res.json()["routing"] == llm_routing.DEFAULT_ROUTING
+
+
+def test_llm_routing_put_then_get_roundtrip(client, tmp_path, monkeypatch):
+    from snarf.runtime import llm_routing
+
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    put_res = client.put("/llm-routing", json={"orchestrator": {"provider": "gemini", "model": "gemini-3-pro-preview"}})
+    assert put_res.status_code == 200
+    assert put_res.json()["routing"]["orchestrator"] == {"provider": "gemini", "model": "gemini-3-pro-preview"}
+
+    get_res = client.get("/llm-routing")
+    assert get_res.json()["routing"] == put_res.json()["routing"]
+
+
+def test_llm_routing_reports_available_providers_from_real_env_vars(client, tmp_path, monkeypatch):
+    from snarf.runtime import llm_routing
+
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    res = client.get("/llm-routing")
+    assert "gemini" not in res.json()["available_providers"]
+
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    res2 = client.get("/llm-routing")
+    assert "gemini" in res2.json()["available_providers"]
+
+
 def test_profile_defaults_before_any_save(client, tmp_path, monkeypatch):
     from snarf.runtime import user_profile
 

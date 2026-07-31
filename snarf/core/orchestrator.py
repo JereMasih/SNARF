@@ -6,7 +6,6 @@ from snarf.capabilities.anthropic_llm import (
     DELIVERABLE_START,
     SPEECH_END,
     SPEECH_START,
-    AnthropicLLM,
     LLMResponse,
     fallback_speech,
 )
@@ -30,7 +29,7 @@ from snarf.knowledge.drive_indexer import DriveIndexer
 from snarf.knowledge.extraction import ContentExtractor
 from snarf.knowledge.vector_store import VectorStore
 from snarf.memory.episodic import EpisodicMemory
-from snarf.runtime import personality_prefs, user_profile
+from snarf.runtime import llm_routing, personality_prefs, user_profile
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
 from snarf.telemetry import activity_log
@@ -40,14 +39,10 @@ from snarf.telemetry import activity_log
 # futuro sea pasar otro user_id, no rediseñar esta clase.
 DEFAULT_USER_ID = "fundador"
 
-# Modelo para la interpretación de Gmail (Especialista, no Snarf): tarea de
-# categorización acotada, no necesita el modelo principal de Snarf.
-GMAIL_DIGEST_MODEL = "claude-haiku-4-5"
-
-# Modelo para describir/transcribir imágenes al vectorizar Drive: tarea
-# acotada y mecánica, mismo criterio que GMAIL_DIGEST_MODEL — no necesita el
-# modelo principal de Snarf (ver ADR 0028).
-DRIVE_VISION_MODEL = "claude-haiku-4-5"
+# Qué proveedor/modelo usa cada rol (orchestrator, gmail_digest, drive_vision,
+# project_summary, conversation_title) ya no se hardcodea acá — ver
+# snarf/runtime/llm_routing.py (única fuente de verdad, configurable por el
+# fundador desde la interfaz sin editar código).
 
 DRIVE_INDEX_DATA_DIR = Path("data/drive_index")
 LOCAL_FILES_DATA_DIR = Path("data/local_files")
@@ -861,7 +856,7 @@ def _capped_for_replay(text: str) -> str:
 class Orchestrator:
     def __init__(self, user_id: str = DEFAULT_USER_ID):
         self._user_id = user_id
-        self._llm = AnthropicLLM()
+        self._llm = llm_routing.build_llm("orchestrator")
         self._memory = EpisodicMemory()
         self._identity = load_identity()
 
@@ -874,11 +869,11 @@ class Orchestrator:
         # mismo modelo (más caro) que usa Snarf para conversar — un modelo
         # más chico y barato alcanza, y este Especialista puede elegir su
         # propia Capacidad de LLM sin afectar la de Snarf.
-        self._gmail_digest = GmailDigestSpecialist(self._gmail, AnthropicLLM(model=GMAIL_DIGEST_MODEL), user_id)
+        self._gmail_digest = GmailDigestSpecialist(self._gmail, llm_routing.build_llm("gmail_digest"), user_id)
         # Nombrar automáticamente una conversación apenas ocurre su primer
         # intercambio (ver generate_conversation_title): mismo criterio de
         # modelo barato para tarea acotada — nunca el modelo principal.
-        self._title_llm = AnthropicLLM(model=GMAIL_DIGEST_MODEL)
+        self._title_llm = llm_routing.build_llm("conversation_title")
 
         # Pipeline de vectorización de Drive (ver ADR 0028): mismo criterio de
         # "modelo barato para tarea acotada" que el digest de Gmail, esta vez
@@ -887,7 +882,7 @@ class Orchestrator:
         content_extractor = ContentExtractor(
             drive=self._drive,
             pdf_extractor=PdfExtractor(),
-            vision_llm=AnthropicLLM(model=DRIVE_VISION_MODEL),
+            vision_llm=llm_routing.build_llm("drive_vision"),
             stt=ElevenLabsSTT(),
             ffmpeg_audio=FfmpegAudioExtractor(),
             docx_extractor=DocxExtractor(),
@@ -916,7 +911,7 @@ class Orchestrator:
         )
         # Mismo criterio que GmailDigestSpecialist: modelo barato para una
         # tarea acotada (sugerir 2-4 nombres de subcarpeta por proyecto).
-        self._projects = ProjectManager(self._drive, self._drive_indexer, AnthropicLLM(model=GMAIL_DIGEST_MODEL), user_id)
+        self._projects = ProjectManager(self._drive, self._drive_indexer, llm_routing.build_llm("project_summary"), user_id)
 
         self._tool_handlers = {
             "list_conversations": lambda i: self._memory.list_conversations(),

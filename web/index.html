@@ -404,6 +404,17 @@
   }
   .settings-profile-row input[type="text"]:focus { outline: none; border-color: var(--glow); }
 
+  .llm-routing-list { display: flex; flex-direction: column; gap: 0.55rem; padding: 0.3rem 0.2rem 0.4rem; }
+  .llm-routing-row { display: flex; flex-direction: column; gap: 0.25rem; }
+  .llm-routing-row label { font-size: 0.7rem; color: var(--text-dim); }
+  .llm-routing-row select {
+    width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(79,216,232,0.25); border-radius: 8px; color: var(--text);
+    font-size: 0.8rem; padding: 0.45rem 0.5rem; font-family: inherit; cursor: pointer;
+  }
+  .llm-routing-row select:focus { outline: none; border-color: var(--glow); }
+  .llm-routing-row option:disabled { color: var(--text-dim); }
+
   /* --- barra lateral: Conversaciones / Proyectos ---
      .conv-list ya es flex:1 1 auto dentro de #sidebar — dos listas con el
      mismo flex competirían por el espacio, así que el switcher alterna cuál
@@ -1300,6 +1311,9 @@
       </div>
       <input type="range" id="sarcasmSlider" min="0" max="10" step="0.5" value="7.5">
     </div>
+
+    <div class="settings-section-head"><h3>LLM por rol</h3></div>
+    <div class="llm-routing-list" id="llmRoutingList"></div>
   </div>
 
   <div class="brain-overlay" id="brainOverlay"></div>
@@ -1473,6 +1487,7 @@ const settingsList = document.getElementById("settingsList");
 const sarcasmSlider = document.getElementById("sarcasmSlider");
 const sarcasmValue = document.getElementById("sarcasmValue");
 const profileNameInput = document.getElementById("profileNameInput");
+const llmRoutingList = document.getElementById("llmRoutingList");
 const brainOverlay = document.getElementById("brainOverlay");
 const brainPanel = document.getElementById("brainPanel");
 const brainCloseBtn = document.getElementById("brainCloseBtn");
@@ -4148,6 +4163,58 @@ async function persistProfile() {
 }
 profileNameInput.addEventListener("change", persistProfile);
 
+// Presets legibles (provider+model) en vez de texto libre — más simple que
+// pedirle al fundador que sepa de memoria un nombre de modelo exacto. Cada
+// rol real del sistema (ver snarf/runtime/llm_routing.py) tiene su propio
+// selector independiente.
+const LLM_ROLES = [
+  { role: "orchestrator", label: "Conversación principal (Snarf)" },
+  { role: "gmail_digest", label: "Resumen de Gmail" },
+  { role: "drive_vision", label: "Descripción de imágenes (Drive)" },
+  { role: "project_summary", label: "Resumen de proyectos" },
+  { role: "conversation_title", label: "Título automático de conversación" },
+];
+const LLM_PRESETS = [
+  { provider: "anthropic", model: "claude-sonnet-5", label: "Anthropic — Sonnet 5" },
+  { provider: "anthropic", model: "claude-haiku-4-5", label: "Anthropic — Haiku 4.5 (barato)" },
+  { provider: "gemini", model: "gemini-3-pro-preview", label: "Gemini — 3 Pro" },
+  { provider: "gemini", model: "gemini-2.5-flash-lite", label: "Gemini — 2.5 Flash-Lite (barato)" },
+  { provider: "openai", model: "gpt-5", label: "OpenAI — GPT-5" },
+  { provider: "xai", model: "grok-4.1-fast", label: "xAI — Grok 4.1 Fast (barato)" },
+  { provider: "groq_llama", model: "llama-4-scout", label: "Llama vía Groq — Scout (barato)" },
+];
+
+let llmRoutingState = null;
+async function renderLlmRoutingSection() {
+  const data = await (await apiFetch("/llm-routing")).json();
+  llmRoutingState = data.routing;
+  const available = new Set(data.available_providers);
+  llmRoutingList.innerHTML = LLM_ROLES.map(({ role, label }) => {
+    const current = llmRoutingState[role] || {};
+    const options = LLM_PRESETS.map((p) => {
+      const selected = p.provider === current.provider && p.model === current.model;
+      const usable = available.has(p.provider);
+      const optLabel = usable ? p.label : `${p.label} — sin credencial`;
+      return `<option value="${p.provider}|${p.model}" ${selected ? "selected" : ""} ${usable ? "" : "disabled"}>${escapeHtml(optLabel)}</option>`;
+    }).join("");
+    return `<div class="llm-routing-row"><label>${escapeHtml(label)}</label><select data-role="${role}">${options}</select></div>`;
+  }).join("");
+  llmRoutingList.querySelectorAll("select").forEach((sel) => {
+    sel.addEventListener("change", () => persistLlmRouting(sel.dataset.role, sel.value));
+  });
+}
+async function persistLlmRouting(role, value) {
+  const [provider, model] = value.split("|");
+  try {
+    const data = await (await apiFetch("/llm-routing", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [role]: { provider, model } }),
+    })).json();
+    llmRoutingState = data.routing;
+  } catch (e) {}
+}
+
 function visibleOrdered(ids) {
   return dashboardPrefs.panel_order.filter((id) => ids.includes(id) && dashboardPrefs.visible_widgets[id]);
 }
@@ -4312,6 +4379,7 @@ function openSettings() {
   renderSettingsList();
   renderPersonalitySection();
   renderProfileSection();
+  renderLlmRoutingSection();
 }
 function closeSettings() {
   settingsOverlay.classList.remove("open");
