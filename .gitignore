@@ -5,6 +5,7 @@ __pycache__/
 venv/
 data/episodic_memory.jsonl
 data/conversation_projects.json
+data/conversation_titles.json
 data/manual_verification_log.jsonl
 data/dashboard_prefs/
 data/gmail_digest/

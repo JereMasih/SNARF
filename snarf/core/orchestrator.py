@@ -52,6 +52,8 @@ DRIVE_VISION_MODEL = "claude-haiku-4-5"
 DRIVE_INDEX_DATA_DIR = Path("data/drive_index")
 LOCAL_FILES_DATA_DIR = Path("data/local_files")
 
+BULK_READ_CONFIRM_THRESHOLD = 50
+
 CONVERSATION_TITLE_SYSTEM_PROMPT = (
     "Generás títulos cortos para conversaciones de chat, a partir de su primer "
     "intercambio real. Respondé ÚNICAMENTE con el título en sí — sin comillas, "
@@ -136,6 +138,19 @@ SYSTEM_PREFIX = (
     "inequívoca que sí a ESA propuesta concreta, en este mismo intercambio. Nunca "
     "asumas una confirmación implícita, y nunca combines la propuesta y la ejecución "
     "en el mismo turno.\n\n"
+    "drive_list_files, gmail_list_messages, calendar_list_upcoming_events, "
+    "calendar_search_events, youtube_list_subscriptions y youtube_list_liked_videos "
+    "tienen un protocolo de confirmed EQUIVALENTE al de arriba, pero por un motivo "
+    "distinto: no es que sean irreversibles, es que un pedido grande (más de 50 "
+    "resultados) tiene un costo real, tanto en tokens (ese resultado se re-transmite en "
+    "cada turno futuro de la conversación mientras siga en el historial) como en la "
+    "cuota de la API externa — un pedido real de mil correos costó más de un dólar en "
+    "una sola llamada. Mismos tres pasos que arriba, pero frasealo en términos de "
+    "costo, no de irreversibilidad ('esto puede salir caro, ¿igual querés que traiga "
+    "los N?'). Si el fundador confirma, ejecutá exactamente la cantidad que pidió — "
+    "nunca la recortes en silencio, preguntar antes NUNCA es prohibir para siempre. "
+    "Para pedidos razonables (50 o menos) no hace falta nada de esto, ejecutá "
+    "directo.\n\n"
     "También tenés herramientas para vectorizar el Google Drive del fundador y "
     "buscar semánticamente sobre ese contenido ya indexado: drive_index_scan (solo "
     "lectura, sin costo, cuenta archivos y tamaño real), drive_index_catalog_unsupported "
@@ -205,12 +220,13 @@ TOOLS = [
     },
     {
         "name": "drive_list_files",
-        "description": "Lista archivos de Google Drive del fundador, opcionalmente filtrados por una query de Drive.",
+        "description": "Lista archivos de Google Drive del fundador, opcionalmente filtrados por una query de Drive. Un page_size grande (más de 50) tiene un costo real — protocolo de confirmed, ver más abajo.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Query opcional de búsqueda de Drive (sintaxis de la API de Drive)."},
                 "page_size": {"type": "integer"},
+                "confirmed": {"type": "boolean"},
             },
         },
     },
@@ -243,12 +259,13 @@ TOOLS = [
     },
     {
         "name": "gmail_list_messages",
-        "description": "Lista correos recientes del Gmail del fundador (asunto, remitente, fecha, resumen), opcionalmente filtrados por una query de Gmail.",
+        "description": "Lista correos recientes del Gmail del fundador (asunto, remitente, fecha, resumen), opcionalmente filtrados por una query de Gmail. Un max_results grande (más de 50) tiene un costo real — protocolo de confirmed, ver más abajo.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Query opcional (sintaxis de búsqueda de Gmail)."},
                 "max_results": {"type": "integer"},
+                "confirmed": {"type": "boolean"},
             },
         },
     },
@@ -295,34 +312,35 @@ TOOLS = [
     },
     {
         "name": "calendar_list_upcoming_events",
-        "description": "Lista los próximos eventos de un calendario del fundador (por defecto, el principal). Solo eventos futuros.",
+        "description": "Lista los próximos eventos de un calendario del fundador (por defecto, el principal). Solo eventos futuros. Un max_results grande (más de 50) tiene un costo real — protocolo de confirmed, ver más abajo.",
         "input_schema": {
             "type": "object",
-            "properties": {"max_results": {"type": "integer"}, "calendar_id": {"type": "string"}},
+            "properties": {"max_results": {"type": "integer"}, "calendar_id": {"type": "string"}, "confirmed": {"type": "boolean"}},
         },
     },
     {
         "name": "calendar_search_events",
-        "description": "Busca eventos por texto en un calendario, sin restricción de fecha (incluye eventos pasados). Usala si un evento no aparece en calendar_list_upcoming_events.",
+        "description": "Busca eventos por texto en un calendario, sin restricción de fecha (incluye eventos pasados). Usala si un evento no aparece en calendar_list_upcoming_events. Un max_results grande (más de 50) tiene un costo real — protocolo de confirmed, ver más abajo.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string"},
                 "calendar_id": {"type": "string", "description": "Por defecto, 'primary'."},
                 "max_results": {"type": "integer"},
+                "confirmed": {"type": "boolean"},
             },
             "required": ["query"],
         },
     },
     {
         "name": "youtube_list_subscriptions",
-        "description": "Lista los canales de YouTube a los que está suscripto el fundador.",
-        "input_schema": {"type": "object", "properties": {"max_results": {"type": "integer"}}},
+        "description": "Lista los canales de YouTube a los que está suscripto el fundador. Un max_results grande (más de 50) tiene un costo real — protocolo de confirmed, ver más abajo.",
+        "input_schema": {"type": "object", "properties": {"max_results": {"type": "integer"}, "confirmed": {"type": "boolean"}}},
     },
     {
         "name": "youtube_list_liked_videos",
-        "description": "Lista videos de YouTube que el fundador marcó como 'me gusta'.",
-        "input_schema": {"type": "object", "properties": {"max_results": {"type": "integer"}}},
+        "description": "Lista videos de YouTube que el fundador marcó como 'me gusta'. Un max_results grande (más de 50) tiene un costo real — protocolo de confirmed, ver más abajo.",
+        "input_schema": {"type": "object", "properties": {"max_results": {"type": "integer"}, "confirmed": {"type": "boolean"}}},
     },
     {
         "name": "gmail_summarize_inbox",
@@ -816,6 +834,30 @@ def profile_identity_instruction(name: str | None) -> str:
     )
 
 
+# ~2000 tokens — generoso para una respuesta larga normal (un plan completo real
+# rondó 1500-2400 caracteres en verificaciones de esta sesión), pero corta el
+# caso real de un resultado de herramienta gigante (ej. un barrido de mil
+# correos) quedando embebido en una respuesta y repitiéndose turno a turno
+# mientras siga en la ventana de las últimas 10 entradas (ver ADR de esta
+# ronda: una sola llamada re-cacheó 523.869 tokens por esto).
+HISTORY_REPLAY_MAX_CHARS = 8000
+
+
+def _capped_for_replay(text: str) -> str:
+    """Recorta lo que se vuelve a mandar al LLM al reconstruir el historial de
+    una conversación — nunca lo que se guarda ni lo que se muestra en la UI.
+    El resultado ya se entregó una vez; no hace falta re-pagarlo en cada
+    turno futuro mientras la conversación siga viva."""
+    if len(text) <= HISTORY_REPLAY_MAX_CHARS:
+        return text
+    return (
+        text[:HISTORY_REPLAY_MAX_CHARS]
+        + "\n\n[... contenido extenso omitido acá para no re-pagar su costo en cada turno — "
+        "el resultado completo ya se entregó y sigue disponible en pantalla; no hace falta "
+        "rehacer la tarea, alcanza con recordar que ya se hizo ...]"
+    )
+
+
 class Orchestrator:
     def __init__(self, user_id: str = DEFAULT_USER_ID):
         self._user_id = user_id
@@ -880,11 +922,15 @@ class Orchestrator:
             "list_conversations": lambda i: self._memory.list_conversations(),
             "get_conversation": lambda i: self._memory.get_conversation(i.get("conversation_id", "")),
             "search_memory": lambda i: self._memory.search(i.get("query", "")),
-            "drive_list_files": lambda i: self._drive.list_files(page_size=i.get("page_size", 50), query=i.get("query")),
+            "drive_list_files": lambda i: self._bulk_read_gate(
+                "page_size", i, 50, lambda n: self._drive.list_files(page_size=n, query=i.get("query"))
+            ),
             "drive_read_file": lambda i: self._read_drive_file(i["file_id"], i["mime_type"]),
             "drive_create_folder": lambda i: self._drive.create_folder(i["name"], parent_id=i.get("parent_id")),
             "drive_move_file": lambda i: self._drive.move_file(i["file_id"], i["new_parent_id"]),
-            "gmail_list_messages": lambda i: self._gmail.list_messages(max_results=i.get("max_results", 10), query=i.get("query")),
+            "gmail_list_messages": lambda i: self._bulk_read_gate(
+                "max_results", i, 10, lambda n: self._gmail.list_messages(max_results=n, query=i.get("query"))
+            ),
             "gmail_read_message": lambda i: self._gmail.read_message(i["message_id"]),
             "gmail_list_labels": lambda i: self._gmail.list_labels(),
             "gmail_create_label": lambda i: self._gmail.create_label(i["name"]),
@@ -892,14 +938,20 @@ class Orchestrator:
                 i["message_id"], add_label_ids=i.get("add_label_ids"), remove_label_ids=i.get("remove_label_ids")
             ),
             "calendar_list_calendars": lambda i: self._calendar.list_calendars(),
-            "calendar_list_upcoming_events": lambda i: self._calendar.list_upcoming_events(
-                max_results=i.get("max_results", 10), calendar_id=i.get("calendar_id", "primary")
+            "calendar_list_upcoming_events": lambda i: self._bulk_read_gate(
+                "max_results", i, 10,
+                lambda n: self._calendar.list_upcoming_events(max_results=n, calendar_id=i.get("calendar_id", "primary")),
             ),
-            "calendar_search_events": lambda i: self._calendar.search_events(
-                i["query"], calendar_id=i.get("calendar_id", "primary"), max_results=i.get("max_results", 10)
+            "calendar_search_events": lambda i: self._bulk_read_gate(
+                "max_results", i, 10,
+                lambda n: self._calendar.search_events(i["query"], calendar_id=i.get("calendar_id", "primary"), max_results=n),
             ),
-            "youtube_list_subscriptions": lambda i: self._youtube.list_subscriptions(max_results=i.get("max_results", 25)),
-            "youtube_list_liked_videos": lambda i: self._youtube.list_liked_videos(max_results=i.get("max_results", 25)),
+            "youtube_list_subscriptions": lambda i: self._bulk_read_gate(
+                "max_results", i, 25, lambda n: self._youtube.list_subscriptions(max_results=n)
+            ),
+            "youtube_list_liked_videos": lambda i: self._bulk_read_gate(
+                "max_results", i, 25, lambda n: self._youtube.list_liked_videos(max_results=n)
+            ),
             "gmail_send_message": self._tool_gmail_send_message,
             "calendar_create_event": self._tool_calendar_create_event,
             "calendar_create_calendar": self._tool_calendar_create_calendar,
@@ -1011,6 +1063,21 @@ class Orchestrator:
                 "herramienta con confirmed=true."
             ),
         }
+
+    def _bulk_read_gate(self, param: str, i: dict, default: int, run):
+        # Bug real que motivó esto: un pedido de "barrido de mil correos" sin
+        # ningún tope costó $1.09 en una sola llamada (523.869 tokens
+        # escritos al cache), 22% del gasto real de un día entero (ver ADR de
+        # esta ronda). Mismo protocolo que _pending() para acciones de alto
+        # impacto, pero acá el motivo es el costo real (tokens + cuota de la
+        # API externa), no la irreversibilidad — y a propósito es solo un
+        # umbral de CONFIRMACIÓN, nunca de bloqueo: si el fundador confirma,
+        # se ejecuta exactamente la cantidad que pidió, sin recortarla en
+        # silencio. "Preguntar antes" nunca es "prohibir para siempre".
+        requested = i.get(param, default)
+        if requested > BULK_READ_CONFIRM_THRESHOLD and not i.get("confirmed"):
+            return self._pending({param: requested})
+        return run(requested)
 
     def _tool_gmail_send_message(self, i: dict) -> dict:
         if not i.get("confirmed"):
@@ -1179,8 +1246,8 @@ class Orchestrator:
                     )
             messages = []
             for entry in self._memory.recent(10, conversation_id=conversation_id):
-                messages.append({"role": "user", "content": entry["input"]})
-                messages.append({"role": "assistant", "content": entry["response"]})
+                messages.append({"role": "user", "content": _capped_for_replay(entry["input"])})
+                messages.append({"role": "assistant", "content": _capped_for_replay(entry["response"])})
             messages.append({"role": "user", "content": user_input})
             try:
                 response = self._llm.generate(

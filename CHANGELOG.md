@@ -580,3 +580,9 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Mismo bug ya conocido del repo (ver ADR 0059): `display: flex` de autor le ganaba al `[hidden]` del navegador — el botón de reintentar quedaba visible en todos los chats sin importar si había algo real para reintentar, y clickearlo no hacía nada.
 - De paso, cambiar de conversación ahora limpia un reintento pendiente de la conversación anterior (antes podía quedar reintentando contra la conversación equivocada).
 - 475/475 tests. Verificado con Playwright: `display: none` real tanto al cargar como después de un envío exitoso. Ver ADR 0066.
+
+## [2026-07-30] Protocolo de costos: confirmar lecturas masivas + tope de repetición en el historial
+
+- Análisis real de costos (`data/usage_log.jsonl`): una sola llamada costó $1.09 (22% de un día) porque un pedido sin tope de "mil correos" quedó embebido en el historial y se re-transmitía/re-cacheaba entero en cada turno futuro. `gmail_list_messages`, `calendar_list_upcoming_events`, `calendar_search_events`, `youtube_list_subscriptions`, `youtube_list_liked_videos` y `drive_list_files` ahora preguntan antes de traer más de 50 resultados — pero si el fundador confirma, se ejecuta la cantidad exacta pedida, nunca se recorta en silencio.
+- El historial de una conversación ya no re-transmite indefinidamente una respuesta gigante turno a turno — se recorta lo que se re-manda al LLM (no lo guardado ni lo que se ve en la UI) una vez que un resultado ya fue entregado.
+- 496/496 tests. Verificado con una llamada real (crédito recién cargado): pedir 200 correos generó la pregunta de confirmación esperada; confirmado, trajo los 200 reales. Ver ADR 0067.

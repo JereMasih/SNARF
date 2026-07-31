@@ -1,7 +1,7 @@
 import pytest
 
 from snarf.capabilities.anthropic_llm import LLMResponse
-from snarf.core.orchestrator import Orchestrator
+from snarf.core.orchestrator import HISTORY_REPLAY_MAX_CHARS, Orchestrator, _capped_for_replay
 from snarf.knowledge.extraction import ExtractionResult
 
 
@@ -458,6 +458,104 @@ def test_high_impact_tool_requires_explicit_confirmation(
 
     orchestrator._handle_tool(tool_name, {**base_input, "confirmed": True})
     assert len(calls) == 1
+
+
+# (nombre de la tool, atributo de capacidad, método real, parámetro de cantidad, base_input sin ese parámetro)
+BULK_READ_TOOLS = [
+    ("gmail_list_messages", "_gmail", "list_messages", "max_results", {}),
+    ("calendar_list_upcoming_events", "_calendar", "list_upcoming_events", "max_results", {}),
+    ("calendar_search_events", "_calendar", "search_events", "max_results", {"query": "reunión"}),
+    ("youtube_list_subscriptions", "_youtube", "list_subscriptions", "max_results", {}),
+    ("youtube_list_liked_videos", "_youtube", "list_liked_videos", "max_results", {}),
+    ("drive_list_files", "_drive", "list_files", "page_size", {}),
+]
+
+
+@pytest.mark.parametrize("tool_name, capability_attr, method_name, param, base_input", BULK_READ_TOOLS)
+def test_bulk_read_tool_executes_directly_under_the_threshold(
+    orchestrator, monkeypatch, tool_name, capability_attr, method_name, param, base_input
+):
+    calls = []
+    capability = getattr(orchestrator, capability_attr)
+    monkeypatch.setattr(capability, method_name, lambda *a, **kw: calls.append(kw) or [])
+    orchestrator._handle_tool(tool_name, {**base_input, param: 20})
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("tool_name, capability_attr, method_name, param, base_input", BULK_READ_TOOLS)
+def test_bulk_read_tool_requires_confirmation_above_the_threshold(
+    orchestrator, monkeypatch, tool_name, capability_attr, method_name, param, base_input
+):
+    """Bug real que motivó esto: un pedido de "barrido de mil correos" sin
+    ningún tope costó $1.09 en una sola llamada real (ver ADR de esta ronda).
+    Por encima del umbral, la capacidad real nunca se llama sin confirmed."""
+    calls = []
+    capability = getattr(orchestrator, capability_attr)
+    monkeypatch.setattr(capability, method_name, lambda *a, **kw: calls.append(kw) or [])
+
+    pending = orchestrator._handle_tool(tool_name, {**base_input, param: 1000})
+    assert pending["status"] == "pending_confirmation"
+    assert pending["preview"][param] == 1000
+    assert calls == []
+
+
+@pytest.mark.parametrize("tool_name, capability_attr, method_name, param, base_input", BULK_READ_TOOLS)
+def test_bulk_read_tool_confirmed_executes_with_the_exact_amount_requested(
+    orchestrator, monkeypatch, tool_name, capability_attr, method_name, param, base_input
+):
+    """"Preguntar antes" nunca es "prohibir para siempre" (pedido explícito
+    del fundador) — confirmado, se ejecuta la cantidad EXACTA pedida, sin
+    recortarla en silencio."""
+    calls = []
+    capability = getattr(orchestrator, capability_attr)
+    monkeypatch.setattr(capability, method_name, lambda *a, **kw: calls.append(kw) or [])
+
+    orchestrator._handle_tool(tool_name, {**base_input, param: 1000, "confirmed": True})
+    assert len(calls) == 1
+    assert calls[0][param] == 1000
+
+
+def test_capped_for_replay_leaves_short_text_unchanged():
+    short = "una respuesta normal, nada raro"
+    assert _capped_for_replay(short) == short
+
+
+def test_capped_for_replay_truncates_and_flags_long_text():
+    long_text = "x" * (HISTORY_REPLAY_MAX_CHARS + 500)
+    result = _capped_for_replay(long_text)
+    assert len(result) < len(long_text)
+    assert result.startswith("x" * 100)
+    assert "no re-pagar su costo" in result
+
+
+def test_handle_caps_an_oversized_history_entry_before_replaying_it(orchestrator, monkeypatch):
+    """Bug real que motivó esto: un resultado de herramienta gigante (ej. un
+    barrido de mil correos) embebido en una sola respuesta se re-transmitía
+    entero en CADA turno futuro de la misma conversación — una sola llamada
+    re-cacheó 523.869 tokens por esto (ver ADR de esta ronda). El JSONL y la
+    UI de historial siguen mostrando el original completo, solo lo que se
+    re-manda al LLM se recorta."""
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    huge_response = "y" * (HISTORY_REPLAY_MAX_CHARS + 1000)
+    monkeypatch.setattr(
+        orchestrator._llm, "generate", lambda **kwargs: LLMResponse(text=huge_response, speech="ok")
+    )
+    orchestrator.handle("text", "traeme un montón de correos", conversation_id="c1")
+
+    # El historial completo, sin tocar, sigue disponible para la UI/búsqueda.
+    assert orchestrator.memory.get_conversation("c1")[0]["response"] == huge_response
+
+    captured = {}
+    monkeypatch.setattr(
+        orchestrator._llm,
+        "generate",
+        lambda system, messages, tools=None, tool_handler=None: captured.update(messages=messages)
+        or LLMResponse(text="segunda respuesta", speech="ok"),
+    )
+    orchestrator.handle("text", "segundo mensaje", conversation_id="c1")
+    replayed_response = captured["messages"][1]["content"]
+    assert len(replayed_response) < len(huge_response)
+    assert "no re-pagar su costo" in replayed_response
 
 
 def test_gmail_summarize_inbox_returns_cached_digest_when_present(orchestrator, monkeypatch):
