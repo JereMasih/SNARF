@@ -66,10 +66,12 @@ class ContentExtractor:
     según el tipo. Recibe todo por inyección — sin importar snarf.core ni
     snarf.runtime (ver ADR 0026 y tests/test_architecture_boundaries.py)."""
 
-    def __init__(self, drive, pdf_extractor, vision_llm, stt, ffmpeg_audio, docx_extractor=None, pptx_extractor=None, xlsx_extractor=None):
+    def __init__(self, drive, pdf_extractor, vision_llm_factory, stt, ffmpeg_audio, docx_extractor=None, pptx_extractor=None, xlsx_extractor=None):
+        # vision_llm_factory: callable sin argumentos, mismo criterio que
+        # GmailDigestSpecialist/ProjectManager — nunca una instancia fija.
         self._drive = drive
         self._pdf = pdf_extractor
-        self._vision_llm = vision_llm
+        self._vision_llm_factory = vision_llm_factory
         self._stt = stt
         self._ffmpeg = ffmpeg_audio
         self._docx = docx_extractor
@@ -100,7 +102,8 @@ class ContentExtractor:
         return ExtractionResult(skipped_reason=f"tipo no soportado: {mime}")
 
     def _extract_image(self, file_id: str, mime: str) -> ExtractionResult:
-        if not self._vision_llm.available:
+        vision_llm = self._vision_llm_factory()
+        if not vision_llm.available:
             return ExtractionResult(skipped_reason="visión no disponible (falta ANTHROPIC_API_KEY)")
         image_bytes = self._drive.read_file_bytes(file_id)
         content = [
@@ -110,7 +113,7 @@ class ContentExtractor:
             },
             {"type": "text", "text": VISION_PROMPT},
         ]
-        text = self._vision_llm.generate(system=VISION_SYSTEM_PROMPT, messages=[{"role": "user", "content": content}]).text
+        text = vision_llm.generate(system=VISION_SYSTEM_PROMPT, messages=[{"role": "user", "content": content}]).text
         return ExtractionResult(text)
 
     def _extract_audio(self, file_id: str) -> ExtractionResult:

@@ -41,10 +41,14 @@ class ProjectManager:
     `GmailDigestSpecialist`: compone una Capacidad (Drive) más un llamado a
     LLM, sin importar `snarf.core`/`snarf.runtime` (ver ADR 0026)."""
 
-    def __init__(self, drive, indexer, llm, user_id: str):
+    def __init__(self, drive, indexer, llm_factory, user_id: str):
+        # llm_factory: callable sin argumentos, ver el mismo criterio
+        # documentado en GmailDigestSpecialist.__init__ — nunca una
+        # instancia fija, para que el ruteo de LLM configurado en caliente
+        # se refleje sin reiniciar el servidor.
         self._drive = drive
         self._indexer = indexer
-        self._llm = llm
+        self._llm_factory = llm_factory
         self._user_id = user_id
         self._root_folder_id: str | None = None
 
@@ -121,10 +125,11 @@ class ProjectManager:
         # Degradación elegante, mismo espíritu que GmailDigestSpecialist: sin
         # LLM disponible o si falla, no se rompe la creación del proyecto —
         # cae a una sola subcarpeta genérica.
-        if not self._llm.available:
+        llm = self._llm_factory()
+        if not llm.available:
             return ["Archivos"]
         try:
-            response = self._llm.generate(
+            response = llm.generate(
                 system=SUBFOLDER_SUGGESTION_SYSTEM_PROMPT, messages=[{"role": "user", "content": name}]
             )
             names = [n.strip() for n in response.text.split(",") if n.strip()][:4]
@@ -236,7 +241,8 @@ class ProjectManager:
         if project is None:
             return None
 
-        if not self._llm.available:
+        llm = self._llm_factory()
+        if not llm.available:
             summary_text = "No se pudo generar un resumen: falta configurar el modelo de lenguaje (ANTHROPIC_API_KEY)."
         else:
             pending = [t["text"] for t in project["tasks"] if not t["done"]]
@@ -251,7 +257,7 @@ class ProjectManager:
                 f"Notas ({len(notes)}): " + ("; ".join(notes) or "ninguna"),
             ]
             try:
-                summary_text = self._llm.generate(
+                summary_text = llm.generate(
                     system=SUMMARY_SYSTEM_PROMPT, messages=[{"role": "user", "content": "\n".join(context_lines)}]
                 ).text
             except Exception as exc:

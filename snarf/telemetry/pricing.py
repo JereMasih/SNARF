@@ -42,11 +42,16 @@ VOYAGE_FREE_TOKENS_PER_ACCOUNT = 200_000_000
 GEMINI_RATES_PER_MILLION_TOKENS = {
     "gemini-3-pro-preview": (2.0, 12.0),
     "gemini-3.1-pro-preview": (2.0, 12.0),
+    # gemini-2.5-flash y gemini-2.5-flash-lite: verificado con una llamada
+    # real el 2026-07-30 que la API ya los rechaza para keys nuevas (404 "no
+    # longer available to new users") — se dejan las tarifas por si alguna
+    # key vieja los sigue teniendo habilitados, pero el default ya no apunta
+    # ahí.
     "gemini-2.5-flash": (0.30, 2.50),
     "gemini-2.5-flash-lite": (0.10, 0.40),
     "gemini-3.1-flash-lite": (0.25, 1.50),
 }
-DEFAULT_GEMINI_RATE = GEMINI_RATES_PER_MILLION_TOKENS["gemini-2.5-flash-lite"]
+DEFAULT_GEMINI_RATE = GEMINI_RATES_PER_MILLION_TOKENS["gemini-3.1-flash-lite"]
 
 OPENAI_RATES_PER_MILLION_TOKENS = {
     "gpt-5": (0.625, 5.0),
@@ -58,12 +63,16 @@ OPENAI_RATES_PER_MILLION_TOKENS = {
 }
 DEFAULT_OPENAI_RATE = OPENAI_RATES_PER_MILLION_TOKENS["gpt-5"]
 
+#  Nomenclatura real de xAI: guiones, no puntos — verificado con una llamada
+# real el 2026-07-30 ("grok-4.1-fast" da 400 Model not found; "grok-4-1-fast"
+# funciona). Se corrige acá para las tres variantes por consistencia, aunque
+# solo la de abajo se confirmó con una llamada real.
 XAI_RATES_PER_MILLION_TOKENS = {
-    "grok-4.5": (2.0, 6.0),
-    "grok-4.3": (1.25, 2.50),
-    "grok-4.1-fast": (0.20, 0.50),
+    "grok-4-5": (2.0, 6.0),
+    "grok-4-3": (1.25, 2.50),
+    "grok-4-1-fast": (0.20, 0.50),
 }
-DEFAULT_XAI_RATE = XAI_RATES_PER_MILLION_TOKENS["grok-4.1-fast"]
+DEFAULT_XAI_RATE = XAI_RATES_PER_MILLION_TOKENS["grok-4-1-fast"]
 
 GROQ_LLAMA_RATES_PER_MILLION_TOKENS = {
     "llama-4-maverick": (0.20, 0.60),

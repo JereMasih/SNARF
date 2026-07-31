@@ -403,6 +403,13 @@ def test_llm_routing_put_then_get_roundtrip(client, tmp_path, monkeypatch):
     from snarf.runtime import llm_routing
 
     monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    # El PUT real llama a orchestrator.refresh_llm_routing(), que reconstruye
+    # _llm/_title_llm sobre el singleton REAL y compartido entre tests — sin
+    # esto, un GeminiLLM real quedaba pegado ahí después de este test y
+    # contaminaba todos los que corren después en la misma sesión de pytest
+    # (bug real encontrado corriendo la suite completa, no solo este test).
+    monkeypatch.setattr(app_module.orchestrator, "_llm", app_module.orchestrator._llm)
+    monkeypatch.setattr(app_module.orchestrator, "_title_llm", app_module.orchestrator._title_llm)
     put_res = client.put("/llm-routing", json={"orchestrator": {"provider": "gemini", "model": "gemini-3-pro-preview"}})
     assert put_res.status_code == 200
     assert put_res.json()["routing"]["orchestrator"] == {"provider": "gemini", "model": "gemini-3-pro-preview"}
@@ -725,7 +732,10 @@ def projects_fixture(tmp_path, monkeypatch, connected_google_token):
     # cached_summary()/file_count() de GET /projects/{id} llaman a Drive real
     # si no se mockea esto — sin costo/llamada real en tests.
     monkeypatch.setattr(app_module.orchestrator.drive, "iter_all_files", lambda query=None, page_size=200: iter([]))
-    monkeypatch.setattr(app_module.orchestrator.projects._llm, "_client", None)  # sin costo real en tests
+    # ProjectManager ya no guarda una instancia fija de LLM (ver
+    # _llm_factory) — sin ANTHROPIC_API_KEY en el entorno de test (conftest.py
+    # la borra siempre), cualquier instancia que la factory resuelva ya nace
+    # con available=False, sin costo real, sin necesitar mockear nada acá.
 
 
 def test_list_projects_is_empty_before_any_creation(client, projects_fixture):

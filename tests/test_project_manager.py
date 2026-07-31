@@ -46,7 +46,8 @@ def make_manager(tmp_path, monkeypatch, drive=None, llm=None, indexer=None):
     from snarf.specialists import project_manager as module
 
     monkeypatch.setattr(module, "PROJECTS_DIR", tmp_path / "projects")
-    return ProjectManager(drive or FakeDrive(), indexer or FakeIndexer(), llm or FakeLLM(), "fundador")
+    resolved_llm = llm or FakeLLM()
+    return ProjectManager(drive or FakeDrive(), indexer or FakeIndexer(), lambda: resolved_llm, "fundador")
 
 
 def test_create_resolves_root_folder_once_across_multiple_creations(tmp_path, monkeypatch):
@@ -122,7 +123,7 @@ def test_get_normalizes_a_corrupted_partial_record(tmp_path, monkeypatch):
         '{"name": "Roto", "tasks": [{"id": "t1"}, "no-es-un-dict"], "subfolders": {"X": 5}}',
         encoding="utf-8",
     )
-    manager = ProjectManager(FakeDrive(), FakeIndexer(), FakeLLM(), "fundador")
+    manager = ProjectManager(FakeDrive(), FakeIndexer(), lambda: FakeLLM(), "fundador")
     record = manager.get("broken-1")
     assert record["name"] == "Roto"
     assert record["tasks"] == [{"id": "t1", "text": "", "done": False}]
@@ -203,7 +204,7 @@ def test_get_truncates_an_overlong_prompt_found_on_disk(tmp_path, monkeypatch):
     projects_dir.joinpath("p1.json").write_text(
         '{"name": "P", "prompt": "' + ("y" * (PROJECT_PROMPT_MAX_LENGTH + 200)) + '"}', encoding="utf-8"
     )
-    manager = ProjectManager(FakeDrive(), FakeIndexer(), FakeLLM(), "fundador")
+    manager = ProjectManager(FakeDrive(), FakeIndexer(), lambda: FakeLLM(), "fundador")
     assert len(manager.get("p1")["prompt"]) == PROJECT_PROMPT_MAX_LENGTH
 
 

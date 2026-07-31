@@ -4226,13 +4226,16 @@ const LLM_ROLES = [
   { role: "project_summary", label: "Resumen de proyectos" },
   { role: "conversation_title", label: "Título automático de conversación" },
 ];
+// Nombres de modelo verificados con una llamada real el 2026-07-30 (ver ADR
+// de esta ronda) — gemini-2.5-flash-lite y la nomenclatura con puntos de
+// xAI (grok-4.1-fast) daban error real, se corrigieron acá.
 const LLM_PRESETS = [
   { provider: "anthropic", model: "claude-sonnet-5", label: "Anthropic — Sonnet 5" },
   { provider: "anthropic", model: "claude-haiku-4-5", label: "Anthropic — Haiku 4.5 (barato)" },
   { provider: "gemini", model: "gemini-3-pro-preview", label: "Gemini — 3 Pro" },
-  { provider: "gemini", model: "gemini-2.5-flash-lite", label: "Gemini — 2.5 Flash-Lite (barato)" },
+  { provider: "gemini", model: "gemini-3.1-flash-lite", label: "Gemini — 3.1 Flash-Lite (barato)" },
   { provider: "openai", model: "gpt-5", label: "OpenAI — GPT-5" },
-  { provider: "xai", model: "grok-4.1-fast", label: "xAI — Grok 4.1 Fast (barato)" },
+  { provider: "xai", model: "grok-4-1-fast", label: "xAI — Grok 4.1 Fast (barato)" },
   { provider: "groq_llama", model: "llama-4-scout", label: "Llama vía Groq — Scout (barato)" },
 ];
 

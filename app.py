@@ -391,7 +391,14 @@ def get_llm_routing(user_id: str = Depends(require_user)):
 
 @app.put("/llm-routing")
 def put_llm_routing(payload: dict[str, dict], user_id: str = Depends(require_user)):
-    return {"routing": llm_routing.save_routing(payload), "available_providers": llm_routing.available_providers()}
+    routing = llm_routing.save_routing(payload)
+    # Sin esto, cambiar un rol acá no tenía ningún efecto hasta el próximo
+    # reinicio del servidor — self._llm/self._title_llm quedaban resueltos
+    # una sola vez al construir el Orchestrator (bug real encontrado
+    # probando esta misma ronda). Los otros 3 roles ya son dinámicos por sí
+    # solos (factory), no necesitan este refresh.
+    orchestrator.refresh_llm_routing()
+    return {"routing": routing, "available_providers": llm_routing.available_providers()}
 
 
 @app.get("/profile")

@@ -856,7 +856,15 @@ def _capped_for_replay(text: str) -> str:
 class Orchestrator:
     def __init__(self, user_id: str = DEFAULT_USER_ID):
         self._user_id = user_id
+        # self._llm y self._title_llm quedan como instancias fijas (no una
+        # factory como los 3 Especialistas de abajo) porque muchos tests
+        # existentes hacen monkeypatch.setattr(orchestrator._llm, "_client",
+        # ...) contra el objeto ya construido — una factory que resuelve
+        # distinto en cada acceso rompería ese patrón. Se refrescan
+        # explícitamente vía refresh_llm_routing() cuando el ruteo cambia de
+        # verdad (ver PUT /llm-routing en app.py), no en cada turno.
         self._llm = llm_routing.build_llm("orchestrator")
+        self._title_llm = llm_routing.build_llm("conversation_title")
         self._memory = EpisodicMemory()
         self._identity = load_identity()
 
@@ -868,12 +876,12 @@ class Orchestrator:
         # Categorizar correos es una tarea acotada y mecánica, no necesita el
         # mismo modelo (más caro) que usa Snarf para conversar — un modelo
         # más chico y barato alcanza, y este Especialista puede elegir su
-        # propia Capacidad de LLM sin afectar la de Snarf.
-        self._gmail_digest = GmailDigestSpecialist(self._gmail, llm_routing.build_llm("gmail_digest"), user_id)
-        # Nombrar automáticamente una conversación apenas ocurre su primer
-        # intercambio (ver generate_conversation_title): mismo criterio de
-        # modelo barato para tarea acotada — nunca el modelo principal.
-        self._title_llm = llm_routing.build_llm("conversation_title")
+        # propia Capacidad de LLM sin afectar la de Snarf. Se pasa una
+        # factory (lambda), nunca la instancia ya resuelta — así un cambio de
+        # ruteo desde configuración se aplica sin reiniciar el servidor
+        # (bug real encontrado en esta misma ronda: antes quedaba fijo al
+        # momento de construir el Orchestrator).
+        self._gmail_digest = GmailDigestSpecialist(self._gmail, lambda: llm_routing.build_llm("gmail_digest"), user_id)
 
         # Pipeline de vectorización de Drive (ver ADR 0028): mismo criterio de
         # "modelo barato para tarea acotada" que el digest de Gmail, esta vez
@@ -882,7 +890,7 @@ class Orchestrator:
         content_extractor = ContentExtractor(
             drive=self._drive,
             pdf_extractor=PdfExtractor(),
-            vision_llm=llm_routing.build_llm("drive_vision"),
+            vision_llm_factory=lambda: llm_routing.build_llm("drive_vision"),
             stt=ElevenLabsSTT(),
             ffmpeg_audio=FfmpegAudioExtractor(),
             docx_extractor=DocxExtractor(),
@@ -911,7 +919,9 @@ class Orchestrator:
         )
         # Mismo criterio que GmailDigestSpecialist: modelo barato para una
         # tarea acotada (sugerir 2-4 nombres de subcarpeta por proyecto).
-        self._projects = ProjectManager(self._drive, self._drive_indexer, llm_routing.build_llm("project_summary"), user_id)
+        self._projects = ProjectManager(
+            self._drive, self._drive_indexer, lambda: llm_routing.build_llm("project_summary"), user_id
+        )
 
         self._tool_handlers = {
             "list_conversations": lambda i: self._memory.list_conversations(),
@@ -1286,3 +1296,17 @@ class Orchestrator:
         title = title.strip().strip('"').strip("'").rstrip(".")
         if title:
             self._memory.set_title(conversation_id, title[:CONVERSATION_TITLE_MAX_CHARS])
+
+    def refresh_llm_routing(self) -> None:
+        """Reconstruye self._llm/self._title_llm contra la configuración de
+        ruteo vigente (snarf/runtime/llm_routing.py) — llamado desde
+        PUT /llm-routing apenas el fundador cambia algo, para que el cambio
+        se aplique en el próximo turno sin reiniciar el servidor. Bug real
+        encontrado en esta misma ronda: sin esto, cambiar el rol
+        "conversation_title" a Gemini desde la interfaz no tenía ningún
+        efecto hasta el próximo reinicio — el título seguía cayendo al
+        fallback en silencio. Los otros 3 roles (gmail_digest, drive_vision,
+        project_summary) ya se resuelven en cada llamada vía factory, no
+        necesitan este refresh."""
+        self._llm = llm_routing.build_llm("orchestrator")
+        self._title_llm = llm_routing.build_llm("conversation_title")

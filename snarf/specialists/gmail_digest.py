@@ -20,9 +20,14 @@ class GmailDigestSpecialist(Specialist):
     name = "gmail_digest"
     domain = "email"
 
-    def __init__(self, gmail, llm, user_id: str):
+    def __init__(self, gmail, llm_factory, user_id: str):
+        # llm_factory: callable sin argumentos que devuelve la Capacidad de
+        # LLM vigente para este rol — nunca una instancia fija, para que un
+        # cambio de proveedor/modelo en snarf/runtime/llm_routing.py se
+        # refleje sin reiniciar el servidor (mismo criterio ya usado para
+        # sarcasm_level/profile_name, releídos en cada turno).
         self._gmail = gmail
-        self._llm = llm
+        self._llm_factory = llm_factory
         self._user_id = user_id
 
     def _cache_path(self) -> Path:
@@ -36,16 +41,17 @@ class GmailDigestSpecialist(Specialist):
 
     def refresh(self, max_results: int = 20) -> dict:
         messages = self._gmail.list_messages(max_results=max_results)
+        llm = self._llm_factory()
         if not messages:
             digest_text = "No hay mensajes recientes para interpretar."
-        elif not self._llm.available:
+        elif not llm.available:
             digest_text = "No se pudo interpretar: falta configurar el modelo de lenguaje (ANTHROPIC_API_KEY)."
         else:
             listing = "\n".join(
                 f"- De: {m.get('from', '')} | Asunto: {m.get('subject', '')} | {m.get('snippet', '')[:160]}"
                 for m in messages
             )
-            digest_text = self._llm.generate(system=SYSTEM_PROMPT, messages=[{"role": "user", "content": listing}]).text
+            digest_text = llm.generate(system=SYSTEM_PROMPT, messages=[{"role": "user", "content": listing}]).text
 
         digest = {
             "generated_at": time.time(),

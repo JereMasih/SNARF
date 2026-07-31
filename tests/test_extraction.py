@@ -60,10 +60,11 @@ class FakeOfficeExtractor:
 
 
 def make_extractor(**overrides):
+    vision_llm = overrides.pop("vision_llm", FakeVisionLLM())
     defaults = dict(
         drive=FakeDrive(),
         pdf_extractor=FakePdf(),
-        vision_llm=FakeVisionLLM(),
+        vision_llm_factory=lambda: vision_llm,
         stt=FakeStt(),
         ffmpeg_audio=FakeFfmpeg(),
         docx_extractor=FakeOfficeExtractor("texto de word"),

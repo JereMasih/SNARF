@@ -27,7 +27,7 @@ def make_specialist(tmp_path, monkeypatch, messages=None, llm_available=True, ll
     monkeypatch.setattr(module, "CACHE_DIR", tmp_path / "gmail_digest")
     gmail = FakeGmail(messages or [])
     llm = FakeLLM(available=llm_available, response=llm_response)
-    return GmailDigestSpecialist(gmail, llm, "fundador"), llm
+    return GmailDigestSpecialist(gmail, lambda: llm, "fundador"), llm
 
 
 def test_cached_digest_is_none_before_any_refresh(tmp_path, monkeypatch):
