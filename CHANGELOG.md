@@ -606,3 +606,14 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
 - Los 4 roles acotados (Gmail, visión de Drive, resumen de proyectos, título) se movieron a los proveedores más baratos ya verificados de punta a punta. El rol principal de conversación queda en Sonnet 5 — Haiku ya está disponible en el selector, pero esa decisión (afecta la personalidad/calidad de Snarf) queda para que el fundador la tome, no para decidirla en silencio.
 - Encontrada y corregida de paso una fuga real de aislamiento en los tests: las credenciales nuevas en `.env` no se borraban antes de cada test.
 - 529/529 tests. Verificado con llamadas reales de punta a punta a través del Orchestrator real (no solo la Capacidad aislada): título generado por Gemini real, respuesta real de xAI en el rol principal, visión real confirmada con Gemini. Ver ADR 0070.
+
+## [2026-07-30] Fix: `.warmup()` faltante en las Capacidades LLM no-Anthropic
+
+- El fundador ruteó `orchestrator` a xAI Grok manualmente; `OpenAICompatibleLLM`/`GeminiLLM` nunca implementaron `.warmup()` (a diferencia de `AnthropicLLM`), así que cualquier rol ruteado a un proveedor no-Anthropic hacía crashear el arranque del servidor con `AttributeError` en el próximo reinicio real.
+- 529/529 tests. Se corrige de paso un test que no aislaba `ROUTING_PATH` y leía el archivo real en disco. Ver ADR 0071.
+
+## [2026-07-30] Cerebro: rotación 3D real (no paralaje simulado) + fix de desincronización + partículas mejoradas
+
+- El paralaje 2D del ADR 0069 no se sentía como una cámara rotando y tenía un bug real: las partículas de flujo entre nodos se desincronizaban de las líneas de los edges (dos fuentes de verdad distintas para la misma geometría). Se reemplaza todo por una única función de proyección de perspectiva 3D (`project3D`), calculada una sola vez por frame antes de dibujar SVG o canvas — elimina la clase de bug por construcción.
+- Rotación de cámara continua y lenta con eje Z real entre anillos (orquestador más cerca, capacidades más al fondo). Partículas de flujo reescritas: entrada/salida tipo "humo de luz" (radio variable), órbita tipo electrón alrededor del nodo al llegar, y color que interpola entre el núcleo y el nodo según de dónde vienen y hacia dónde van.
+- 529/529 tests (sin cambios de backend). Verificado con Playwright: rotación real que avanza con el tiempo, un nodo del anillo de Capacidades desplazándose notablemente más en X que el núcleo ante la misma rotación (el eje Z participa de verdad), radios variando con la profundidad, cero errores de consola. Ver ADR 0072.

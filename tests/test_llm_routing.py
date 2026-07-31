@@ -33,7 +33,8 @@ def test_save_routing_ignores_a_role_that_does_not_exist(tmp_path, monkeypatch):
     assert set(routing.keys()) == set(llm_routing.ROLES)
 
 
-def test_build_llm_defaults_to_anthropic_for_every_role():
+def test_build_llm_defaults_to_anthropic_for_every_role(tmp_path, monkeypatch):
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
     for role in llm_routing.ROLES:
         assert isinstance(llm_routing.build_llm(role), AnthropicLLM)
 

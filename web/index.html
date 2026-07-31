@@ -3315,6 +3315,7 @@ let brainGraphBuilt = false;
 let brainNodeEls = {};
 let brainIconEls = {};
 let brainNodeGroupEls = {};
+let brainNodeBaseRadius = {}; // radio original de cada nodo (antes de que un frame lo escale por profundidad)
 let brainEdgePaths = {};
 let brainEdgeFlowPaths = {};
 let brainPollTimer = null;
@@ -3332,6 +3333,7 @@ function buildBrainGraphSkeleton() {
   brainNodeEls = {};
   brainIconEls = {};
   brainNodeGroupEls = {};
+  brainNodeBaseRadius = {};
   brainEdgePaths = {};
   brainEdgeFlowPaths = {};
 
@@ -3365,6 +3367,7 @@ function buildBrainGraphSkeleton() {
   centerCircle.setAttribute("class", "brain-node-center brain-color-white");
   centerGroup.appendChild(centerCircle);
   brainNodeEls.orchestrator = centerCircle;
+  brainNodeBaseRadius.orchestrator = 30;
 
   const centerIcon = createBrainNodeIconEl("orchestrator", cx, cy + 48, 22);
   centerIcon.classList.add("brain-color-white");
@@ -3397,13 +3400,15 @@ function buildBrainGraphSkeleton() {
     nodesG.appendChild(group);
     brainNodeGroupEls[p.id] = group;
 
+    const baseRadius = isSpecialist || isInput ? 14 : 11;
     const circle = document.createElementNS(SVG_NS, "circle");
     circle.setAttribute("cx", p.x.toFixed(1));
     circle.setAttribute("cy", p.y.toFixed(1));
-    circle.setAttribute("r", isSpecialist || isInput ? 14 : 11);
+    circle.setAttribute("r", baseRadius);
     circle.setAttribute("class", `brain-node ${colorCls}${isSpecialist ? " brain-node-specialist" : ""}`);
     group.appendChild(circle);
     brainNodeEls[p.id] = circle;
+    brainNodeBaseRadius[p.id] = baseRadius;
 
     const iconY = p.y + (p.y > cy ? 24 : -18);
     const icon = createBrainNodeIconEl(p.id, p.x, iconY, 17);
@@ -3549,7 +3554,7 @@ let brainCanvasTransform = { scale: 1, offsetX: 0, offsetY: 0 };
 let brainAnimFrameId = null;
 let brainLastFrameTs = null;
 let brainFocusResetTimer = null;
-const brainCamera = { x: 250, y: 250, zoom: 1, targetX: 250, targetY: 250, targetZoom: 1, driftPhase: Math.random() * Math.PI * 2 };
+const brainCamera = { x: 250, y: 250, zoom: 1, targetX: 250, targetY: 250, targetZoom: 1 };
 
 function brainCssColor(name) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(`--brain-${name}`).trim();
@@ -3574,12 +3579,21 @@ function brainViewboxToCanvas(x, y) {
     y: brainCanvasTransform.offsetY + y * brainCanvasTransform.scale,
   };
 }
+// BRAIN_DEPTH_Z_RANGE: mismo rango que BRAIN_RING_Z (ver el motor de
+// proyección más abajo) — las partículas ambiente/niebla se reparten al
+// azar en todo ese volumen para que también participen de la rotación 3D
+// real, no solo los nodos.
+const BRAIN_DEPTH_Z_RANGE = [-120, 100];
+function brainRandomZ() {
+  return BRAIN_DEPTH_Z_RANGE[0] + Math.random() * (BRAIN_DEPTH_Z_RANGE[1] - BRAIN_DEPTH_Z_RANGE[0]);
+}
 function spawnAmbientParticle() {
   const depth = 0.3 + Math.random() * 0.7; // 0=lejos/tenue/lento, 1=cerca/brillante/rápido — profundidad real, no decorativa al azar puro
   return {
     kind: "ambient",
     x: Math.random() * BRAIN_VIEWBOX_SIZE,
     y: Math.random() * BRAIN_VIEWBOX_SIZE,
+    z: brainRandomZ(),
     vx: (Math.random() - 0.5) * 22 * depth,
     vy: (Math.random() - 0.5) * 22 * depth,
     r: (0.7 + Math.random() * 1.8) * (0.5 + depth * 0.7),
@@ -3598,6 +3612,7 @@ function spawnMistParticle() {
     kind: "ambient",
     x: Math.random() * BRAIN_VIEWBOX_SIZE,
     y: Math.random() * BRAIN_VIEWBOX_SIZE,
+    z: brainRandomZ(),
     vx: (Math.random() - 0.5) * 6 * depth,
     vy: (Math.random() - 0.5) * 6 * depth,
     r: 10 + Math.random() * 22,
@@ -3633,6 +3648,7 @@ function initBrainMesh() {
   Object.entries(brainNodeEls).forEach(([id, el]) => {
     const cx = parseFloat(el.getAttribute("cx")) || 250;
     const cy = parseFloat(el.getAttribute("cy")) || 250;
+    const z = brainZForNode(id); // los satélites orbitan a la misma profundidad que su nodo — se mueven juntos al rotar
     const color = getComputedStyle(el).color;
     for (let i = 0; i < BRAIN_MESH_SATELLITES_PER_NODE; i++) {
       const angle = Math.random() * Math.PI * 2;
@@ -3640,6 +3656,7 @@ function initBrainMesh() {
       brainMeshPoints.push({
         x: cx + Math.cos(angle) * dist,
         y: cy + Math.sin(angle) * dist,
+        z,
         color,
         phase: Math.random() * Math.PI * 2,
       });
@@ -3691,8 +3708,10 @@ function drawBrainMesh(ctx, ts) {
     const ay = pa.y + Math.cos(t * 0.5 + pa.phase) * 2.4;
     const bx = pb.x + Math.sin(t * 0.6 + pb.phase) * 2.4;
     const by = pb.y + Math.cos(t * 0.5 + pb.phase) * 2.4;
-    const posA = brainViewboxToCanvas(ax, ay);
-    const posB = brainViewboxToCanvas(bx, by);
+    const projA = project3D(ax, ay, pa.z || 0);
+    const projB = project3D(bx, by, pb.z || 0);
+    const posA = brainViewboxToCanvas(projA.x, projA.y);
+    const posB = brainViewboxToCanvas(projB.x, projB.y);
     const jitter = Math.sin(t * 0.8 + pa.phase + pb.phase) * 5 * brainCanvasTransform.scale;
     const midX = (posA.x + posB.x) / 2 + jitter;
     const midY = (posA.y + posB.y) / 2 - jitter;
@@ -3711,15 +3730,16 @@ function drawBrainMesh(ctx, ts) {
 // nodo activo, con una ligera deriva perpendicular al vector (como viento,
 // no como un tren sobre rieles) — la línea del edge en sí queda estática y
 // tenue (ver .brain-edge-flow en el CSS); el movimiento lo llevan estas
-// partículas.
-// direction "out": el orquestador delega en el nodo (color propio del nodo,
-// mismo criterio que antes). direction "in": el nodo devuelve información
-// al orquestador (color blanco del centro, ver .brain-node-center) — dos
-// colores distintos para que se lea como ida y vuelta real, no un solo
-// sentido. Ambas conviven en el mismo período de actividad de un nodo: no
-// hay una señal real de "cuándo vuelve" el dato (el activity_log ya llega
-// completo), así que se aproxima con flujo simultáneo en los dos sentidos
-// mientras el nodo está activo.
+// partículas. Todo el cálculo pasa en coordenadas de MUNDO (x,y,z) — recién
+// al final se proyecta con project3D, la misma función que usan los edges
+// (ver applyBrain3DProjection): es lo que garantiza que la partícula nunca
+// se desincronice de la línea que "sigue" (bug real reportado).
+// "out": el orquestador delega en el nodo. "in": el nodo devuelve
+// información al orquestador. El COLOR ya no es fijo por dirección — se
+// interpola entre el blanco del núcleo y el color propio del nodo según
+// travel (ver brainLerpColor): cerca del centro es blanco, cerca del nodo
+// es del color del nodo, en los dos sentidos — así refleja de dónde viene y
+// hacia dónde va la partícula en cada instante, no solo al spawnear.
 function spawnFlowParticle(nodeId, direction) {
   const node = brainNodeEls[nodeId];
   if (!node) return null;
@@ -3731,39 +3751,73 @@ function spawnFlowParticle(nodeId, direction) {
     nodeId,
     direction,
     t: 0,
+    phase: "travel", // "travel" -> "orbit" al llegar (ver más abajo, "como electrones alrededor de un núcleo")
+    orbitT: 0,
+    orbitAngle: Math.random() * Math.PI * 2,
+    orbitDir: Math.random() < 0.5 ? 1 : -1,
     speed: 0.28 + Math.random() * 0.32, // nunca la misma velocidad — evita el efecto "todas en fila" mecánico
     jitterPhase: Math.random() * Math.PI * 2,
     jitterAmp: 2.5 + Math.random() * 6,
     r: 0.9 + Math.random() * 2,
-    color: direction === "in" ? brainCssColor("white") : getComputedStyle(node).color,
+    nodeColor: getComputedStyle(node).color,
   };
 }
+const BRAIN_FLOW_ORBIT_DURATION = 0.8; // segundos que orbita al llegar antes de apagarse del todo
 function updateAndDrawFlowParticle(ctx, p, dt) {
-  p.t += p.speed * dt;
-  if (p.t >= 1) { p.done = true; return; }
   const node = brainNodeEls[p.nodeId];
-  if (!node || !activeBrainNodeIds.has(p.nodeId)) { p.done = true; return; }
+  if (!node) { p.done = true; return; }
+  if (p.phase === "travel" && !activeBrainNodeIds.has(p.nodeId)) { p.done = true; return; }
   const nx = parseFloat(node.getAttribute("cx"));
   const ny = parseFloat(node.getAttribute("cy"));
-  const cx = 250, cy = 250;
-  const dx = nx - cx, dy = ny - cy;
-  const len = Math.hypot(dx, dy) || 1;
-  const perpX = -dy / len, perpY = dx / len;
-  // "out" recorre 0->1 (centro->nodo); "in" recorre 1->0 (nodo->centro) —
-  // mismo reloj p.t (fade in/out simétrico en ambas puntas), solo cambia
-  // dónde cae la posición visible en ese instante.
-  const travel = p.direction === "in" ? 1 - p.t : p.t;
-  // La deriva se atenúa cerca de las puntas (0 y 1) para que el haz siga
-  // reconociéndose como "hacia ese nodo", no una nube difusa sin dirección.
-  const taper = 1 - Math.pow(Math.abs(p.t - 0.5) * 2, 2);
-  const wobble = Math.sin(p.t * 11 + p.jitterPhase) * p.jitterAmp * taper;
-  const baseX = cx + dx * travel;
-  const baseY = cy + dy * travel;
-  const x = baseX + perpX * wobble;
-  const y = baseY + perpY * wobble;
-  const alpha = Math.min(1, p.t * 7, (1 - p.t) * 5) * 0.85;
-  const pos = brainViewboxToCanvas(x, y);
-  drawGlowDot(ctx, pos.x, pos.y, p.r * brainCanvasTransform.scale, p.color, alpha);
+  const nz = brainZForNode(p.nodeId);
+  const cx = 250, cy = 250, cz = brainZForNode("orchestrator");
+  const whiteColor = brainCssColor("white");
+
+  let worldX, worldY, worldZ, alpha, radiusMul, color;
+  if (p.phase === "travel") {
+    p.t += p.speed * dt;
+    if (p.t >= 1) { p.t = 1; p.phase = "orbit"; }
+    const dx = nx - cx, dy = ny - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    const perpX = -dy / len, perpY = dx / len;
+    // "out" recorre 0->1 (centro->nodo); "in" recorre 1->0 (nodo->centro) —
+    // mismo reloj p.t (fade in/out simétrico en ambas puntas), solo cambia
+    // dónde cae la posición visible en ese instante.
+    const travel = p.direction === "in" ? 1 - p.t : p.t;
+    // La deriva se atenúa cerca de las puntas (0 y 1) para que el haz siga
+    // reconociéndose como "hacia ese nodo", no una nube difusa sin dirección.
+    const taper = 1 - Math.pow(Math.abs(p.t - 0.5) * 2, 2);
+    const wobble = Math.sin(p.t * 11 + p.jitterPhase) * p.jitterAmp * taper;
+    worldX = cx + dx * travel + perpX * wobble;
+    worldY = cy + dy * travel + perpY * wobble;
+    worldZ = cz + (nz - cz) * travel;
+    alpha = Math.min(1, p.t * 7, (1 - p.t) * 5) * 0.85;
+    // Más grande y difusa en las puntas (entrada/salida, "humo de luz"
+    // pedido), más chica y brillante a mitad de camino.
+    radiusMul = 1 + (1 - taper) * 1.6;
+    color = brainLerpColor(whiteColor, p.nodeColor, travel);
+  } else {
+    // Órbita alrededor del nodo de llegada, como un electrón alrededor de
+    // un núcleo — "in" llega al núcleo (orchestrator), "out" llega al nodo.
+    p.orbitT += dt;
+    if (p.orbitT >= BRAIN_FLOW_ORBIT_DURATION) { p.done = true; return; }
+    const arrivedAtCenter = p.direction === "in";
+    const targetX = arrivedAtCenter ? cx : nx;
+    const targetY = arrivedAtCenter ? cy : ny;
+    const targetZ = arrivedAtCenter ? cz : nz;
+    const orbitProgress = p.orbitT / BRAIN_FLOW_ORBIT_DURATION;
+    const orbitRadius = 9 + Math.sin(orbitProgress * Math.PI) * 3.5;
+    p.orbitAngle += p.orbitDir * dt * 3.4;
+    worldX = targetX + Math.cos(p.orbitAngle) * orbitRadius;
+    worldY = targetY + Math.sin(p.orbitAngle) * orbitRadius * 0.55; // achatada — se lee como órbita vista en perspectiva
+    worldZ = targetZ;
+    alpha = (1 - orbitProgress) * 0.75;
+    radiusMul = 0.85;
+    color = arrivedAtCenter ? whiteColor : p.nodeColor;
+  }
+  const proj = project3D(worldX, worldY, worldZ);
+  const pos = brainViewboxToCanvas(proj.x, proj.y);
+  drawGlowDot(ctx, pos.x, pos.y, p.r * radiusMul * proj.scale * brainCanvasTransform.scale, color, alpha);
 }
 function spawnBrainBurst(nodeId, isError) {
   const node = brainNodeEls[nodeId];
@@ -3772,12 +3826,13 @@ function spawnBrainBurst(nodeId, isError) {
   const cy = parseFloat(node.getAttribute("cy"));
   if (Number.isNaN(cx) || Number.isNaN(cy)) return;
   const color = isError ? brainCssColor("red") : getComputedStyle(node).color;
+  const z = brainZForNode(nodeId);
   for (let i = 0; i < 16; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 30 + Math.random() * 90;
     brainParticles.push({
       kind: "burst",
-      x: cx, y: cy,
+      x: cx, y: cy, z,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       r: 1.2 + Math.random() * 2.4,
@@ -3855,8 +3910,9 @@ function updateAndDrawParticle(ctx, p, dt) {
     p.vy *= 0.94;
     p.alpha = Math.max(0, 1 - p.life / p.maxLife);
   }
-  const pos = brainViewboxToCanvas(p.x, p.y);
-  const radiusPx = p.r * brainCanvasTransform.scale;
+  const proj = project3D(p.x, p.y, p.z || 0);
+  const pos = brainViewboxToCanvas(proj.x, proj.y);
+  const radiusPx = p.r * proj.scale * brainCanvasTransform.scale;
   drawGlowDot(ctx, pos.x, pos.y, radiusPx, p.color, p.alpha);
 }
 // Tasa orgánica (no uniforme) de nacimiento de partículas por nodo activo —
@@ -3875,32 +3931,89 @@ function spawnActiveFlowParticles(dt) {
     }
   });
 }
-// Paneo 3D / profundidad entre anillos (pedido explícito del fundador,
-// estilo holograma Jarvis/Ultron): el mismo desvío orbital de cámara
-// (driftX/driftY) se aplica a cada nodo con una intensidad distinta según
-// su anillo — el núcleo (orchestrator) es el que más se corre (lee como lo
-// "más cerca"), el anillo de Capacidades el que casi no se mueve (lee como
-// fondo lejano). Es lo que revela que el grafo tiene volumen real en vez de
-// ser un dibujo plano, sin necesitar WebGL ni tocar la lógica de datos.
-function brainDepthFactorFor(id) {
-  if (id === "orchestrator") return 1.7;
-  if (BRAIN_INPUT_ORDER.includes(id)) return 1.0;
-  if (BRAIN_SPECIALIST_ORDER.includes(id)) return 0.55;
-  return 0.2; // anillo de Capacidades — el más externo, el más "de fondo"
+// Rotación 3D real (pedido explícito del fundador, estilo holograma
+// Jarvis/Ultron — corrige la ronda anterior, que era un paralaje 2D
+// simulado, no una rotación de cámara real). Cada nodo vive en un mundo con
+// x,y (el layout radial de siempre) + z según su anillo — el núcleo es el
+// más "cerca" de la cámara, el anillo de Capacidades el más "atrás". UNA
+// SOLA función de proyección (project3D) la usan tanto el SVG (nodos/edges)
+// como el canvas (partículas/malla/aura) — es lo que garantiza que nunca
+// más queden desincronizados entre sí (bug real reportado: antes los edges
+// se recalculaban con el paralaje pero las partículas seguían leyendo la
+// posición estática original).
+const BRAIN_RING_Z = { orchestrator: 90, input: 40, specialist: -20, capability: -110 };
+function brainZForNode(id) {
+  if (id === "orchestrator") return BRAIN_RING_Z.orchestrator;
+  if (BRAIN_INPUT_ORDER.includes(id)) return BRAIN_RING_Z.input;
+  if (BRAIN_SPECIALIST_ORDER.includes(id)) return BRAIN_RING_Z.specialist;
+  return BRAIN_RING_Z.capability;
 }
-function applyBrainDepthParallax(driftX, driftY) {
-  const centerFactor = brainDepthFactorFor("orchestrator");
-  const centerDx = driftX * centerFactor, centerDy = driftY * centerFactor;
+const brainCamera3D = {
+  rotY: 0, // la vuelta principal — avanza sola, sin parar, ver updateBrainRotation
+  rotX: -0.16, // inclinación fija (mirar un poco desde arriba) — así el eje Z se nota incluso apenas arranca la rotación
+  autoRotSpeed: 0.14, // rad/s ≈ una vuelta completa cada ~45s, lento y majestuoso pero notorio en los primeros segundos
+  distance: 620,
+};
+let brainRotTrig = { cosY: 1, sinY: 0, cosX: 1, sinX: 0 };
+function updateBrainRotTrig() {
+  brainRotTrig.cosY = Math.cos(brainCamera3D.rotY);
+  brainRotTrig.sinY = Math.sin(brainCamera3D.rotY);
+  brainRotTrig.cosX = Math.cos(brainCamera3D.rotX);
+  brainRotTrig.sinX = Math.sin(brainCamera3D.rotX);
+}
+// Proyecta un punto del mundo (x,y en coordenadas del viewBox, z de profundidad)
+// a pantalla: rota en Y (la vuelta) y después en X (la inclinación fija),
+// proyecta en perspectiva (más cerca de la cámara = más grande). Se llama
+// UNA VEZ por frame por cada punto que haga falta dibujar — el costo real
+// (trigonometría) ya está cacheado en brainRotTrig, esto es solo álgebra.
+function project3D(x, y, z) {
+  const wx = x - 250, wy = y - 250;
+  const rx = wx * brainRotTrig.cosY - z * brainRotTrig.sinY;
+  const rzY = wx * brainRotTrig.sinY + z * brainRotTrig.cosY;
+  const ry = wy * brainRotTrig.cosX - rzY * brainRotTrig.sinX;
+  const rz = wy * brainRotTrig.sinX + rzY * brainRotTrig.cosX;
+  const scale = brainCamera3D.distance / (brainCamera3D.distance - rz);
+  return { x: 250 + rx * scale, y: 250 + ry * scale, scale, z: rz };
+}
+// Interpola linealmente entre dos colores hex/rgb — usado para que una
+// partícula de flujo "sea" del color del núcleo cerca del centro y del
+// color del nodo cerca del nodo, en ambos sentidos (ver updateAndDrawFlowParticle).
+function brainParseColor(c) {
+  if (c.startsWith("#")) {
+    const n = c.length === 4
+      ? [c[1] + c[1], c[2] + c[2], c[3] + c[3]]
+      : [c.slice(1, 3), c.slice(3, 5), c.slice(5, 7)];
+    return n.map((h) => parseInt(h, 16));
+  }
+  const m = c.match(/[\d.]+/g) || [0, 0, 0];
+  return [+m[0], +m[1], +m[2]];
+}
+function brainLerpColor(colorA, colorB, t) {
+  const a = brainParseColor(colorA), b = brainParseColor(colorB);
+  const r = Math.round(a[0] + (b[0] - a[0]) * t);
+  const g = Math.round(a[1] + (b[1] - a[1]) * t);
+  const bl = Math.round(a[2] + (b[2] - a[2]) * t);
+  return `rgb(${r}, ${g}, ${bl})`;
+}
+// Actualiza SVG (nodos + edges) contra la proyección de ESTE frame — llamada
+// ANTES de dibujar el canvas del mismo frame (ver renderBrainFrame), así
+// ambas capas comparten exactamente la misma geometría, siempre.
+function applyBrain3DProjection() {
+  const centerZ = brainZForNode("orchestrator");
+  const centerProj = project3D(250, 250, centerZ);
   Object.entries(brainNodeGroupEls).forEach(([id, group]) => {
-    const factor = brainDepthFactorFor(id);
-    const dx = driftX * factor, dy = driftY * factor;
-    group.setAttribute("transform", `translate(${dx.toFixed(2)} ${dy.toFixed(2)})`);
-    if (id === "orchestrator") return;
     const node = brainNodeEls[id];
     if (!node) return;
     const baseX = parseFloat(node.getAttribute("cx"));
     const baseY = parseFloat(node.getAttribute("cy"));
-    const d = `M ${(250 + centerDx).toFixed(1)} ${(250 + centerDy).toFixed(1)} L ${(baseX + dx).toFixed(1)} ${(baseY + dy).toFixed(1)}`;
+    const baseR = brainNodeBaseRadius[id] || 11;
+    const z = brainZForNode(id);
+    const proj = project3D(baseX, baseY, z);
+    group.setAttribute("transform", `translate(${(proj.x - baseX).toFixed(2)} ${(proj.y - baseY).toFixed(2)})`);
+    node.setAttribute("r", (baseR * proj.scale).toFixed(2));
+    group.style.opacity = Math.max(0.4, Math.min(1, proj.scale)).toFixed(2);
+    if (id === "orchestrator") return;
+    const d = `M ${centerProj.x.toFixed(1)} ${centerProj.y.toFixed(1)} L ${proj.x.toFixed(1)} ${proj.y.toFixed(1)}`;
     const edge = brainEdgePaths[id];
     const flow = brainEdgeFlowPaths[id];
     if (edge) edge.setAttribute("d", d);
@@ -3908,29 +4021,28 @@ function applyBrainDepthParallax(driftX, driftY) {
   });
 }
 function updateBrainCamera(dt) {
+  // Ya sin drift/paralaje acá — eso ahora lo lleva la rotación 3D real
+  // (ver updateBrainRotTrig/applyBrain3DProjection, llamadas desde
+  // renderBrainFrame). Esto solo le queda al easing del zoom-foco a un nodo.
   const ease = 1 - Math.pow(0.0005, dt);
   brainCamera.x += (brainCamera.targetX - brainCamera.x) * ease;
   brainCamera.y += (brainCamera.targetY - brainCamera.y) * ease;
   brainCamera.zoom += (brainCamera.targetZoom - brainCamera.zoom) * ease;
-
-  // Órbita lenta, siempre presente — la sensación de flotar en el espacio
-  // digital pedida, nunca del todo estática ni cuando no hay foco. Radio
-  // más grande que el wobble original (antes ±3, apenas perceptible): acá
-  // es lo que le da recorrido real al paneo 3D de applyBrainDepthParallax.
-  brainCamera.driftPhase += dt * 0.12;
-  const driftX = Math.sin(brainCamera.driftPhase) * 18;
-  const driftY = Math.cos(brainCamera.driftPhase * 0.83) * 18;
-  const wobble = 1 + Math.sin(brainCamera.driftPhase) * 0.012;
-
-  const origin = brainViewboxToCanvas(brainCamera.x + driftX, brainCamera.y + driftY);
+  const origin = brainViewboxToCanvas(brainCamera.x, brainCamera.y);
   brainGraphInner.style.transformOrigin = `${origin.x}px ${origin.y}px`;
-  brainGraphInner.style.transform = `scale(${(brainCamera.zoom * wobble).toFixed(4)})`;
-  applyBrainDepthParallax(driftX, driftY);
+  brainGraphInner.style.transform = `scale(${brainCamera.zoom.toFixed(4)})`;
 }
 function renderBrainFrame(ts) {
   if (brainLastFrameTs == null) brainLastFrameTs = ts;
   const dt = Math.min(0.05, (ts - brainLastFrameTs) / 1000); // tope: evita saltos si la pestaña estuvo pausada
   brainLastFrameTs = ts;
+
+  // Rotación + proyección PRIMERO, dibujo DESPUÉS — en ese orden, dentro del
+  // mismo frame: SVG y canvas quedan garantizados en sincronía (nunca un
+  // frame de desfasaje entre ambas capas).
+  brainCamera3D.rotY += dt * brainCamera3D.autoRotSpeed;
+  updateBrainRotTrig();
+  applyBrain3DProjection();
 
   const ctx = brainParticlesCanvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;

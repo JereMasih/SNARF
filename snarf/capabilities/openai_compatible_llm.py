@@ -73,6 +73,16 @@ class OpenAICompatibleLLM(Capability):
     def available(self) -> bool:
         return self._client is not None
 
+    def warmup(self) -> None:
+        if not self._client:
+            return
+        try:
+            self._client.chat.completions.create(
+                model=self.model, max_tokens=1, messages=[{"role": "user", "content": "hola"}]
+            )
+        except Exception:
+            pass
+
     def generate(
         self,
         system: str,
