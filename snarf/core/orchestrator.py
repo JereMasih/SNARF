@@ -1,5 +1,7 @@
 import time
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from snarf.capabilities.anthropic_llm import (
     DELIVERABLE_END,
@@ -19,6 +21,7 @@ from snarf.capabilities.google_drive import GoogleDrive
 from snarf.capabilities.google_gmail import GoogleGmail
 from snarf.capabilities.google_youtube import GoogleYouTube
 from snarf.capabilities.local_file_store import LocalFileStore
+from snarf.capabilities.notion import Notion
 from snarf.capabilities.pdf_extractor import PdfExtractor
 from snarf.capabilities.pptx_extractor import PptxExtractor
 from snarf.capabilities.voyage_embeddings import VoyageEmbeddings
@@ -38,6 +41,12 @@ from snarf.telemetry import activity_log
 # vez de asumirlo implícitamente) para que agregar un segundo usuario en el
 # futuro sea pasar otro user_id, no rediseñar esta clase.
 DEFAULT_USER_ID = "fundador"
+
+# El modelo no tiene ninguna fuente confiable de "qué día es hoy" por su cuenta
+# (solo su sentido de tiempo de entrenamiento, que ya se vio desactualizado en
+# la práctica) — get_current_datetime existe para eso. Zona horaria real del
+# fundador, no configurable todavía porque hoy hay un solo usuario real.
+FOUNDER_TIMEZONE = "America/Argentina/Buenos_Aires"
 
 # Qué proveedor/modelo usa cada rol (orchestrator, gmail_digest, drive_vision,
 # project_summary, conversation_title) ya no se hardcodea acá — ver
@@ -65,7 +74,9 @@ SYSTEM_PREFIX = (
     "opciones, comparaciones, pasos a seguir, código), usá formato Markdown: encabezados "
     "(#, ##, ###), listas, **negrita**, citas con '>' y bloques de código con ```. Para "
     "respuestas conversacionales cortas, mantené texto simple y fluido, sin forzar "
-    "estructura que no aporta.\n\n"
+    "estructura que no aporta. TODO link que compartas (un download_url, un link de Drive, "
+    "cualquier URL) va SIEMPRE en sintaxis Markdown [texto](url) — nunca como URL pelada — "
+    "porque en la interfaz del fundador un link plano no es clickeable.\n\n"
     f"Al final de CADA respuesta, sin excepción, agregá un bloque delimitado exactamente "
     f"así:\n{SPEECH_START}\n<versión hablada>\n{SPEECH_END}\n"
     "La versión hablada es la narración en voz de ESA MISMA respuesta que acabás de "
@@ -91,17 +102,40 @@ SYSTEM_PREFIX = (
     "conversación alrededor. Si la respuesta es puramente conversacional y no hay "
     "ningún entregable puntual que aislar, no incluyas este bloque — la mayoría de las "
     "respuestas no lo necesitan. Tampoco aparece nunca en pantalla.\n\n"
-    "Si una respuesta en pantalla no entra en el límite de longitud de un solo mensaje "
-    "y se cortaría a mitad de camino, no la trunques en silencio: generá un documento "
-    "real con drive_create_document (format='markdown') con el contenido completo, y "
-    "en la respuesta en pantalla avisá que lo hiciste y dale el link o el download_url. "
-    "Preguntá el destino (drive/device/server) como con cualquier documento, salvo que "
-    "ya te lo hayan dicho en este intercambio.\n\n"
+    "Antes de empezar a escribir una respuesta larga (un documento extenso, un plan "
+    "detallado, un texto de varios miles de caracteres), decidí DE ANTEMANO si conviene "
+    "un documento real en vez de intentar que entre en pantalla — no esperes a que se "
+    "corte a mitad de camino para recién ahí reaccionar. Si estimás que no va a entrar, "
+    "generá directamente un documento con drive_create_document (format='markdown', o "
+    "'google_doc' si destination='drive') con el contenido completo, y en la respuesta "
+    "en pantalla avisá que lo hiciste y dale el link o el download_url. Preguntá el "
+    "destino (drive/device/server) como con cualquier documento, salvo que ya te lo "
+    "hayan dicho en este intercambio. Si igual una respuesta se corta (llegaste al "
+    "límite sin haberlo previsto), no lo disimules: decilo explícitamente y ofrecé "
+    "generar el documento con el contenido completo en el siguiente turno.\n\n"
+    "Si un pedido combina acciones ambiguas o no tenés ninguna herramienta real que lo "
+    "resuelva (ej. te piden integrar con un sistema externo que no tenés conectado), "
+    "decilo directo en la respuesta — qué podés hacer, qué no, y por qué — en vez de "
+    "intentarlo a fuerza de llamadas a herramientas hasta quedarte sin margen y cortar "
+    "el turno sin decir nada útil.\n\n"
+    "Tenés get_current_datetime (fecha/hora real) y measure_text_length (conteo exacto de "
+    "caracteres/palabras, hecho con código, nunca a ojo). Usá get_current_datetime antes de "
+    "timestampear cualquier cosa o cuando necesites saber con certeza qué día es hoy. Usá "
+    "measure_text_length siempre que una tarea tenga un límite duro de longitud: generá el "
+    "texto, medilo, recortá o regenerá más corto si excede, volvé a medir, y solo ahí "
+    "respondé — nunca reportes una cifra de longitud estimada.\n\n"
     "Tenés herramientas para consultar conversaciones pasadas con el fundador, más allá "
     "de la conversación actual: list_conversations, get_conversation, search_memory. "
     "Usalas cuando te pregunten por algo dicho en otra conversación, cuando necesites "
     "contexto que no está en la conversación actual, o cuando genuinamente creas que "
-    "recordar algo de otra conversación ayuda.\n\n"
+    "recordar algo de otra conversación ayuda. Esto es también la base de Memoria "
+    "consistente (CHARACTER.md): si un pedido revela un hueco real de capacidad — algo "
+    "que el fundador necesitó y ninguna herramienta tuya resuelve — señalalo como "
+    "propuesta concreta en la respuesta, nunca lo construyas ni lo actives por tu cuenta "
+    "(Constitution, Art. III y IV). Si el fundador pide explícitamente una revisión de "
+    "patrones repetidos en conversaciones pasadas (nunca la hagas de forma automática o "
+    "sin que la pidan), usá list_conversations + search_memory para juntar evidencia real "
+    "antes de proponer candidatos a mejora o tarea nueva.\n\n"
     "También tenés herramientas de solo lectura sobre Google Drive, Gmail, Calendar y "
     "YouTube del fundador: drive_list_files, drive_read_file, gmail_list_messages, "
     "gmail_read_message, calendar_list_calendars, calendar_list_upcoming_events, "
@@ -124,7 +158,9 @@ SYSTEM_PREFIX = (
     "evento entre calendarios puede notificar a invitados si el evento tiene invitados, "
     "por eso lleva confirmación igual que borrar), gmail_delete_label, "
     "drive_delete_file, drive_share_file (da acceso real a otra persona o vía link "
-    "público, aunque no borre nada) y project_delete. Su protocolo es "
+    "público, aunque no borre nada), drive_update_document (reemplaza el contenido de un "
+    "Google Doc que YA EXISTE — distinto de drive_create_document, que siempre crea uno "
+    "nuevo) y project_delete. Su protocolo es "
     "obligatorio, siempre, sin excepción: (1) llamalas primero con confirmed=false (o "
     "sin ese campo) — no van a ejecutar nada, te van a devolver una vista previa; (2) "
     "mostrale esa vista previa al fundador tal cual, con claridad, y preguntale si "
@@ -132,7 +168,12 @@ SYSTEM_PREFIX = (
     "exactamente los mismos datos, si el fundador respondió de forma explícita e "
     "inequívoca que sí a ESA propuesta concreta, en este mismo intercambio. Nunca "
     "asumas una confirmación implícita, y nunca combines la propuesta y la ejecución "
-    "en el mismo turno.\n\n"
+    "en el mismo turno. Única excepción explícita: drive_update_document — una vez que "
+    "el fundador confirmó la edición de un documento puntual en esta conversación, "
+    "ediciones SIGUIENTES a ESE MISMO documento, más adelante en la misma conversación, "
+    "no necesitan volver a pedirle confirmación (ya la dio para ese documento en esta "
+    "sesión) — llamá directo con confirmed=true. Un documento distinto, o la misma "
+    "edición en una conversación nueva, sí vuelve a pedir confirmación desde cero.\n\n"
     "drive_list_files, gmail_list_messages, calendar_list_upcoming_events, "
     "calendar_search_events, youtube_list_subscriptions y youtube_list_liked_videos "
     "tienen un protocolo de confirmed EQUIVALENTE al de arriba, pero por un motivo "
@@ -163,7 +204,12 @@ SYSTEM_PREFIX = (
     "antes de arrancar.\n\n"
     "También podés crear archivos reales: drive_create_document (markdown, pdf o un "
     "Google Doc editable), drive_create_spreadsheet (xlsx o Google Sheet) y "
-    "drive_create_presentation (pptx o Google Slides). Todas aceptan tres destinos — "
+    "drive_create_presentation (pptx o Google Slides). Cuando el destino sea "
+    "destination='drive', preferí SIEMPRE el formato nativo de Google (format='google_doc' "
+    "en drive_create_document, o el equivalente en los otros dos tools) por sobre markdown o "
+    "pdf plano — es lo que se puede editar y compartir naturalmente ahí adentro. Markdown/pdf "
+    "quedan para destination='device' o 'server', o cuando el fundador pida explícitamente "
+    "ese formato. Todas aceptan tres destinos — "
     "preguntale siempre a quien te lo pidió cuál prefiere antes de crear, salvo que ya "
     "te lo haya dicho explícitamente en este intercambio: "
     "(1) destination='drive' — se guarda en la carpeta 'Snarf/Archivos' del Drive "
@@ -187,9 +233,70 @@ SYSTEM_PREFIX = (
     "o 'sobre' un Proyecto puntual, llamá project_get primero y seguí el prompt propio de "
     "ese proyecto para esa respuesta, además de tu personalidad de siempre — el prompt del "
     "proyecto complementa quién sos, nunca lo reemplaza.\n\n"
+    "Convenciones para tareas y notas de Proyectos (todas de texto, no cambian el schema): "
+    "(1) antes de agregar una tarea con project_add_task, si el proyecto tiene tareas o notas "
+    "parecidas, usá project_search para chequear que no sea un duplicado — si lo es, avisá en "
+    "vez de cargarla de nuevo; (2) para descartar una tarea sin perder por qué (no hay estado "
+    "'descartada' en el schema, es binario hecha/pendiente), nunca la borres en silencio: "
+    "primero project_add_note con el texto '[DESCARTADA: <motivo>] <texto original de la "
+    "tarea>', recién después project_delete_task; (3) si una tarea o nota surgió de otra "
+    "conversación o de un pedido puntual del fundador, agregá al final del texto algo como "
+    "'(origen: <de qué conversación o cuándo salió>)' para no perder esa trazabilidad; (4) si "
+    "una tarea depende de que otra se resuelva primero, agregá 'depende de: <id o descripción "
+    "corta de la otra tarea>' al final de su texto; (5) antes de entregar un consolidado del "
+    "backlog, contá cuántas tareas hay por tipo/prioridad y decilo primero en una línea, y si "
+    "existe un consolidado anterior (buscalo con project_search o drive_search_knowledge), "
+    "agregá una sección corta de continuidad: qué se agregó desde ese consolidado, qué se "
+    "completó, qué sigue pendiente de antes. (6) una tarea de tipo 'especialista' (proponer un "
+    "Specialist nuevo) no entra bien en una sola línea como un bug o una mejora — usá esta "
+    "plantilla extendida en su texto: 'TIPO: especialista · Rol: <qué hace> · Disparador: "
+    "<cuándo se invoca> · Herramientas requeridas: <cuáles> · Límites explícitos de autoridad: "
+    "<qué NO puede hacer por su cuenta>'. (7) cuando un project_get o project_list te "
+    "muestre un proyecto con muchas tareas sueltas sin completar (más de 15-20) o notas "
+    "visiblemente viejas sin procesar, avisá proactivamente que conviene consolidar o "
+    "purgar antes de seguir sumando — no lo calles ni lo dejes crecer en silencio. (8) si "
+    "el fundador pide explícitamente un snapshot/consolidado del backlog de un proyecto "
+    "en Drive (nunca de forma automática, solo a pedido): reuní tareas y notas con "
+    "project_get, armalo en Markdown con fecha y el resumen numérico del punto (5), y "
+    "crealo con drive_create_document(format='google_doc', destination='drive') dentro "
+    "de una subcarpeta 'Seguimiento' del proyecto — si esa subcarpeta no existe todavía "
+    "entre las subcarpetas del proyecto, guardalo en la carpeta principal del proyecto y "
+    "avisá que 'Seguimiento' no existía.\n\n"
+    "También tenés herramientas sobre el Notion del fundador (requieren NOTION_API_KEY "
+    "configurada — si no lo está, vas a recibir un error explícito de la herramienta, no "
+    "lo disimules, decile al fundador que falta configurar la integración): "
+    "notion_search (buscar páginas/bases de datos por texto), notion_read_page (leer el "
+    "texto de una página), notion_create_page (crear una subpágina nueva con título y "
+    "contenido) y notion_append_to_page (agregar contenido al final de una ya existente). "
+    "Reversibles desde el propio Notion — no llevan protocolo de confirmed.\n\n"
 )
 
 TOOLS = [
+    {
+        "name": "get_current_datetime",
+        "description": (
+            "Devuelve la fecha y hora real actual (servidor), con la zona horaria del "
+            "fundador. Llamala antes de timestampear cualquier documento, evento o registro, "
+            "o cuando necesites saber con certeza qué día es hoy — nunca lo asumas de tu "
+            "propio conocimiento, no es confiable."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "measure_text_length",
+        "description": (
+            "Cuenta caracteres y palabras REALES (con código, no estimación) de un texto. "
+            "Usala siempre que una tarea tenga un límite duro de longitud (ej. 'reducí esto a "
+            "4000 caracteres'): generá el texto, medilo con esta herramienta, y si excede el "
+            "límite recortá o regenerá más corto y volvé a medir antes de responder. Nunca "
+            "reportes una cifra de longitud que no salga de esta herramienta."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        },
+    },
     {
         "name": "list_conversations",
         "description": "Lista todas las conversaciones pasadas con el fundador: id, título y fechas.",
@@ -353,7 +460,17 @@ TOOLS = [
     },
     {
         "name": "gmail_send_message",
-        "description": "Envía un correo real desde el Gmail del fundador. Acción de alto impacto: protocolo de confirmed obligatorio.",
+        "description": (
+            "Envía un correo real desde el Gmail del fundador. Acción de alto impacto: protocolo "
+            "de confirmed obligatorio. Si el destinatario es un contacto del fundador (no el "
+            "fundador mismo), antes de redactar decidí si corresponde primera persona (como si el "
+            "fundador mismo escribiera, sin mencionar a Snarf) o tercera persona (Snarf redactando "
+            "en su nombre) — no asumas un modo fijo, evaluá el caso. Si es tercera persona: abrí "
+            "con algo como 'Hola [nombre], [fundador] me pidió que te comparta esto...', identificate "
+            "como 'el asistente de [fundador]' (nunca menciones 'IA' o 'inteligencia artificial'), "
+            "desarrollá el contenido pedido, cerrá invitando a responder el mail con dudas o a hablar "
+            "directamente con el fundador, y firmá 'Saludos, Snarf'."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -611,6 +728,27 @@ TOOLS = [
         },
     },
     {
+        "name": "drive_update_document",
+        "description": (
+            "Reemplaza TODO el contenido de un Google Doc YA EXISTENTE por new_content (texto plano). "
+            "Herramienta de alto impacto (modifica un documento real, no uno nuevo) — protocolo de "
+            "confirmed obligatorio la primera vez que se edita CADA documento en una conversación; "
+            "ediciones siguientes al MISMO documento, más adelante en la misma conversación, no hace "
+            "falta volver a pedirle confirmación al fundador (ya la dio para ese documento en esta "
+            "sesión) — llamá directo con confirmed=true. Para leer el contenido actual antes de decidir "
+            "qué reemplazar, usá drive_read_file."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string"},
+                "new_content": {"type": "string", "description": "Texto plano completo que reemplaza todo el documento."},
+                "confirmed": {"type": "boolean"},
+            },
+            "required": ["file_id", "new_content"],
+        },
+    },
+    {
         "name": "project_create",
         "description": (
             "Crea un Proyecto nuevo de Snarf: carpeta propia en Drive (con subcarpetas propuestas "
@@ -755,6 +893,53 @@ TOOLS = [
         },
     },
     {
+        "name": "notion_search",
+        "description": (
+            "Busca páginas y bases de datos en el Notion del fundador por texto. Requiere NOTION_API_KEY "
+            "configurada — si no está, devuelve un error explícito, no inventes resultados."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "notion_read_page",
+        "description": "Lee el texto plano de una página de Notion, dado su page_id (obtenido con notion_search).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"page_id": {"type": "string"}},
+            "required": ["page_id"],
+        },
+    },
+    {
+        "name": "notion_create_page",
+        "description": (
+            "Crea una página nueva de Notion, como subpágina de parent_page_id, con un título y contenido "
+            "en texto plano (párrafos separados por línea en blanco). Reversible desde Notion (se puede "
+            "borrar ahí mismo) — no lleva protocolo de confirmed, mismo criterio que drive_create_folder."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "parent_page_id": {"type": "string"},
+                "title": {"type": "string"},
+                "content": {"type": "string"},
+            },
+            "required": ["parent_page_id", "title"],
+        },
+    },
+    {
+        "name": "notion_append_to_page",
+        "description": "Agrega contenido (texto plano, párrafos separados por línea en blanco) al final de una página de Notion ya existente.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"page_id": {"type": "string"}, "content": {"type": "string"}},
+            "required": ["page_id", "content"],
+        },
+    },
+    {
         "name": "personality_set_sarcasm",
         "description": (
             "Ajusta el nivel de ingenio seco/sarcasmo de Snarf (0-10, en pasos de 0.5) a pedido "
@@ -873,6 +1058,7 @@ class Orchestrator:
         self._gmail = GoogleGmail(google_auth)
         self._calendar = GoogleCalendar(google_auth)
         self._youtube = GoogleYouTube(google_auth)
+        self._notion = Notion()
         # Categorizar correos es una tarea acotada y mecánica, no necesita el
         # mismo modelo (más caro) que usa Snarf para conversar — un modelo
         # más chico y barato alcanza, y este Especialista puede elegir su
@@ -924,6 +1110,8 @@ class Orchestrator:
         )
 
         self._tool_handlers = {
+            "get_current_datetime": lambda i: self._tool_get_current_datetime(),
+            "measure_text_length": lambda i: self._tool_measure_text_length(i.get("text", "")),
             "list_conversations": lambda i: self._memory.list_conversations(),
             "get_conversation": lambda i: self._memory.get_conversation(i.get("conversation_id", "")),
             "search_memory": lambda i: self._memory.search(i.get("query", "")),
@@ -983,6 +1171,7 @@ class Orchestrator:
             ),
             "drive_rename_file": lambda i: self._drive.rename_file(i["file_id"], i["new_name"]),
             "drive_share_file": self._tool_drive_share_file,
+            "drive_update_document": self._tool_drive_update_document,
             "project_create": lambda i: self._projects.create(i["name"]),
             "project_list": lambda i: self._projects.list_projects(),
             "project_get": lambda i: self._projects.get(i["project_id"]),
@@ -999,6 +1188,12 @@ class Orchestrator:
             "project_list_conversations": lambda i: self._memory.list_conversations(project_id=i["project_id"]),
             "personality_set_sarcasm": self._tool_personality_set_sarcasm,
             "profile_set_name": self._tool_profile_set_name,
+            "notion_search": lambda i: self._notion.search(i["query"]),
+            "notion_read_page": lambda i: self._notion.read_page_text(i["page_id"]),
+            "notion_create_page": lambda i: self._notion.create_page(
+                i["parent_page_id"], i["title"], i.get("content", "")
+            ),
+            "notion_append_to_page": lambda i: self._notion.append_to_page(i["page_id"], i["content"]),
         }
 
     @property
@@ -1084,6 +1279,22 @@ class Orchestrator:
             return self._pending({param: requested})
         return run(requested)
 
+    def _tool_get_current_datetime(self) -> dict:
+        now = datetime.now(ZoneInfo(FOUNDER_TIMEZONE))
+        return {
+            "iso": now.isoformat(),
+            "date": now.strftime("%Y-%m-%d"),
+            "time": now.strftime("%H:%M"),
+            "weekday": now.strftime("%A"),
+            "timezone": FOUNDER_TIMEZONE,
+        }
+
+    def _tool_measure_text_length(self, text: str) -> dict:
+        return {
+            "characters": len(text),
+            "words": len(text.split()),
+        }
+
     def _tool_gmail_send_message(self, i: dict) -> dict:
         if not i.get("confirmed"):
             return self._pending({"to": i.get("to"), "subject": i.get("subject"), "body": i.get("body")})
@@ -1165,6 +1376,22 @@ class Orchestrator:
             return self._pending({"file_id": i.get("file_id"), "role": i.get("role", "reader"), "email": i.get("email")})
         result = self._drive.share_file(i["file_id"], role=i.get("role", "reader"), email=i.get("email"))
         return {"status": "shared", "permission_id": result.get("id")}
+
+    def _tool_drive_update_document(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            current = ""
+            try:
+                current = self._drive.read_document_text(i.get("file_id", ""))
+            except Exception:
+                pass
+            return self._pending(
+                {
+                    "file_id": i.get("file_id"),
+                    "new_content": i.get("new_content"),
+                    "current_content_preview": current[:500],
+                }
+            )
+        return self._drive.replace_document_body(i["file_id"], i["new_content"])
 
     def _tool_project_delete(self, i: dict) -> dict:
         # A propósito solo borra el registro local de Snarf — ProjectManager.

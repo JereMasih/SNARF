@@ -207,6 +207,38 @@ class AnthropicLLM(Capability):
                 text += "\n\n*(respuesta truncada: llegó al límite de longitud de una respuesta)*"
             return split_speech(text)
 
+        # Se agotaron las rondas de herramientas sin llegar a una respuesta
+        # final. Antes esto devolvía un mensaje de fallo genérico que
+        # descartaba todo lo ya reunido en las rondas anteriores (bug real
+        # reportado: un turno entero perdido, sin comunicar nada útil al
+        # fundador). Ahora se fuerza una última llamada SIN tools — el
+        # modelo no puede seguir pidiendo herramientas, así que tiene que
+        # sintetizar en prosa lo que ya juntó y decir qué quedó pendiente.
+        closing_messages = list(conversation)
+        if closing_messages:
+            closing_messages[-1] = _mark_cache_breakpoint(closing_messages[-1])
+        closing_messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "Se agotaron los intentos de usar herramientas antes de llegar a una "
+                    "respuesta final. Con lo que ya reuniste en los pasos anteriores, dame "
+                    "la mejor respuesta posible ahora mismo, en prosa, sin pedir ninguna "
+                    "herramienta más — y decime explícitamente qué quedó sin resolver."
+                ),
+            }
+        )
+        try:
+            response = self._client.messages.create(
+                model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=closing_messages
+            )
+            self._record_usage(response)
+            text = "".join(block.text for block in response.content if block.type == "text")
+            if text.strip():
+                return split_speech(text)
+        except Exception:
+            pass
+
         timeout_text = "[demasiadas consultas a herramientas, no llegué a una respuesta final]"
         return LLMResponse(text=timeout_text, speech=timeout_text)
 

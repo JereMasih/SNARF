@@ -145,3 +145,64 @@ def test_share_file_without_email_creates_an_anyone_permission():
     drive.share_file("f1", role="reader")
     call = drive._service._permissions.create_calls[0]
     assert call["body"] == {"type": "anyone", "role": "reader"}
+
+
+class FakeDocsDocumentsResource:
+    def __init__(self, get_response):
+        self._get_response = get_response
+        self.batch_update_calls = []
+
+    def get(self, documentId):
+        return SimpleExecutable(self._get_response)
+
+    def batchUpdate(self, documentId, body):
+        self.batch_update_calls.append({"documentId": documentId, "body": body})
+        return SimpleExecutable({})
+
+
+class FakeDocsService:
+    def __init__(self, get_response):
+        self._documents = FakeDocsDocumentsResource(get_response)
+
+    def documents(self):
+        return self._documents
+
+
+def make_drive_with_docs(get_response):
+    drive = GoogleDrive.__new__(GoogleDrive)
+    docs_service = FakeDocsService(get_response)
+    drive._docs_client = lambda: docs_service
+    return drive, docs_service
+
+
+def test_read_document_text_joins_every_paragraph_text_run():
+    doc = {
+        "body": {
+            "content": [
+                {"paragraph": {"elements": [{"textRun": {"content": "Hola "}}, {"textRun": {"content": "mundo\n"}}]}},
+                {"paragraph": {"elements": [{"textRun": {"content": "segunda línea\n"}}]}},
+            ]
+        }
+    }
+    drive, _ = make_drive_with_docs(doc)
+    assert drive.read_document_text("doc-1") == "Hola mundo\nsegunda línea\n"
+
+
+def test_replace_document_body_deletes_existing_content_then_inserts_new_text():
+    doc = {"body": {"content": [{"endIndex": 25}]}}
+    drive, docs_service = make_drive_with_docs(doc)
+    result = drive.replace_document_body("doc-1", "texto nuevo")
+    call = docs_service._documents.batch_update_calls[0]
+    assert call["documentId"] == "doc-1"
+    requests = call["body"]["requests"]
+    assert requests[0] == {"deleteContentRange": {"range": {"startIndex": 1, "endIndex": 24}}}
+    assert requests[1] == {"insertText": {"location": {"index": 1}, "text": "texto nuevo"}}
+    assert result == {"documentId": "doc-1", "status": "updated"}
+
+
+def test_replace_document_body_skips_delete_when_document_is_already_empty():
+    doc = {"body": {"content": [{"endIndex": 1}]}}
+    drive, docs_service = make_drive_with_docs(doc)
+    drive.replace_document_body("doc-1", "primer contenido")
+    requests = docs_service._documents.batch_update_calls[0]["body"]["requests"]
+    assert requests == [{"insertText": {"location": {"index": 1}, "text": "primer contenido"}}]

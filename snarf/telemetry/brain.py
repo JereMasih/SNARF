@@ -37,6 +37,8 @@ CENTER_NODE = "orchestrator"
 #    misma regla, aplicada específicamente al cerebro.
 # ---------------------------------------------------------------------------
 TOOL_TO_NODE: dict[str, str] = {
+    "get_current_datetime": "utility",
+    "measure_text_length": "utility",
     "list_conversations": "memory",
     "get_conversation": "memory",
     "search_memory": "memory",
@@ -56,6 +58,7 @@ TOOL_TO_NODE: dict[str, str] = {
     "drive_create_document": "documents",
     "drive_create_spreadsheet": "documents",
     "drive_create_presentation": "documents",
+    "drive_update_document": "documents",
     # Gmail crudo (Capacidad, no Especialista) separado por lo que un usuario
     # reconocería como acciones distintas: leer/mirar, organizar, y enviar
     # (esta última la única con efecto real hacia afuera — "canal de
@@ -103,6 +106,10 @@ TOOL_TO_NODE: dict[str, str] = {
     "youtube_list_liked_videos": "youtube",
     "personality_set_sarcasm": "personality",
     "profile_set_name": "personality",
+    "notion_search": "notion",
+    "notion_read_page": "notion",
+    "notion_create_page": "notion",
+    "notion_append_to_page": "notion",
 }
 
 VENDOR_TO_NODE: dict[str, str] = {"anthropic": "llm", "voyage": "knowledge"}
@@ -146,6 +153,8 @@ NODE_TIER: dict[str, str] = {
     "stt": "capability",
     "tts": "capability",
     "personality": "capability",
+    "utility": "capability",
+    "notion": "capability",
 }
 
 NODE_IDS = list(NODE_TIER.keys())

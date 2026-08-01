@@ -2,6 +2,23 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-01] Edición de Google Docs existentes, integración con Notion, widget de uso de APIs completo
+
+### Arquitectura y código
+- Nueva tool `drive_update_document`: reemplaza el contenido de un Google Doc ya existente (antes Snarf solo podía crear archivos nuevos). Confirmación una vez por documento por conversación, no en cada edición. Ver ADR 0074.
+- Nueva Capacidad `Notion` (búsqueda, lectura, creación y append de páginas) — excepción acotada y logueada al gate de Capabilities de MASTER_MAP, confirmada explícitamente por el fundador. Inactiva hasta que exista `NOTION_API_KEY` real. Ver ADR 0075.
+- Extractor de migración desde ChatGPT (`snarf/migration/chatgpt_export.py`): parsea el export completo (`conversations.json`, árbol `mapping`) a conversaciones en orden cronológico real. Probado solo contra fixtures del formato documentado — el fundador todavía no generó su export real. Ver ADR 0076.
+- CHARACTER.md ("Memoria consistente") ampliado: detectar huecos reales de capacidad y proponerlos (nunca auto-construirlos, Art. III/IV de Constitution), extrapolar patrones de interacciones pasadas, y revisión de patrones repetidos solo a pedido explícito del fundador. Guía correspondiente agregada al `SYSTEM_PREFIX` del Orchestrator — sin tools ni ADR nuevos, apoyado en `search_memory`/`list_conversations`/`project_search` ya existentes.
+- Fix del widget de uso de APIs (`web/index.html`): mostraba solo Anthropic/Voyage/ElevenLabs (allowlist fija); ahora itera todos los vendors que ya registra el backend (Gemini, OpenAI, xAI, Llama vía Groq, STT/TTS locales) — bug real desde que ADR 0068 sumó el ruteo multi-proveedor.
+
+## [2026-07-31] Backlog de uso real: tools de fecha/longitud, grabación a un tap, convenciones de Proyectos
+
+### Arquitectura y código
+- Nuevas tools `get_current_datetime` y `measure_text_length` (Orchestrator) — nodo `utility` nuevo en el cerebro. Ver ADR 0073.
+- Grabación de voz: reemplazado el gesto de mantener presionado + deslizar para bloquear (ADR 0049) por un tap simple, manos libres desde el primer instante, con waveform animado en vivo. Ver ADR 0073.
+- Límite de prompt de Proyecto (`PROJECT_PROMPT_MAX_LENGTH`) subido de 4000 a 8000 caracteres, backend y frontend.
+- Persona gramatical en mails a terceros, formatos nativos de Drive por defecto, links siempre en Markdown clicable, y convenciones de texto para tareas/notas de Proyectos (descartar sin perder motivo, dedup, trazabilidad de origen, dependencias, resumen + continuidad entre consolidados, plantilla de tarea tipo "especialista"): guía nueva en `SYSTEM_PREFIX`, sin cambios de schema.
+
 ## [2026-07-25] BUILD MODE 001 — Primera versión funcional
 
 ### Documentos

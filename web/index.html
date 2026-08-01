@@ -1191,14 +1191,15 @@
     background: rgba(232,90,90,0.16); border-color: var(--error); color: var(--error);
     animation: pulse-fast 1s ease-in-out infinite;
   }
-  /* Grabación estilo WhatsApp/Telegram: mantener presionado el mic graba,
-     soltar transcribe y envía directo, deslizar a la izquierda cancela,
-     deslizar hacia arriba bloquea (manos libres). Antes era un toggle de
-     click simple — el mic quedaba en rojo al lado de la flecha de enviar,
-     y esa flecha parecía "terminar" la grabación pero en realidad la dejaba
-     colgada sin transcribir (bug de interacción real, señalado por el
-     fundador). El botón mic ya no cambia de posición: solo se reemplaza el
-     contenido de attach+textInput por este overlay mientras se graba. */
+  /* Grabación a un tap: tocar el mic entra directo a grabar, manos libres
+     desde el primer instante (sin estado de "mantener presionado" ni de
+     "bloqueo" intermedio) — un tap simple, tacho para cancelar, flecha para
+     terminar y enviar. Reemplaza el gesto anterior de mantener presionado +
+     deslizar para bloquear: en iPhone, mantener el dedo sobre el botón
+     disparaba la lupa de aumento nativa de iOS (pensada para cajas de
+     texto), rompiendo el gesto por completo (bug real reportado). El botón
+     mic no cambia de posición: solo se reemplaza el contenido de
+     attach+textInput por este overlay mientras se graba. */
   .record-overlay {
     display: none;
     flex: 1 1 auto; min-width: 0;
@@ -1219,19 +1220,19 @@
     flex-shrink: 0; margin-left: auto; background: none; border: none; font-size: 0.95rem; cursor: pointer;
     color: var(--text-dim); padding: 0.2rem 0.3rem;
   }
-  /* Indicador de "deslizá para bloquear", flota arriba del mic — su propia
-     posición (no la del overlay) porque el gesto de bloqueo es vertical,
-     relativo al dedo sobre el mic, no al texto de la izquierda. */
-  .record-lock-hint {
-    display: none;
-    position: absolute; right: 52px; bottom: calc(100% + 6px);
-    font-size: 0.66rem; color: var(--text-dim);
-    background: rgba(5,10,12,0.85); border: 1px solid rgba(79,216,232,0.25);
-    border-radius: 999px; padding: 0.25rem 0.55rem; white-space: nowrap;
-    transition: opacity 0.15s ease, transform 0.15s ease;
+  /* Waveform en vivo: mini barras que se ensanchan hacia arriba/abajo con la
+     amplitud real del audio (AnalyserNode sobre el stream del mic) y vuelven
+     a puntitos quietos en silencio — muestra que está capturando la voz,
+     sin necesitar el estado de "bloqueado" que existía antes. */
+  .record-wave {
+    display: flex; align-items: center; gap: 3px; height: 18px; flex-shrink: 0;
   }
-  .text-row.recording .record-lock-hint { display: block; }
-  .record-lock-hint.locked { color: var(--glow-soft); border-color: var(--glow); }
+  .record-wave i {
+    display: block; width: 2.5px; height: 4px; border-radius: 1.5px;
+    background: var(--text-dim);
+    transition: height 0.08s ease, background 0.08s ease;
+  }
+  .text-row.recording .record-wave i { background: var(--error); }
 </style>
 </head>
 <body>
@@ -1359,11 +1360,11 @@
         <div class="record-overlay" id="recordOverlay">
           <span class="record-dot"></span>
           <span class="record-timer" id="recordTimer">0:00</span>
-          <span class="record-hint" id="recordHint">‹ deslizá para cancelar</span>
+          <span class="record-hint" id="recordHint">manos libres, tocá enviar</span>
+          <span class="record-wave" id="recordWave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
           <button class="record-cancel-btn" id="recordCancelBtn" title="cancelar grabación" hidden>🗑</button>
         </div>
-        <span class="record-lock-hint" id="recordLockHint">▲ deslizá para bloquear</span>
-        <button class="icon-btn" id="micBtn" title="Mantené presionado para grabar"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg></button>
+        <button class="icon-btn" id="micBtn" title="Tocá para grabar"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg></button>
         <button class="icon-btn" id="textSendBtn" title="Enviar"><svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="16" x2="10" y2="4"/><path d="M5 9l5-5 5 5"/></svg></button>
       </div>
       <div class="orb-wrap" id="orbWrap">
@@ -1457,7 +1458,7 @@ const textSendBtn = document.getElementById("textSendBtn");
 const recordTimerEl = document.getElementById("recordTimer");
 const recordHint = document.getElementById("recordHint");
 const recordCancelBtn = document.getElementById("recordCancelBtn");
-const recordLockHint = document.getElementById("recordLockHint");
+const recordWave = document.getElementById("recordWave");
 const micBtn = document.getElementById("micBtn");
 const attachBtn = document.getElementById("attachBtn");
 const fileInput = document.getElementById("fileInput");
@@ -2202,7 +2203,7 @@ dashNewConvBtn.addEventListener("click", startNewConversation);
    conversación cargada todavía. */
 // Duplicado a propósito con snarf/specialists/project_manager.py
 // PROJECT_PROMPT_MAX_LENGTH — mismo precedente que GMAIL_MAX_RESULTS_CHOICES.
-const PROJECT_PROMPT_MAX_LENGTH = 4000;
+const PROJECT_PROMPT_MAX_LENGTH = 8000;
 
 let currentProjectId = null;
 let currentProjectName = null; // para la etiqueta de #projectContextBar; se fija cada vez que renderProjectHome recibe un proyecto real
@@ -2751,9 +2752,8 @@ function formatUsd(n) {
 }
 function costBodyHTML(summary) {
   const cost = summary.cost;
-  const vendorLabels = { anthropic: "Anthropic", elevenlabs: "ElevenLabs", voyage: "Voyage AI" };
   const vendorRows = Object.entries(cost.by_vendor_usd)
-    .map(([vendor, usd]) => `<div class="dash-row"><span>${vendorLabels[vendor] || vendor}</span><span class="dash-dim" style="margin-left:auto">${formatUsd(usd)}</span></div>`)
+    .map(([vendor, usd]) => `<div class="dash-row"><span>${escapeHtml(USAGE_VENDOR_LABELS[vendor] || vendor)}</span><span class="dash-dim" style="margin-left:auto">${formatUsd(usd)}</span></div>`)
     .join("");
   const unknownNote = cost.calls_without_cost_estimate
     ? `<div class="dash-row dash-dim">+ ${cost.calls_without_cost_estimate} llamada(s) sin estimar (ej. TTS, según tu plan)</div>`
@@ -2768,40 +2768,48 @@ function costBodyHTML(summary) {
 function formatCount(n) {
   return Number(n || 0).toLocaleString("es-AR");
 }
+// Antes: solo anthropic/voyage/elevenlabs tenían fila propia acá — cualquier
+// proveedor sumado después (Gemini/OpenAI/xAI/Llama vía ADR 0068, Groq/local
+// vía la capa de voz de ADR 0056) quedaba registrado en el backend pero
+// invisible en este widget (bug real reportado). usage_tracker.usage_metrics
+// ya devuelve la misma forma para todos los vendors — el fix es iterar
+// data.vendors entero en vez de una allowlist fija de 3 nombres.
+const USAGE_VENDOR_LABELS = {
+  anthropic: "Anthropic", voyage: "Voyage AI", elevenlabs: "ElevenLabs",
+  gemini: "Gemini", openai: "OpenAI", xai: "xAI", groq_llama: "Llama (Groq)",
+  groq: "Groq (STT)", local: "Local (STT/TTS)",
+};
+function usageVendorRowHTML(vendor, v) {
+  const label = USAGE_VENDOR_LABELS[vendor] || vendor;
+  const parts = [];
+  if (v.input_tokens || v.output_tokens) {
+    parts.push(`${formatCount(v.calls)} llamada(s) · ${formatCount(v.input_tokens)} tokens entrada · ${formatCount(v.output_tokens)} tokens salida`);
+  } else if (v.tokens) {
+    parts.push(`${formatCount(v.calls)} llamada(s) · ${formatCount(v.tokens)} tokens embebidos`);
+  } else {
+    if (v.characters) parts.push(`${formatCount(v.characters)} caracteres`);
+    if (v.duration_seconds) parts.push(`${formatCount(Math.round(v.duration_seconds / 60))} min transcriptos`);
+    if (!parts.length) parts.push(`${formatCount(v.calls)} llamada(s)`);
+  }
+  let subLine = "";
+  if (vendor === "elevenlabs") {
+    const sub = v.subscription;
+    subLine = sub
+      ? `<span class="dash-row-sub">cupo real (${escapeHtml(sub.tier || "")}): ${formatCount(sub.character_count)} / ${formatCount(sub.character_limit)} caracteres</span>`
+      : v.subscription_error
+        ? `<span class="dash-row-sub dash-dim">no se pudo consultar el cupo real (${escapeHtml(v.subscription_error)})</span>`
+        : "";
+  }
+  return `
+    <div class="dash-row-stacked">
+      <span class="dash-row-title">${escapeHtml(label)}</span>
+      <span class="dash-row-sub">${parts.join(" · ")}</span>
+      ${subLine}
+    </div>`;
+}
 function usageBodyHTML(data) {
   const vendors = data.vendors || {};
-  const anthropic = vendors.anthropic;
-  const voyage = vendors.voyage;
-  const elevenlabs = vendors.elevenlabs;
-  const rows = [];
-  if (anthropic) {
-    rows.push(`
-      <div class="dash-row-stacked">
-        <span class="dash-row-title">Anthropic</span>
-        <span class="dash-row-sub">${formatCount(anthropic.calls)} llamada(s) · ${formatCount(anthropic.input_tokens)} tokens entrada · ${formatCount(anthropic.output_tokens)} tokens salida</span>
-      </div>`);
-  }
-  if (elevenlabs) {
-    const sub = elevenlabs.subscription;
-    const subLine = sub
-      ? `<span class="dash-row-sub">cupo real (${escapeHtml(sub.tier || "")}): ${formatCount(sub.character_count)} / ${formatCount(sub.character_limit)} caracteres</span>`
-      : elevenlabs.subscription_error
-        ? `<span class="dash-row-sub dash-dim">no se pudo consultar el cupo real (${escapeHtml(elevenlabs.subscription_error)})</span>`
-        : "";
-    rows.push(`
-      <div class="dash-row-stacked">
-        <span class="dash-row-title">ElevenLabs</span>
-        <span class="dash-row-sub">${formatCount(elevenlabs.characters)} caracteres (TTS) · ${formatCount(Math.round((elevenlabs.duration_seconds || 0) / 60))} min transcriptos (STT)</span>
-        ${subLine}
-      </div>`);
-  }
-  if (voyage) {
-    rows.push(`
-      <div class="dash-row-stacked">
-        <span class="dash-row-title">Voyage AI</span>
-        <span class="dash-row-sub">${formatCount(voyage.calls)} llamada(s) · ${formatCount(voyage.tokens)} tokens embebidos</span>
-      </div>`);
-  }
+  const rows = Object.entries(vendors).map(([vendor, v]) => usageVendorRowHTML(vendor, v));
   if (!rows.length) return '<div class="dash-row dash-dim">todavía sin uso registrado</div>';
   return rows.join("") + '<div class="dash-row dash-dim">cupo real solo para ElevenLabs (única API que lo expone); el resto es consumo trackeado localmente</div>';
 }
@@ -3068,7 +3076,7 @@ async function loadUsageWidgetInto(root) {
 // ElevenLabs.
 const BRAIN_INPUT_ORDER = ["input_text", "input_voice", "input_file"];
 const BRAIN_SPECIALIST_ORDER = ["specialist_gmail", "specialist_projects_manage", "specialist_projects_tasks", "specialist_projects_conversations"];
-const BRAIN_CAPABILITY_ORDER = ["memory", "drive", "knowledge", "documents", "gmail_read", "gmail_manage", "gmail_send", "calendar_view", "calendar_edit", "youtube", "llm", "stt", "tts", "personality"];
+const BRAIN_CAPABILITY_ORDER = ["memory", "drive", "knowledge", "documents", "gmail_read", "gmail_manage", "gmail_send", "calendar_view", "calendar_edit", "youtube", "notion", "llm", "stt", "tts", "personality", "utility"];
 const BRAIN_NODE_LABELS = {
   input_text: "Texto",
   input_voice: "Voz",
@@ -3091,6 +3099,8 @@ const BRAIN_NODE_LABELS = {
   stt: "Escucha",
   tts: "Habla",
   personality: "Personalidad",
+  utility: "Utilidades",
+  notion: "Notion",
   orchestrator: "Orchestrator",
 };
 // El fundador pidió reemplazar el título de texto de cada nodo por un
@@ -3123,6 +3133,8 @@ const BRAIN_NODE_ICON_PATHS = {
   stt: '<path d="M7 15c-2-1-3.5-3-3.5-5.5A6.5 6.5 0 0 1 16 9c0 2-1.5 2.5-1.5 4.5v1a2 2 0 0 1-4 0"/><path d="M9 9a1.5 1.5 0 0 1 3 0c0 1-1.2 1.2-1.2 2.3"/>',
   tts: '<path d="M4 8v4h3l4 3V5L7 8Z"/><path d="M14 7a4.2 4.2 0 0 1 0 6"/><path d="M16.3 5a7.2 7.2 0 0 1 0 10"/>',
   personality: '<path d="M10 2.3l1.4 5.3 5.3 1.4-5.3 1.4L10 15.7l-1.4-5.3-5.3-1.4 5.3-1.4Z"/>',
+  utility: '<circle cx="10" cy="10" r="2.3"/><path d="M10 3.5v2.2M10 14.3v2.2M16.5 10h-2.2M5.7 10H3.5M14.6 5.4l-1.5 1.5M6.9 13.1l-1.5 1.5M14.6 14.6l-1.5-1.5M6.9 6.9 5.4 5.4"/>',
+  notion: '<rect x="3.5" y="3.5" width="13" height="13" rx="1.5"/><path d="M6.5 6.5v7l4-5.5v5.5M11 6.5h2.5v7"/>',
 };
 function createBrainNodeIconEl(id, x, y, size) {
   const el = document.createElementNS(SVG_NS, "svg");
@@ -4768,18 +4780,14 @@ reviewText.addEventListener("input", () => autoResizeTextarea(reviewText));
 
 // El mic queda siempre alcanzable (aunque ya haya texto escrito — grabar una
 // nota de voz encima de un borrador es un caso real que hay que soportar, no
-// un either/or estilo WhatsApp puro) EXCEPTO durante una grabación
-// bloqueada, donde le cede el lugar a tachito+flecha (ya está grabando, no
-// hace nada nuevo tocarlo de nuevo). La flecha de enviar aparece apenas hay
-// algo real para mandar: un borrador escrito, o una grabación bloqueada
-// lista para terminar — nunca durante el gesto de mantener presionado
-// todavía sin bloquear, para no distraer a mitad del gesto.
+// un either/or estilo WhatsApp puro) EXCEPTO mientras se está grabando,
+// donde le cede el lugar a tachito+flecha — manos libres desde el primer
+// tap, ya no existe un estado intermedio de "sostener sin soltar".
 function updateSendMicToggle() {
-  const locked = recordLocked && state === "listening";
-  const activelyHolding = state === "listening" && !locked;
+  const recording = state === "listening";
   const hasDraft = textInput.value.trim().length > 0;
-  micBtn.hidden = locked;
-  textSendBtn.hidden = activelyHolding || (!hasDraft && !locked);
+  micBtn.hidden = recording;
+  textSendBtn.hidden = !hasDraft && !recording;
 }
 
 function sendFromTextInput() {
@@ -4791,37 +4799,61 @@ function sendFromTextInput() {
   sendText(text).then(() => textInput.focus());
 }
 textSendBtn.addEventListener("click", () => {
-  // Grabación bloqueada (manos libres): el arrow reusa este mismo botón
-  // para terminar y enviar, en vez de sumar un botón nuevo al lado.
-  if (recordLocked && state === "listening") { finishRecording(false); return; }
+  // Grabando (manos libres desde el primer tap): la flecha reusa este mismo
+  // botón para terminar y enviar, en vez de sumar un botón nuevo al lado.
+  if (state === "listening") { finishRecording(false); return; }
   sendFromTextInput();
 });
 textInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendFromTextInput(); }
 });
 
-/* ---------- grabación mic en modo texto: mantener presionado, deslizar
-   izquierda cancela, deslizar arriba bloquea (manos libres) — mismo patrón
-   que WhatsApp/Telegram/ChatGPT, reemplaza el toggle de click de antes que
-   confundía el mic en rojo con la flecha de enviar al lado. ---------- */
-const RECORD_CANCEL_THRESHOLD_PX = 80;
-const RECORD_LOCK_THRESHOLD_PX = 60;
-// Un tap rápido (soltar antes de este delay) nunca debe empezar a grabar —
-// sin esto, un tap accidental en mobile disparaba getUserMedia() de forma
-// asincrónica; para cuando esa promesa resolvía, el pointerup ya había
-// pasado y se había ignorado (state todavía "idle" en ese instante), así
-// que la grabación arrancaba igual pero sin ningún evento pendiente que
-// pudiera terminarla — quedaba "grabando" sin forma real de pararla. Bug
-// real reportado desde iPhone.
-const RECORD_HOLD_DELAY_MS = 180;
-let recordPointerId = null;
-let recordStartX = 0;
-let recordStartY = 0;
-let recordLastDx = 0;
-let recordLocked = false;
+/* ---------- grabación mic en modo texto: un tap simple entra directo a
+   grabar, manos libres desde el primer instante — sin gesto de mantener
+   presionado ni de deslizar para bloquear. Reemplaza el gesto anterior
+   (mantener + swipe) que en iPhone disparaba la lupa de aumento nativa de
+   iOS sobre el botón (pensada para cajas de texto), rompiendo la
+   interacción por completo — bug real reportado. ---------- */
 let recordTimerInterval = null;
-let micHoldTimer = null;
 const MIC_ICON_HTML = micBtn.innerHTML;
+// Waveform en vivo sobre el stream real del mic (AnalyserNode) — mini
+// barras que crecen con la amplitud de voz y vuelven a puntitos en
+// silencio. audioCtx/analyser se abren en cada grabación y se cierran al
+// terminar, mismo criterio que el stream de startRecording().
+let waveAudioCtx = null;
+let waveAnalyser = null;
+let waveRAF = null;
+const recordWaveBars = Array.from(recordWave.children);
+function startWaveform(mediaStream) {
+  try {
+    waveAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = waveAudioCtx.createMediaStreamSource(mediaStream);
+    waveAnalyser = waveAudioCtx.createAnalyser();
+    waveAnalyser.fftSize = 32;
+    source.connect(waveAnalyser);
+    const data = new Uint8Array(waveAnalyser.frequencyBinCount);
+    const tick = () => {
+      waveAnalyser.getByteFrequencyData(data);
+      recordWaveBars.forEach((bar, i) => {
+        const level = data[i % data.length] / 255;
+        bar.style.height = `${4 + Math.round(level * 14)}px`;
+      });
+      waveRAF = requestAnimationFrame(tick);
+    };
+    tick();
+  } catch (e) {
+    // Sin AnalyserNode disponible (navegador viejo, etc.): la grabación
+    // sigue andando igual, solo sin animación de waveform.
+  }
+}
+function stopWaveform() {
+  if (waveRAF) cancelAnimationFrame(waveRAF);
+  waveRAF = null;
+  if (waveAudioCtx) { try { waveAudioCtx.close(); } catch (e) {} }
+  waveAudioCtx = null;
+  waveAnalyser = null;
+  recordWaveBars.forEach((bar) => { bar.style.height = "4px"; });
+}
 // Cuadrado rojo de "stop" — reemplaza el ícono de mic mientras se está
 // grabando (bloqueado o no): más intuitivo que solo el tinte rojo de
 // .recording para comunicar "soltar/tocar acá corta la grabación".
@@ -4845,12 +4877,10 @@ function stopRecordTimer() { clearInterval(recordTimerInterval); recordTimerInte
 
 async function finishRecording(cancelled) {
   stopRecordTimer();
+  stopWaveform();
   micBtn.classList.remove("recording");
   micBtn.innerHTML = MIC_ICON_HTML;
   textRow.classList.remove("recording");
-  recordLockHint.classList.remove("locked");
-  recordLocked = false;
-  recordPointerId = null;
   if (cancelled) {
     try { await stopRecording(); } catch (e) {}
     setState("idle", idleLabel());
@@ -4877,96 +4907,27 @@ async function finishRecording(cancelled) {
   }
 }
 
-async function beginActualRecording(pointerId) {
-  // Si ya se soltó el dedo antes de que venza el delay de hold, `pointerup`
-  // ya limpió recordPointerId — nunca llegó a ser un hold real, no arranca.
-  if (recordPointerId !== pointerId) return;
+async function beginActualRecording() {
   try {
     await startRecording();
   } catch (err) {
     setState("error", "sin micrófono: " + (err.message || err));
-    recordPointerId = null;
-    return;
-  }
-  // Bug real reportado desde mobile: la PRIMERA vez que se pide el permiso
-  // de micrófono, el diálogo nativo del navegador corta el toque en curso
-  // (dispara pointercancel mientras getUserMedia() todavía estaba pendiente
-  // acá arriba) — para cuando la promesa resuelve (el usuario tocó
-  // "permitir"), ya no queda ningún gesto real sostenido, pero como nada
-  // volvía a chequear esto, se arrancaba a grabar igual y quedaba
-  // "escuchando" para siempre sin ningún pointerup/pointercancel pendiente
-  // que pudiera cortarlo. Si el gesto ya no está vivo, se descarta el
-  // stream recién abierto sin arrancar a grabar — el permiso ya quedó
-  // otorgado para la próxima vez, pero ESTA vez requiere un gesto nuevo.
-  if (recordPointerId !== pointerId) {
-    try { stream.getTracks().forEach((t) => t.stop()); } catch (e) {}
-    setState("idle", idleLabel());
     return;
   }
   micBtn.classList.add("recording");
   micBtn.innerHTML = STOP_ICON_HTML;
   textRow.classList.add("recording");
-  recordHint.classList.remove("fading");
-  recordHint.textContent = "‹ deslizá para cancelar";
-  recordCancelBtn.hidden = true;
-  recordLockHint.classList.remove("locked");
-  recordLockHint.textContent = "▲ deslizá para bloquear";
+  recordHint.textContent = "manos libres, tocá enviar";
+  recordCancelBtn.hidden = false;
   startRecordTimer();
+  startWaveform(stream);
   updateSendMicToggle();
 }
-micBtn.addEventListener("pointerdown", (e) => {
+micBtn.addEventListener("click", () => {
   unlockAudio();
   if (state === "error") { clearRetry(); setState("idle", idleLabel()); }
-  if (state !== "idle") return; // ya grabando o procesando: ignorar un segundo press
-  recordPointerId = e.pointerId;
-  recordStartX = e.clientX;
-  recordStartY = e.clientY;
-  recordLastDx = 0;
-  recordLocked = false;
-  micBtn.setPointerCapture(e.pointerId);
-  clearTimeout(micHoldTimer);
-  micHoldTimer = setTimeout(() => beginActualRecording(e.pointerId), RECORD_HOLD_DELAY_MS);
-});
-micBtn.addEventListener("pointermove", (e) => {
-  if (e.pointerId !== recordPointerId || state !== "listening" || recordLocked) return;
-  const dx = e.clientX - recordStartX;
-  const dy = e.clientY - recordStartY;
-  recordLastDx = dx;
-  if (dy < -RECORD_LOCK_THRESHOLD_PX) {
-    recordLocked = true;
-    recordLockHint.textContent = "🔒 bloqueado";
-    recordLockHint.classList.add("locked");
-    recordHint.classList.remove("fading");
-    recordHint.textContent = "manos libres — tocá enviar";
-    recordCancelBtn.hidden = false;
-    updateSendMicToggle();
-    return;
-  }
-  recordHint.classList.toggle("fading", dx < -RECORD_CANCEL_THRESHOLD_PX);
-  recordHint.textContent = dx < -RECORD_CANCEL_THRESHOLD_PX ? "soltá para cancelar" : "‹ deslizá para cancelar";
-});
-micBtn.addEventListener("pointerup", (e) => {
-  if (e.pointerId !== recordPointerId) return;
-  if (state !== "listening") {
-    // Se soltó durante el delay de hold — fue un tap, nunca llegó a grabar
-    // nada real (ver comentario de RECORD_HOLD_DELAY_MS).
-    clearTimeout(micHoldTimer);
-    recordPointerId = null;
-    return;
-  }
-  if (recordLocked) return;
-  finishRecording(recordLastDx < -RECORD_CANCEL_THRESHOLD_PX);
-});
-micBtn.addEventListener("pointercancel", (e) => {
-  if (e.pointerId !== recordPointerId) return;
-  clearTimeout(micHoldTimer);
-  const wasListening = state === "listening" && !recordLocked;
-  // Se limpia SIEMPRE, incluso si todavía no se llegó a "listening" (ej.
-  // getUserMedia() sigue pendiente por el diálogo de permiso) — es lo que
-  // permite que beginActualRecording() detecte, apenas resuelva, que el
-  // gesto ya no está vivo y no arranque a grabar sin forma de pararlo.
-  recordPointerId = null;
-  if (wasListening) finishRecording(true);
+  if (state !== "idle") return; // ya grabando o procesando: ignorar un segundo tap
+  beginActualRecording();
 });
 recordCancelBtn.addEventListener("click", () => finishRecording(true));
 

@@ -5,6 +5,7 @@ from snarf.capabilities.anthropic_llm import (
     DELIVERABLE_END,
     DELIVERABLE_START,
     MAX_OUTPUT_TOKENS,
+    MAX_TOOL_ROUNDS,
     SPEECH_END,
     SPEECH_START,
     AnthropicLLM,
@@ -165,6 +166,39 @@ def test_generate_marks_each_tool_loop_round_without_leaking_cache_control_betwe
     tool_result_block = second_call_messages[-1]["content"][-1]
     assert tool_result_block["cache_control"] == {"type": "ephemeral", "ttl": CACHE_TTL}
     assert tool_result_block["type"] == "tool_result"
+
+
+def test_generate_synthesizes_a_partial_answer_when_tool_rounds_are_exhausted():
+    """Antes de este fix, agotar MAX_TOOL_ROUNDS devolvía siempre un mensaje
+    de fallo fijo, descartando todo lo ya reunido en las rondas anteriores.
+    Ahora se fuerza una última llamada sin tools para sintetizar."""
+    responses = [fake_tool_use_response(f"call-{i}", "some_tool", {}) for i in range(MAX_TOOL_ROUNDS)]
+    responses.append(fake_response("end_turn", "esto es lo que pude reunir, faltó X"))
+    llm = make_llm(responses)
+    result = llm.generate(
+        system="sys",
+        messages=[{"role": "user", "content": "hacé algo largo"}],
+        tools=[{"name": "some_tool"}],
+        tool_handler=lambda name, input: {"ok": True},
+    )
+    assert result.text == "esto es lo que pude reunir, faltó X"
+    # La llamada de cierre no debe ofrecer tools — si las ofreciera, el
+    # modelo podría volver a pedir una herramienta y nunca cerrar el turno.
+    closing_call = llm._client.messages.calls[-1]
+    assert "tools" not in closing_call
+
+
+def test_generate_falls_back_to_generic_timeout_text_when_closing_call_is_empty():
+    responses = [fake_tool_use_response(f"call-{i}", "some_tool", {}) for i in range(MAX_TOOL_ROUNDS)]
+    responses.append(fake_response("end_turn", ""))
+    llm = make_llm(responses)
+    result = llm.generate(
+        system="sys",
+        messages=[{"role": "user", "content": "hacé algo largo"}],
+        tools=[{"name": "some_tool"}],
+        tool_handler=lambda name, input: {"ok": True},
+    )
+    assert "demasiadas consultas a herramientas" in result.text
 
 
 def test_generate_records_token_usage_for_cost_tracking(monkeypatch):

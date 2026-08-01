@@ -7,11 +7,12 @@ from pathlib import Path
 PROJECTS_DIR = Path("data/projects")
 ROOT_FOLDER_NAME = "Snarf"
 PROJECTS_FOLDER_NAME = "Proyectos"
-# ≈800-1000 tokens — presupuesto razonable de instrucciones de proyecto sin
-# inflar cada turno de las conversaciones asociadas. El frontend usa el mismo
-# número como maxlength del textarea (duplicado con comentario cruzado,
-# mismo precedente que GMAIL_MAX_RESULTS_CHOICES en dashboard_prefs.py).
-PROJECT_PROMPT_MAX_LENGTH = 4000
+# ≈1600-2000 tokens — presupuesto de instrucciones de proyecto largo (el
+# fundador trae prompts maestros de referencia de ~1500+ palabras) sin
+# inflar demasiado cada turno de las conversaciones asociadas. El frontend
+# usa el mismo número como maxlength del textarea (duplicado con comentario
+# cruzado, mismo precedente que GMAIL_MAX_RESULTS_CHOICES en dashboard_prefs.py).
+PROJECT_PROMPT_MAX_LENGTH = 8000
 
 SUBFOLDER_SUGGESTION_SYSTEM_PROMPT = (
     "Proponé de 2 a 4 nombres cortos de subcarpeta (en español) para organizar los archivos "

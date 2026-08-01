@@ -180,3 +180,42 @@ class GoogleDrive(Capability):
             .create(fileId=file_id, body=permission, fields="id, type, role")
             .execute()
         )
+
+    def _docs_client(self):
+        # Sin cachear a propósito (a diferencia de _client()/self._service):
+        # editar un documento existente es una acción puntual y de alto
+        # impacto, no algo que se llame con la frecuencia de list_files/etc.
+        # — el costo de reconstruir el cliente en cada llamada es marginal y
+        # evita sumar un segundo cache thread-local + su propio manejo de
+        # reintento en paralelo al de Drive. El scope 'drive' completo (ya en
+        # SCOPES) alcanza para la API de Docs — no hace falta re-autenticar.
+        return build("docs", "v1", credentials=self._auth.credentials())
+
+    def read_document_text(self, file_id: str) -> str:
+        """Texto plano real de un Google Doc, vía la API de Docs (no el
+        export de Drive) — es lo que hace falta para poder mostrarle al
+        fundador una vista previa de qué se va a reemplazar antes de tocar
+        nada (ver replace_document_body)."""
+        doc = self._docs_client().documents().get(documentId=file_id).execute()
+        return "".join(
+            run.get("textRun", {}).get("content", "")
+            for element in doc.get("body", {}).get("content", [])
+            for run in element.get("paragraph", {}).get("elements", [])
+        )
+
+    def replace_document_body(self, file_id: str, new_text: str) -> dict:
+        """Reemplaza TODO el contenido de un Google Doc existente por
+        new_text. Edición de alto impacto (Constitution Art. VII, ADR 0073)
+        — el protocolo de confirmed vive en el handler del Orchestrator, no
+        acá adentro, mismo criterio que delete_file/share_file."""
+        docs = self._docs_client()
+        doc = docs.documents().get(documentId=file_id).execute()
+        end_index = doc["body"]["content"][-1]["endIndex"]
+        requests = []
+        if end_index > 1:
+            requests.append({"deleteContentRange": {"range": {"startIndex": 1, "endIndex": end_index - 1}}})
+        if new_text:
+            requests.append({"insertText": {"location": {"index": 1}, "text": new_text}})
+        if requests:
+            docs.documents().batchUpdate(documentId=file_id, body={"requests": requests}).execute()
+        return {"documentId": file_id, "status": "updated"}
