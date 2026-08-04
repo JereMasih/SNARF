@@ -3,7 +3,7 @@ import os
 import requests
 
 from snarf.capabilities.base import Capability
-from snarf.telemetry import usage_tracker
+from snarf.telemetry import detail, usage_tracker
 
 API_URL = "https://api.elevenlabs.io/v1/speech-to-text"
 DEFAULT_MODEL = "scribe_v1"
@@ -32,7 +32,9 @@ class ElevenLabsSTT(Capability):
         if not response.ok:
             raise RuntimeError(f"ElevenLabs STT {response.status_code}: {response.text}")
         payload = response.json()
-        usage_tracker.record_elevenlabs_stt_call(self._duration_seconds(payload))
+        usage_tracker.record_elevenlabs_stt_call(
+            self._duration_seconds(payload), detalle=detail.truncate_detalle(payload.get("text"))
+        )
         return payload["text"]
 
     @staticmethod

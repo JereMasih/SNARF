@@ -1,7 +1,7 @@
 import io
 import os
 
-from snarf.telemetry import usage_tracker
+from snarf.telemetry import detail, usage_tracker
 from snarf.voice.interface import STTProvider
 
 DEFAULT_MODEL_SIZE = os.environ.get("LOCAL_STT_MODEL_SIZE", "small")
@@ -50,5 +50,5 @@ class LocalWhisperSTT(STTProvider):
         model = self._load_model()
         segments, info = model.transcribe(io.BytesIO(audio_bytes), language="es")
         text = " ".join(segment.text.strip() for segment in segments).strip()
-        usage_tracker.record_local_stt_call(info.duration)
+        usage_tracker.record_local_stt_call(info.duration, detalle=detail.truncate_detalle(text))
         return text

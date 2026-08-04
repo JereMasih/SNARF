@@ -132,3 +132,154 @@ def test_save_prefs_preserves_gmail_max_results_alongside_span(tmp_path, monkeyp
     assert saved["widget_options"]["gmail"]["col_span"] == 5
     assert saved["widget_options"]["gmail"]["row_span"] == 9
     assert saved["widget_options"]["drive"] == {"col_span": 6, "row_span": 10}
+
+
+# --- Vista HUD del dashboard (rediseño radial) — campos aditivos, nunca
+# tocan visible_widgets/panel_order/widget_options de arriba. La Vista
+# clásica tiene que seguir comportándose exactamente igual (ver tests de
+# arriba, ninguno se tocó) para que el toggle sea reversible de verdad. ---
+
+
+def test_default_dashboard_view_is_classic(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    prefs = dashboard_prefs.load_prefs("fundador")
+    assert prefs["dashboard_view"] == "classic"
+
+
+def test_save_prefs_accepts_hud_dashboard_view(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    saved = dashboard_prefs.save_prefs("fundador", {"dashboard_view": "hud"})
+    assert saved["dashboard_view"] == "hud"
+    # Persiste de verdad, no solo en memoria (a diferencia del toggle
+    # efímero del panel Cerebro).
+    assert dashboard_prefs.load_prefs("fundador")["dashboard_view"] == "hud"
+
+
+def test_save_prefs_rejects_invalid_dashboard_view(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    saved = dashboard_prefs.save_prefs("fundador", {"dashboard_view": "trading_view"})
+    assert saved["dashboard_view"] == "classic"
+
+
+def test_default_hud_widget_state_covers_every_real_node_as_auto(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    prefs = dashboard_prefs.load_prefs("fundador")
+    assert set(prefs["hud_widget_state"].keys()) == set(dashboard_prefs.HUD_NODE_IDS)
+    assert all(state == "auto" for state in prefs["hud_widget_state"].values())
+
+
+def test_save_prefs_accepts_valid_hud_widget_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    saved = dashboard_prefs.save_prefs(
+        "fundador", {"hud_widget_state": {"drive": "pinned", "gmail_send": "hidden"}}
+    )
+    assert saved["hud_widget_state"]["drive"] == "pinned"
+    assert saved["hud_widget_state"]["gmail_send"] == "hidden"
+    assert saved["hud_widget_state"]["memory"] == "auto"
+
+
+def test_save_prefs_rejects_invalid_hud_widget_state_value(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    saved = dashboard_prefs.save_prefs("fundador", {"hud_widget_state": {"drive": "always_on_top"}})
+    assert saved["hud_widget_state"]["drive"] == "auto"
+
+
+def test_save_prefs_ignores_unknown_node_id_in_hud_widget_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    saved = dashboard_prefs.save_prefs("fundador", {"hud_widget_state": {"trading": "pinned"}})
+    assert "trading" not in saved["hud_widget_state"]
+
+
+def test_save_prefs_accepts_valid_hud_widget_options(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    saved = dashboard_prefs.save_prefs(
+        "fundador", {"hud_widget_options": {"drive": {"angle": 45, "radius": 220}}}
+    )
+    assert saved["hud_widget_options"]["drive"] == {"angle": 45.0, "radius": 220.0}
+
+
+def test_save_prefs_rejects_hud_widget_options_for_unknown_node(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    saved = dashboard_prefs.save_prefs("fundador", {"hud_widget_options": {"trading": {"angle": 1, "radius": 1}}})
+    assert "trading" not in saved["hud_widget_options"]
+
+
+def test_save_prefs_rejects_non_numeric_and_bool_hud_widget_options(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    saved = dashboard_prefs.save_prefs(
+        "fundador", {"hud_widget_options": {"drive": {"angle": "north", "radius": True}}}
+    )
+    assert "drive" not in saved["hud_widget_options"]
+
+
+def test_hud_node_ids_is_the_real_relevance_dock_node_ids(tmp_path, monkeypatch):
+    # HUD_NODE_IDS tiene que ser el mismo objeto/fuente que
+    # relevance.DOCK_NODE_IDS (= todos los nodos reales de brain.NODE_TIER),
+    # no una copia hardcodeada que pueda quedar desalineada.
+    from snarf.telemetry import relevance
+
+    assert dashboard_prefs.HUD_NODE_IDS == relevance.DOCK_NODE_IDS
+
+
+def test_classic_view_fields_unaffected_by_hud_prefs(tmp_path, monkeypatch):
+    # El toggle tiene que ser reversible de verdad: guardar preferencias de
+    # Vista HUD nunca debe tocar visible_widgets/panel_order/widget_options.
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    baseline = dashboard_prefs.load_prefs("fundador")
+    dashboard_prefs.save_prefs(
+        "fundador",
+        {
+            "dashboard_view": "hud",
+            "hud_widget_state": {"drive": "hidden"},
+            "hud_widget_options": {"drive": {"angle": 10, "radius": 100}},
+            "hud_chat_position": "right",
+            "hud_sidebar_pinned": True,
+        },
+    )
+    after = dashboard_prefs.load_prefs("fundador")
+    assert after["visible_widgets"] == baseline["visible_widgets"]
+    assert after["panel_order"] == baseline["panel_order"]
+    assert after["widget_options"] == baseline["widget_options"]
+
+
+# --- v2 del rediseño HUD: posición del chat + pin del drawer lateral ---
+
+
+def test_default_hud_chat_position_is_left(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    prefs = dashboard_prefs.load_prefs("fundador")
+    assert prefs["hud_chat_position"] == "left"
+
+
+def test_save_prefs_accepts_valid_hud_chat_position(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    for position in ("left", "center", "right"):
+        saved = dashboard_prefs.save_prefs("fundador", {"hud_chat_position": position})
+        assert saved["hud_chat_position"] == position
+
+
+def test_save_prefs_rejects_invalid_hud_chat_position(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    saved = dashboard_prefs.save_prefs("fundador", {"hud_chat_position": "top"})
+    assert saved["hud_chat_position"] == "left"
+
+
+def test_default_hud_sidebar_pinned_is_false(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    prefs = dashboard_prefs.load_prefs("fundador")
+    assert prefs["hud_sidebar_pinned"] is False
+
+
+def test_save_prefs_accepts_hud_sidebar_pinned_true(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    saved = dashboard_prefs.save_prefs("fundador", {"hud_sidebar_pinned": True})
+    assert saved["hud_sidebar_pinned"] is True
+    assert dashboard_prefs.load_prefs("fundador")["hud_sidebar_pinned"] is True
+
+
+def test_save_prefs_rejects_non_bool_hud_sidebar_pinned(tmp_path, monkeypatch):
+    # bool es subclase de int en Python — sin este chequeo, {"hud_sidebar_pinned": 1}
+    # pasaría en silencio como True.
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    saved = dashboard_prefs.save_prefs("fundador", {"hud_sidebar_pinned": 1})
+    assert saved["hud_sidebar_pinned"] is False

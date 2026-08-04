@@ -1,6 +1,19 @@
+import pytest
 from google.genai import types
 
 from snarf.capabilities.gemini_llm import MAX_TOOL_ROUNDS, GeminiLLM
+from snarf.telemetry import events, usage_tracker
+
+
+@pytest.fixture(autouse=True)
+def _isolate_usage_tracking(tmp_path, monkeypatch):
+    # llm.generate() real acá adentro dispara usage_tracker.record_generic_llm_call
+    # de verdad — sin esto, cada corrida de la suite completa escribía entradas
+    # sintéticas (gemini-3-pro-preview, ~10 tokens) directo en el
+    # data/usage_log.jsonl y data/telemetry_events.jsonl REALES del proyecto.
+    # Bug real encontrado por el fundador viéndolo ahogar su Vista HUD real.
+    monkeypatch.setattr(usage_tracker, "DEFAULT_PATH", tmp_path / "usage_log.jsonl")
+    monkeypatch.setattr(events, "DEFAULT_PATH", tmp_path / "telemetry_events.jsonl")
 
 
 def fake_response(finish_reason, parts, usage_prompt=10, usage_candidates=5):

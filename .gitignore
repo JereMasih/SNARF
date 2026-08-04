@@ -9,6 +9,8 @@ data/conversation_titles.json
 data/llm_routing.json
 data/manual_verification_log.jsonl
 data/dashboard_prefs/
+data/dashboard_curation/
+data/dashboard_template_proposals.json
 data/gmail_digest/
 data/drive_index/
 data/local_files/
@@ -18,8 +20,11 @@ data/user_profile/
 data/usage_log.jsonl
 data/activity_log.jsonl
 data/input_log.jsonl
+data/telemetry_events.jsonl
+data/input_preprocessing_log.jsonl
 data/audio/
 data_backups/
 credentials/
 server.log
+server_8002.log
 logs/

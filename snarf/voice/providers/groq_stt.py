@@ -2,7 +2,7 @@ import os
 
 import requests
 
-from snarf.telemetry import usage_tracker
+from snarf.telemetry import detail, usage_tracker
 from snarf.voice.interface import STTProvider
 
 API_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
@@ -48,5 +48,5 @@ class GroqSTT(STTProvider):
         payload = response.json()
         # verbose_json devuelve 'duration' real (segundos de audio), no el
         # tiempo de la request — es lo que Groq factura, no latencia de red.
-        usage_tracker.record_groq_stt_call(payload.get("duration"))
+        usage_tracker.record_groq_stt_call(payload.get("duration"), detalle=detail.truncate_detalle(payload.get("text")))
         return payload["text"]

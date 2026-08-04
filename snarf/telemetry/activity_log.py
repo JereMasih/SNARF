@@ -2,6 +2,8 @@ import json
 import time
 from pathlib import Path
 
+from snarf.telemetry import events
+
 DEFAULT_PATH = Path("data/activity_log.jsonl")
 
 
@@ -9,14 +11,27 @@ def _target(path: Path | None) -> Path:
     return path if path is not None else DEFAULT_PATH
 
 
-def record(tool_name: str, status: str, duration_ms: float | None = None, error: str | None = None, path: Path | None = None) -> None:
+def record(
+    tool_name: str,
+    status: str,
+    duration_ms: float | None = None,
+    error: str | None = None,
+    path: Path | None = None,
+    events_path: Path | None = None,
+    detalle: str | None = None,
+) -> None:
     """Registro append-only de cada herramienta que ejecuta el Orchestrator —
-    qué se ejecutó y cuándo, base real (no inventada) para una futura
-    visualización del "cerebro" de Snarf. Ver Roadmaps en MASTER_MAP.md."""
+    qué se ejecutó y cuándo, base real (no inventada) para el cerebro de
+    Snarf y, desde Fase 1 del plan de HUD, para el evento unificado de
+    TELEMETRY_SCHEMA.md (ver snarf/telemetry/events.py). `detalle` (ADR 0089)
+    es el contenido real ya extraído por snarf/telemetry/detail.py en el
+    propio Orchestrator — este módulo solo lo transporta hasta el evento
+    unificado, nunca lo calcula. Ver Roadmaps en MASTER_MAP.md."""
     target = _target(path)
     target.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = time.time()
     entry = {
-        "timestamp": time.time(),
+        "timestamp": timestamp,
         "tool_name": tool_name,
         "status": status,
         "duration_ms": duration_ms,
@@ -24,6 +39,7 @@ def record(tool_name: str, status: str, duration_ms: float | None = None, error:
     }
     with target.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    events.record_tool_event(tool_name, status, duration_ms=duration_ms, timestamp=timestamp, path=events_path, detalle=detalle)
 
 
 def _read_all(path: Path | None) -> list[dict]:

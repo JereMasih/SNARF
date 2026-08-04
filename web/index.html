@@ -26,6 +26,25 @@
     --brain-yellow: #ffe600;
     --brain-white: #ffffff;
     --brain-grey: #6b7684;
+
+    /* Sistema de diseño "holográfico" del HUD (Fase 0 del plan de dock
+       radial, ver TELEMETRY_SCHEMA.md/web/hud_design_tokens.css) — el cian
+       reusa --glow de arriba a propósito (mismo acento de toda la
+       interfaz, no una paleta paralela). El ámbar es la única adición
+       real: decisión de diseño nueva de esa fase, reservada para
+       atención/estado (nunca "tipo de archivo", ese significado ya es de
+       --brain-yellow). */
+    --hud-amber: #ffb454;
+    --hud-amber-soft: #ffd9a8;
+    /* Rojo de señal para las etiquetas del dock del cerebro (Vista HUD) —
+       decisión de diseño nueva (2026-08-03), con autorización explícita
+       del fundador para reusar la estética literal de sus referencias
+       visuales (HUD tipo Iron Man Mark III). Supersede, solo para este
+       componente puntual, el límite de "color literal no" de ADR
+       0006/0037 — ver ADR nueva. Nunca reemplaza --error (semántica
+       distinta: esto es un acento de etiqueta, no un estado de fallo). */
+    --hud-signal-red: #ff3b3b;
+    --hud-font-mono: "SF Mono", "Menlo", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   /* Barras de desplazamiento ocultas por default en TODA la interfaz —
@@ -287,9 +306,342 @@
     /* :not(.docked) a propósito: dentro del modo enfoque (openChatFocus) esta
        misma barra se reutiliza como panel de historial fijo — ocultarla ahí
        también era un bug real (modo enfoque quedaba sin nada al costado). */
-    body.jarvis-mode #sidebar:not(.docked) .sidebar-tabs, body.jarvis-mode #sidebar:not(.docked) .sidebar-tab-panel { display: none; }
+    /* :not(.hud-drawer) a propósito, mismo motivo que :not(.docked): dentro
+       del drawer lateral de Vista HUD (v2) esta barra también se reutiliza
+       para mostrar conversaciones/proyectos de verdad. */
+    body.jarvis-mode #sidebar:not(.docked):not(.hud-drawer) .sidebar-tabs, body.jarvis-mode #sidebar:not(.docked):not(.hud-drawer) .sidebar-tab-panel { display: none; }
   }
   .dash-grid-desktop { display: none; }
+
+  /* --- Vista HUD del dashboard (rediseño radial) — TODO este bloque es
+     aditivo: la grilla clásica de arriba no pierde ninguna regla, sigue
+     funcionando exactamente igual con el toggle en "clásica" (ver Decisión
+     R del rediseño: reversible de verdad, no solo en apariencia). Solo
+     relevante en escritorio — Vista HUD nunca se activa en mobile. */
+  .dash-view-toggle { display: none; }
+  body.jarvis-mode .dash-view-toggle { display: flex; gap: 0.4rem; justify-content: center; margin-bottom: 0.6rem; }
+  .dash-view-toggle-btn {
+    font-family: var(--hud-font-mono); font-size: 0.7rem; letter-spacing: 0.02em;
+    background: rgba(79,216,232,0.06); border: 1px solid rgba(79,216,232,0.25);
+    color: var(--text-dim); padding: 0.3rem 0.7rem; border-radius: 999px; cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+  .dash-view-toggle-btn.active { color: var(--glow); border-color: var(--glow); background: rgba(79,216,232,0.12); }
+
+  .dash-hud-view { display: none; flex-direction: column; min-height: 0; }
+  body.jarvis-mode .dash-hud-view:not([hidden]) { display: flex; height: calc(100% - 2.2rem); }
+  body.jarvis-mode .dash-grid-desktop[hidden] { display: none; }
+
+  .dash-hud-banner {
+    flex: 0 0 auto; text-align: center; font-family: var(--hud-font-mono); font-size: 0.78rem;
+    color: var(--text-dim); padding: 0.3rem 1rem 0.6rem; min-height: 1.4rem; transition: color 0.3s ease;
+  }
+  .dash-hud-banner.curating { color: var(--glow-soft); }
+  .dash-hud-banner-dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--hud-amber);
+    margin-right: 0.4rem; animation: hud-focal-pulse-mini 1.4s ease-in-out infinite;
+  }
+
+  .dash-hud-stage {
+    position: relative; flex: 1 1 auto; min-height: 0;
+    /* v2: escena 3D real (antes solo el orbe simulaba profundidad a mano) —
+       un único plano de perspectiva compartido por widgets y líneas de
+       conexión, para que "más lejos del centro" también se lea como "más
+       atrás", no solo "más chico en 2D". */
+    perspective: 1400px;
+  }
+  /* Bug real de colisión de `transform` (mismo tipo ya encontrado antes en
+     esta sesión, ver ADR 0069/0078): .orb-wrap ya trae su propio
+     `transform: scale(0.74)` declarado más abajo en esta hoja de estilos —
+     como es la MISMA propiedad, una simple `.dash-hud-orb { transform:
+     translate(...) }` perdía el centrado (el scale posterior en el orden
+     del archivo ganaba entero, sin combinarse). Selector con más
+     especificidad + ambas funciones combinadas en un solo valor para que
+     nunca dependa del orden de declaración. */
+  .dash-hud-stage .dash-hud-orb {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(0.74);
+    z-index: 1; pointer-events: none;
+  }
+  .dash-hud-orb.curating .orb { animation: pulse-fast 1.4s ease-in-out infinite, flicker 3s steps(30) infinite; }
+
+  /* Líneas de conexión esfera→widget (v2) — un <line> real por widget
+     activo, mismo ciclo de vida que las cards (ver renderDashboardHudWidgets
+     en JS: se agregan/actualizan/quitan en el mismo paso). Entre el orbe
+     (z-index 1) y las cards (z-index 3): visualmente "salen de atrás de
+     cada card, hacia la esfera". */
+  .dash-hud-connections { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  .dash-hud-connection-line {
+    stroke: var(--glow); fill: none; stroke-width: 1;
+    stroke-dasharray: 3 5; opacity: 0.35;
+    transition: opacity 400ms ease, stroke-dashoffset 400ms linear;
+    animation: dash-hud-connection-pulse 2.4s linear infinite;
+  }
+  @keyframes dash-hud-connection-pulse { to { stroke-dashoffset: -16; } }
+
+  .dash-hud-widgets { position: absolute; inset: 0; z-index: 3; }
+  .dash-hud-node {
+    position: absolute; left: 0; top: 0;
+    padding: 0.55rem 0.7rem; border-radius: 10px;
+    background: radial-gradient(circle at 30% 20%, rgba(79,216,232,0.08), rgba(5,10,12,0.82) 70%);
+    border: 1px solid rgba(79,216,232,0.28);
+    box-shadow: 0 0 10px rgba(79,216,232,0.1), 0 4px 14px rgba(0,0,0,0.35);
+    backdrop-filter: blur(5px) saturate(1.15); cursor: pointer;
+    display: flex; flex-direction: column;
+    /* Transform único (posición XY + profundidad Z + escala) para que TODO
+       (radial, 3D, jerarquía por tier) viva en una sola propiedad animable —
+       nunca left/top + transform por separado, para no competir con los
+       @keyframes de entrada/salida (que solo tocan filter/box-shadow/::before,
+       nunca transform: ver dash-hud-node-arrive más abajo). */
+    transition: transform 550ms cubic-bezier(.2,.8,.2,1), opacity 500ms ease, border-color 200ms ease, box-shadow 200ms ease;
+  }
+  .dash-hud-node:hover { border-color: var(--glow); box-shadow: 0 0 14px rgba(79,216,232,0.28), 0 4px 16px rgba(0,0,0,0.4); z-index: 4; }
+  .dash-hud-node-head {
+    display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.2rem; flex: 0 0 auto;
+    font-family: var(--hud-font-mono); font-size: 0.62rem; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--hud-signal-red);
+  }
+  .dash-hud-node-icon { opacity: 0.85; }
+  .dash-hud-node-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dash-hud-node-pin {
+    opacity: 0; transition: opacity 150ms ease; background: none; border: none;
+    color: var(--text-dim); cursor: pointer; padding: 0; font-size: 0.7rem;
+  }
+  .dash-hud-node:hover .dash-hud-node-pin { opacity: 0.8; }
+  .dash-hud-node[data-state="pinned"] .dash-hud-node-pin { opacity: 0.9; color: var(--hud-amber); }
+  .dash-hud-node[data-alert="1"] { border-color: rgba(255,90,90,0.5); }
+  .dash-hud-node[data-alert="1"] .dash-hud-node-head { color: var(--error); }
+
+  /* Familias visuales — mismo criterio que .hud-bubble-* del dock de
+     globos contextuales (ADR 0089): un nodo/tool nuevo hereda su estilo
+     por familia, sin CSS nuevo. */
+  .dash-hud-node[data-family="document"] { border-color: rgba(255,180,84,0.35); }
+  .dash-hud-node[data-family="document"] .dash-hud-node-head { color: var(--hud-amber); }
+  .dash-hud-node[data-family="dispatch"] { border-color: var(--hud-signal-red); }
+  .dash-hud-node[data-family="voice"] .dash-hud-slot-body { font-style: italic; }
+  .dash-hud-node[data-family="think"] { opacity: 0.9; }
+  .dash-hud-node[data-family="admin"] { border-color: rgba(255,255,255,0.2); }
+  .dash-hud-node[data-family="system"] { border-color: var(--error); }
+  .dash-hud-node[data-family="system"] .dash-hud-node-head { color: var(--error); }
+  .dash-hud-node[data-family="input"] { opacity: 0.85; }
+
+  /* --- Jerarquía por tamaño (v2, Decisión 1/9 del plan): 3 tiers, cada uno
+     con más lugar real para contenido — nunca solo "lo mismo más grande". --- */
+  .dash-hud-node[data-tier="small"] { font-size: 0.85em; }
+  .dash-hud-node[data-tier="medium"] { font-size: 0.95em; }
+  .dash-hud-node[data-tier="large"] { font-size: 1.05em; padding: 0.75rem 0.9rem; }
+  .dash-hud-node[data-tier="large"] .dash-hud-node-head { font-size: 0.68rem; }
+
+  /* --- Slots de contenido — vocabulario compartido por las 24 plantillas
+     (ver snarf/telemetry/widget_templates.py): cada plantilla es una
+     combinación de estos, nunca CSS a medida por plantilla individual. --- */
+  .dash-hud-slot-body {
+    font-size: 0.72rem; color: var(--text); opacity: 0.92; flex: 1 1 auto; min-height: 0;
+    overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  }
+  .dash-hud-node[data-tier="small"] .dash-hud-slot-body { -webkit-line-clamp: 1; }
+  .dash-hud-node[data-tier="large"] .dash-hud-slot-body { -webkit-line-clamp: 4; font-size: 0.78rem; }
+  .dash-hud-slot-caption {
+    margin-top: 0.15rem; font-size: 0.66rem; color: var(--text-dim); font-style: italic; flex: 0 0 auto;
+    overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  }
+  .dash-hud-node[data-tier="large"] .dash-hud-slot-caption { -webkit-line-clamp: 3; font-size: 0.72rem; }
+  .dash-hud-slot-narrative {
+    font-size: 0.8rem; color: var(--text); opacity: 0.95; font-style: italic; line-height: 1.45; flex: 1 1 auto; overflow: hidden;
+  }
+  .dash-hud-slot-badge {
+    display: flex; align-items: center; justify-content: center; flex: 1 1 auto;
+    font-family: var(--hud-font-mono); font-size: 1.4rem; color: var(--glow);
+  }
+  .dash-hud-slot-icon-big { display: flex; align-items: center; justify-content: center; font-size: 1.8rem; flex: 0 0 auto; }
+  .dash-hud-slot-stat-row { display: flex; gap: 0.6rem; flex: 1 1 auto; }
+  .dash-hud-slot-stat { flex: 1 1 0; min-width: 0; }
+  .dash-hud-slot-stat-value { font-family: var(--hud-font-mono); font-size: 1.05rem; color: var(--glow-soft); line-height: 1.2; }
+  .dash-hud-slot-stat-label { font-size: 0.6rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+  .dash-hud-slot-list { list-style: none; margin: 0; padding: 0; flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 0.2rem; }
+  .dash-hud-slot-list li {
+    font-size: 0.7rem; color: var(--text); opacity: 0.88; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding-left: 0.6rem; position: relative;
+  }
+  .dash-hud-slot-list li::before { content: ""; position: absolute; left: 0; top: 0.4em; width: 4px; height: 4px; border-radius: 50%; background: var(--glow-soft); }
+  .dash-hud-slot-timeline { list-style: none; margin: 0; padding: 0 0 0 0.8rem; border-left: 1px solid rgba(79,216,232,0.25); flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 0.35rem; }
+  .dash-hud-slot-timeline li { font-size: 0.7rem; color: var(--text); opacity: 0.88; position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dash-hud-slot-timeline li::before { content: ""; position: absolute; left: -0.94rem; top: 0.35em; width: 6px; height: 6px; border-radius: 50%; background: var(--glow); box-shadow: 0 0 4px var(--glow); }
+  .dash-hud-slot-timeline-time { color: var(--text-dim); font-family: var(--hud-font-mono); font-size: 0.6rem; margin-right: 0.35rem; }
+  .dash-hud-slot-wall { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.3rem; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+  .dash-hud-slot-wall-item {
+    font-size: 0.62rem; color: var(--text-dim); background: rgba(79,216,232,0.06); border: 1px solid rgba(79,216,232,0.15);
+    border-radius: 6px; padding: 0.3rem 0.4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .dash-hud-slot-stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; flex: 1 1 auto; }
+  .dash-hud-slot-ticker { font-family: var(--hud-font-mono); font-size: 0.72rem; color: var(--glow-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; display: flex; align-items: center; gap: 0.35rem; }
+  .dash-hud-slot-ticker::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--hud-signal-red); flex-shrink: 0; animation: breathe 2.2s ease-in-out infinite; }
+  .dash-hud-slot-gauge {
+    width: 62%; aspect-ratio: 1; margin: 0 auto; border-radius: 50%; flex-shrink: 0;
+    background: conic-gradient(var(--glow) calc(var(--gauge-pct, 0) * 1%), rgba(255,255,255,0.08) 0);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .dash-hud-slot-gauge::after { content: attr(data-gauge-label); font-family: var(--hud-font-mono); font-size: 0.6rem; color: var(--text); background: rgba(5,10,12,0.85); border-radius: 50%; width: 74%; height: 74%; display: flex; align-items: center; justify-content: center; text-align: center; }
+  .dash-hud-slot-chart { flex: 1 1 auto; min-height: 28px; display: flex; align-items: flex-end; gap: 2px; }
+  .dash-hud-slot-chart-bar { flex: 1 1 0; background: linear-gradient(to top, var(--glow), var(--glow-soft)); border-radius: 1px 1px 0 0; min-height: 2px; opacity: 0.8; }
+
+  /* --- Animación de entrada/salida por TIER (Decisión 4 del plan v2): un
+     lenguaje de movimiento consistente, nunca 24 efectos sueltos. Solo
+     tocan opacity/filter/::before — nunca `transform` (esa la gobierna
+     siempre el JS vía transición normal, ver arriba), para que jamás
+     compitan con el reposicionamiento real del FLIP. --- */
+  .dash-hud-node[data-anim="arriving"] { opacity: 0; }
+  .dash-hud-node[data-anim="arriving"][data-tier="small"] { animation: dash-hud-pop-in 300ms cubic-bezier(.2,.8,.2,1) forwards; }
+  .dash-hud-node[data-anim="arriving"][data-tier="medium"] { animation: dash-hud-pop-in 450ms cubic-bezier(.2,.8,.2,1) forwards, dash-hud-trail-flash 450ms ease forwards; }
+  .dash-hud-node[data-anim="arriving"][data-tier="large"] { animation: dash-hud-pop-in 700ms cubic-bezier(.2,.8,.2,1) forwards; }
+  @keyframes dash-hud-pop-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes dash-hud-trail-flash { 0% { filter: brightness(1); } 30% { filter: brightness(1.9); } 100% { filter: brightness(1); } }
+  .dash-hud-node[data-anim="arriving"][data-tier="large"]::before {
+    content: ""; position: absolute; inset: 0; border-radius: 10px; pointer-events: none;
+    border: 1px solid var(--glow); animation: dash-hud-scan-sweep 650ms ease forwards;
+  }
+  @keyframes dash-hud-scan-sweep {
+    0% { clip-path: inset(0 100% 0 0); opacity: 1; }
+    70% { clip-path: inset(0 0 0 0); opacity: 1; }
+    100% { clip-path: inset(0 0 0 0); opacity: 0; }
+  }
+  .dash-hud-node[data-anim="arriving"][data-tier="large"] > * { animation: dash-hud-pop-in 350ms ease 220ms both; }
+
+  .dash-hud-node[data-anim="leaving"] { opacity: 0; pointer-events: none; }
+  .dash-hud-node[data-tier="small"][data-anim="leaving"] { transition: opacity 280ms ease, transform 280ms ease; }
+  .dash-hud-node[data-tier="medium"][data-anim="leaving"],
+  .dash-hud-node[data-tier="large"][data-anim="leaving"] { transition: opacity 400ms ease, transform 400ms ease; }
+
+  .dash-hud-node.dash-hud-node-updating { animation: dash-hud-node-updating 500ms ease; }
+  @keyframes dash-hud-node-updating {
+    0%, 100% { box-shadow: 0 0 10px rgba(79,216,232,0.1), 0 4px 14px rgba(0,0,0,0.35); }
+    40% { box-shadow: 0 0 20px rgba(79,216,232,0.5), 0 4px 14px rgba(0,0,0,0.35); }
+  }
+
+  /* --- Chat como capa ambiente permanente (Decisión 5/6 del plan v2, solo
+     Vista HUD) — hermano fijo de #appRoot (mismo nivel que
+     .brain-panel/.chat-focus-panel) para sobrevivir cualquier cambio de
+     vista. Ya no hay un binario colapsado/expandido: la barra de input
+     (adjuntar/texto/mic, el mismo .control-bar de siempre) está SIEMPRE
+     visible; lo único que cambia de estado es el modo enfoque real
+     (openChatFocus, ver JS), disparado por un botón chico y sutil en vez de
+     la barra grande de antes. --- */
+  .chat-dock {
+    position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
+    /* Bug real de colisión de z-index encontrado con Playwright: 11 pisaba
+       a .settings-panel (también 11) — cualquier modal (settings/brain/
+       chat-focus/node-drill, z-index 10-17) tiene que quedar SIEMPRE por
+       encima de esta capa ambiente, nunca al revés. */
+    width: min(760px, 92vw); z-index: 9;
+    display: flex; flex-direction: column;
+    background: transparent; border: none; box-shadow: none;
+    transition: left 350ms ease, right 350ms ease, transform 350ms ease, margin-left 350ms ease;
+  }
+  .chat-dock[hidden] { display: none; }
+  /* Posición configurable (Decisión 7): default izquierda en escritorio —
+     mismo elemento fijo, solo cambia su ancla horizontal. */
+  .chat-dock[data-position="left"] { left: 2rem; transform: none; }
+  .chat-dock[data-position="right"] { left: auto; right: 2rem; transform: none; }
+  .chat-dock[data-position="center"] { left: 50%; transform: translateX(-50%); }
+  /* El drawer de conversaciones (Decisión 8) desplaza de verdad, nunca
+     superpone — se combina con cualquier posición de arriba. */
+  .chat-dock.drawer-open[data-position="left"],
+  .chat-dock.drawer-open[data-position="center"] { margin-left: 300px; }
+
+  .chat-dock-toolbar {
+    position: absolute; top: -2.4rem; left: 0; display: flex; gap: 0.4rem; z-index: 1;
+  }
+  .chat-dock-icon-btn {
+    width: 1.9rem; height: 1.9rem; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: rgba(5,10,12,0.75); border: 1px solid rgba(79,216,232,0.25); color: var(--text-dim);
+    font-size: 0.8rem; cursor: pointer; opacity: 0.55; backdrop-filter: blur(4px);
+    transition: opacity 150ms ease, color 150ms ease, border-color 150ms ease;
+  }
+  .chat-dock-icon-btn:hover { opacity: 1; color: var(--glow); border-color: var(--glow); }
+
+  .chat-dock-body { display: flex; flex-direction: column; height: min(58vh, 560px); min-height: 0; }
+  .chat-dock .chat {
+    flex: 1 1 auto; min-height: 0; background: none; max-width: none;
+    /* Fondo del chat "abierto" al dashboard de atrás — sin caja contenedora
+       propia, mismo pedido explícito: las burbujas flotan sobre el fondo.
+       Degradado acotado al tercio SUPERIOR nada más (pedido real del
+       fundador: "la sombra muy abajo, no se ve correcto") — los dos
+       tercios de abajo quedan siempre a opacidad plena. */
+    -webkit-mask-image: linear-gradient(to top, black 67%, transparent 100%);
+    mask-image: linear-gradient(to top, black 67%, transparent 100%);
+  }
+  .chat-dock .control-bar { background: rgba(5,10,12,0.9); border: 1px solid rgba(79,216,232,0.25); border-radius: 14px; backdrop-filter: blur(6px) saturate(1.2); padding-top: 0.4rem; }
+
+  /* --- Drill-down genérico por nodo (Decisión 4) — mismo patrón visual de
+     overlay+panel que .brain-overlay/.brain-panel y .chat-focus-*, panel
+     propio porque el contenido de #brainPanel está armado a medida para el
+     grafo/HUD del cerebro, no para una lista genérica de actividad. --- */
+  .node-drill-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 16;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+  }
+  .node-drill-overlay.open { opacity: 1; pointer-events: auto; }
+  .node-drill-panel {
+    position: fixed; z-index: 17; left: 50%; top: 50%; transform: translate(-50%, -46%);
+    width: min(640px, 94vw); max-height: min(600px, 86vh);
+    background: rgba(5,10,12,0.98); border: 1px solid rgba(79,216,232,0.35); border-radius: 16px;
+    padding: 1rem; display: flex; flex-direction: column;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .node-drill-panel.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); }
+  .node-drill-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem; flex-shrink: 0; }
+  .node-drill-body { overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+  .node-drill-row { padding: 0.5rem 0.2rem; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.8rem; }
+  .node-drill-row-verb { font-weight: 500; }
+  .node-drill-row-detalle { color: var(--text-dim); font-size: 0.74rem; margin-top: 0.1rem; }
+  .node-drill-row-meta { color: var(--text-dim); font-size: 0.68rem; margin-top: 0.1rem; }
+
+  /* --- Drawer lateral de conversaciones/proyectos (Decisión 8, solo Vista
+     HUD) — reparenta el #sidebar real (mismo criterio "mover el nodo vivo"
+     que ya usa openChatFocus), nunca lo clona. Mismo mecanismo de slide que
+     .sidebar de siempre, en un ancla propia para poder desplazar el chat-dock
+     en vez de superponerse a él. --- */
+  .dash-hud-sidebar-drawer {
+    /* z-index 9, mismo motivo que .chat-dock arriba: colisionaba con
+       .brain-overlay (también 12) — ambiente, nunca por encima de un modal. */
+    position: fixed; left: 0; top: 0; bottom: 0; width: 300px; z-index: 9;
+    background: rgba(5,10,12,0.97); border-right: 1px solid rgba(79,216,232,0.25);
+    box-shadow: 0 0 24px rgba(0,0,0,0.5);
+    transform: translateX(-100%); transition: transform 300ms ease;
+    display: flex; flex-direction: column;
+  }
+  .dash-hud-sidebar-drawer.open { transform: translateX(0); }
+  .dash-hud-sidebar-drawer-toolbar {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: 0.3rem;
+    padding: 0.6rem 0.6rem 0; padding-top: calc(env(safe-area-inset-top, 0px) + 0.6rem);
+  }
+  .dash-hud-sidebar-pin-btn {
+    background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 0.85rem;
+    opacity: 0.55; transition: opacity 150ms ease, color 150ms ease;
+  }
+  .dash-hud-sidebar-pin-btn:hover { opacity: 1; }
+  .dash-hud-sidebar-pin-btn.pinned { opacity: 1; color: var(--hud-amber); }
+  .dash-hud-sidebar-drawer-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  /* #sidebar reparentado adentro: deja de ser el overlay fijo de siempre
+     (mismo criterio que .chat-focus-panel .sidebar.docked, contexto propio). */
+  .dash-hud-sidebar-drawer-body .sidebar {
+    position: static; width: 100%; height: 100%; transform: none; transition: none;
+  }
+
+  /* --- Chat con profundidad 3D real (Decisión 4, solo dentro del dock de
+     Vista HUD — en Vista clásica y en modo enfoque el chat sigue siendo la
+     lista plana de siempre, sin efecto). Los mensajes más viejos se alejan
+     hacia arriba y hacia el fondo: más chicos, más oscuros, más
+     transparentes — la sensación de "canvas 3D" pedida. `--depth` lo fija
+     JS por mensaje (0 = el más nuevo, junto al input) en cada addMessage(). --- */
+  #chatDock .chat { perspective: 900px; }
+  #chatDock .chat-inner { transform-style: preserve-3d; }
+  #chatDock .msg {
+    --depth: 0;
+    transform: translateZ(calc(var(--depth) * -34px)) translateY(calc(var(--depth) * -2px)) scale(calc(1 - var(--depth) * 0.045));
+    opacity: calc(1 - var(--depth) * 0.11);
+    filter: brightness(calc(1 - var(--depth) * 0.09));
+    transition: transform 500ms ease, opacity 500ms ease, filter 500ms ease;
+  }
 
   /* --- panel drag handle / reordering --- */
   .dash-widget-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.15rem; flex-shrink: 0; }
@@ -640,6 +992,12 @@
   .brain-panel.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); }
   .brain-layout { display: flex; flex-direction: row; gap: 1rem; flex: 1 1 auto; min-height: 0; }
   @media (max-width: 899px) { .brain-layout { flex-direction: column; } }
+  /* `display: flex` de arriba le gana al `[hidden]` del user-agent (mismo
+     origin — author beats UA — pese a que el atributo hidden SÍ está
+     seteado por JS): sin esto, alternar Vista clásica/HUD deja las dos
+     visibles a la vez. Especificidad más alta (id+atributo) para ganar
+     siempre, sin importar el orden de las reglas. */
+  #brainLayoutClassic[hidden] { display: none; }
   .brain-graph {
     flex: 1.6 1 0; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center;
     position: relative; overflow: hidden;
@@ -664,6 +1022,227 @@
   .brain-feed-icon { align-self: center; flex-shrink: 0; opacity: 0.9; }
   .brain-feed-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .brain-feed-time { flex-shrink: 0; font-size: 0.68rem; color: var(--text-dim); }
+
+  /* --- Selector Vista clásica / Vista HUD (Fase 4) --- */
+  .brain-view-toggle { display: flex; gap: 0.4rem; margin: 0 auto; }
+  .brain-view-toggle-btn {
+    font-family: var(--hud-font-mono); font-size: 0.7rem; letter-spacing: 0.02em;
+    background: rgba(79,216,232,0.06); border: 1px solid rgba(79,216,232,0.25);
+    color: var(--text-dim); padding: 0.3rem 0.7rem; border-radius: 999px; cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+  .brain-view-toggle-btn.active { color: var(--glow); border-color: var(--glow); background: rgba(79,216,232,0.12); }
+
+  /* --- Vista HUD: mismo evento unificado real de Fase 1, servido ya
+     anotado por GET /dashboard/telemetry_feed. La tira de texto (Fase 4-b)
+     se sacó por completo (ADR 0089, pedido explícito: "no aporta nada") —
+     la rueda es el único escenario, y ahora reacciona mostrando contenido
+     real vía los globos contextuales (ver .hud-bubble-* más abajo), no
+     solo un pulso genérico. --- */
+  .brain-hud-view { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #brainHudView[hidden] { display: none; }
+  .hud-color-completo { color: var(--glow-soft); }
+  .hud-color-truncado { color: var(--hud-amber-soft); }
+  .hud-color-error { color: var(--error); }
+  .hud-data { font-family: var(--hud-font-mono); font-variant-numeric: tabular-nums; }
+
+  /* --- Mini dock radial dentro de la Vista HUD. Rediseño real (v2,
+     2026-08-03) a pedido explícito del fundador tras compartir 6
+     referencias visuales (HUD Iron Man Mark III) + la transcripción
+     completa de cómo The Orphanage lo construyó — con autorización
+     explícita del fundador (autoridad real, Constitution Art. II) para
+     reusar la ESTÉTICA literal de las referencias, no solo la lógica
+     de interacción. Esto SUPERSEDE, solo para este componente, el límite
+     de "estilo sí, color literal no" de ADR 0006/0037 — ver ADR nueva.
+     SVG real (no solo CSS) para el glow/profundidad: filtros de blur
+     reales, anillo con marcas rotando, líneas guía conectando cada chip
+     al hub central, como en las referencias. Datos reales de
+     GET /dashboard/dock_priority (Fase 5), nunca mock. --- */
+  /* Escenario principal (ADR 0088/0089): la rueda ocupa TODO el panel — ya
+     no reserva espacio para ninguna tabla de abajo (se sacó del todo). */
+  .hud-mini-dock {
+    position: relative; flex: 1 1 auto; min-height: 0; z-index: 2;
+    -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+    mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+  }
+  .hud-omega-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .hud-omega-ring-outer { fill: none; stroke: rgba(79,216,232,0.22); stroke-width: 1; stroke-dasharray: 2 5; }
+  .hud-omega-ring-tick { fill: none; stroke: rgba(79,216,232,0.5); stroke-width: 1.4; stroke-dasharray: 1.5 7; transform-box: fill-box; transform-origin: center; animation: hud-omega-rotate 26s linear infinite; }
+  .hud-omega-ring-inner { fill: none; stroke: var(--glow); stroke-width: 1.6; opacity: 0.85; filter: url(#hudGlowSoft); }
+  .hud-omega-core { fill: var(--glow); filter: url(#hudGlowStrong); animation: hud-focal-pulse-mini 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .hud-mini-dock[data-alert="1"] .hud-omega-ring-inner { stroke: var(--hud-amber); }
+  .hud-mini-dock[data-alert="1"] .hud-omega-core { fill: var(--hud-amber); animation: hud-ring-alert-pulse 1.1s ease-in-out infinite; }
+  @keyframes hud-omega-rotate { to { transform: rotate(360deg); } }
+  @keyframes hud-focal-pulse-mini { 0%, 100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 1; transform: scale(1.7); } }
+  @keyframes hud-ring-alert-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.9); } }
+
+  .hud-omega-leader { stroke: rgba(255,90,90,0.35); stroke-width: 1; transition: stroke 220ms ease, opacity 220ms ease; }
+  .hud-omega-leader[data-active="1"] { stroke: var(--hud-signal-red); opacity: 1; }
+
+  /* Reacción real a cada evento (pedido explícito: "que sea una
+     manifestación de los procesos de Snarf") — cuando llega un evento
+     real nuevo (poll de /dashboard/telemetry_feed), el chip y la línea
+     guía del nodo correspondiente destellan una vez. Solo `filter`
+     (nunca `transform`) para no pisar el transform de estado
+     focus/select del mismo elemento — mismo tipo de bug de animaciones
+     compitiendo ya encontrado antes en esta sesión (ADR 0069/0078). */
+  .hud-mini-node.hud-pulse-fire { animation: hud-node-fire-flash 750ms ease-out; }
+  @keyframes hud-node-fire-flash {
+    0% { filter: brightness(1) saturate(1); }
+    22% { filter: brightness(2.4) saturate(1.6); }
+    100% { filter: brightness(1) saturate(1); }
+  }
+  .hud-omega-leader.hud-leader-pulse { animation: hud-leader-pulse-flash 900ms ease-out; }
+  @keyframes hud-leader-pulse-flash {
+    0% { stroke: var(--hud-signal-red); stroke-width: 2; opacity: 1; }
+    100% { stroke: rgba(255,90,90,0.35); stroke-width: 1; opacity: 1; }
+  }
+
+  /* --- Globos contextuales (ADR 0089) — pedido explícito del fundador tras
+     ver Dock v3: "no está mostrando absolutamente nada... tiene que
+     mostrar cómo las cosas se van abriendo". Cada globo muestra CONTENIDO
+     real (`detalle`, ver TELEMETRY_SCHEMA.md) anclado al chip del nodo que
+     lo generó — un componente compartido, parametrizado por familia visual
+     (`HUD_BUBBLE_FAMILY` en JS), no un widget a medida por tool: un tool
+     nuevo hereda un globo con una sola línea de mapeo, sin CSS nuevo. --- */
+  .hud-bubble-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 7; }
+  .hud-bubble {
+    position: absolute; transform: translate(-50%, calc(-100% - 14px));
+    min-width: 128px; max-width: 200px; padding: 0.42rem 0.6rem;
+    background: linear-gradient(160deg, rgba(10,18,20,0.94), rgba(4,8,10,0.97));
+    border: 1px solid rgba(79,216,232,0.35); border-radius: 3px;
+    box-shadow: 0 0 10px rgba(79,216,232,0.16), 0 4px 16px rgba(0,0,0,0.45);
+    font-family: var(--hud-font-mono); font-size: 0.66rem; line-height: 1.35;
+    transition: left 260ms ease, top 260ms ease;
+    pointer-events: none;
+  }
+  /* El nodo perdió su chip visible (quedó fuera del top de relevancia,
+     HUD_MINI_MAX_CHIPS) pero el globo sigue siendo real y reciente — se
+     muestra igual, sin línea de anclaje, flotando cerca del hub en vez de
+     desaparecer de golpe. */
+  .hud-bubble-unanchored { left: 50% !important; top: auto !important; bottom: 78px; transform: translate(-50%, 0); }
+  .hud-bubble-head {
+    display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.15rem;
+    color: var(--hud-signal-red); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.58rem;
+  }
+  .hud-bubble-icon { opacity: 0.85; }
+  .hud-bubble-body { color: var(--text); opacity: 0.92; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hud-bubble-out { animation: hud-bubble-fade-out 240ms ease forwards; }
+  @keyframes hud-bubble-fade-out {
+    to { opacity: 0; transform: translate(-50%, calc(-100% - 4px)) scale(0.94); }
+  }
+
+  /* scan: memoria/conocimiento/notion — revelado tipo scroll del texto real. */
+  .hud-bubble-scan .hud-bubble-body { animation: hud-bubble-scan-reveal 900ms steps(24,end) both; }
+  @keyframes hud-bubble-scan-reveal { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+  /* document: creación/edición de contenido real. */
+  .hud-bubble-document { border-color: rgba(255,180,84,0.45); }
+  .hud-bubble-document .hud-bubble-head { color: var(--hud-amber); }
+  /* list: enumeración/lectura de items — números reales, tabulares. */
+  .hud-bubble-list .hud-bubble-body { font-variant-numeric: tabular-nums; }
+  /* dispatch: acción real hacia afuera (mail, evento) — un punto viaja del
+     hub hacia el globo, como algo que "se despacha". */
+  .hud-bubble-dispatch { border-color: var(--hud-signal-red); overflow: visible; }
+  .hud-bubble-dispatch::before {
+    content: ""; position: absolute; left: 50%; bottom: -10px; width: 6px; height: 6px; margin-left: -3px;
+    background: var(--hud-signal-red); border-radius: 50%; box-shadow: 0 0 6px var(--hud-signal-red);
+    animation: hud-bubble-dispatch-fly 700ms ease-out both;
+  }
+  @keyframes hud-bubble-dispatch-fly {
+    from { transform: translateY(46px) scale(1.5); opacity: 1; }
+    to { transform: translateY(0) scale(0.5); opacity: 0; }
+  }
+  /* voice: stt/tts — texto real transcripto/hablado. */
+  .hud-bubble-voice .hud-bubble-body { font-style: italic; }
+  /* think: el llm razonando — más discreto, es contexto de fondo. */
+  .hud-bubble-think { opacity: 0.85; }
+  /* admin: configuración/estado (personalidad, utilidad, proyectos). */
+  .hud-bubble-admin { border-color: rgba(255,255,255,0.22); }
+  /* system: dispatch desconocido (unknown_tool) o alerta de costo. */
+  .hud-bubble-system { border-color: var(--error); }
+  .hud-bubble-system .hud-bubble-head { color: var(--error); }
+  /* input: lo que acaba de entrar (texto/voz/archivo). */
+  .hud-bubble-input { border-color: rgba(79,216,232,0.22); opacity: 0.9; }
+
+  /* bottom: 100px (antes 34px). Medido con Playwright contra el bounding
+     box real de #brainPanel (no solo a ojo, dos iteraciones: 56px seguía
+     sobresaliendo el anillo externo r=98 unos 23px por debajo del borde
+     real del panel, 80px quedaba a solo 1px de margen) — 100px deja margen
+     real cómodo. Mismo offset en JS (hubY en buildHudMiniDock) y en
+     .hud-ring-idle de abajo, para que el hitbox del anillo siga alineado
+     con el hub real. */
+  .hud-mini-dock-arc {
+    position: absolute; left: 50%; bottom: 100px; width: 0; height: 0; transform-style: preserve-3d;
+    transition: opacity 300ms ease;
+  }
+  .hud-mini-dock[data-open="0"] .hud-mini-dock-arc { opacity: 0; pointer-events: none; }
+
+  /* Anillo Omega: click en el hub central "desbloquea" el abanico de
+     arriba (mismo comportamiento del widget Omega real: un control único
+     que abre bajo comando, no todo expandido de una). Hitbox invisible
+     sobre el hub SVG. Por defecto el dock arranca ABIERTO (pedido
+     explícito: "que empiece a mostrar cosas de relevancia de una vez") —
+     este anillo solo importa si el fundador lo cierra manualmente. */
+  .hud-ring-idle {
+    position: absolute; left: 50%; bottom: 68px; width: 130px; height: 130px;
+    margin-left: -65px; margin-bottom: -65px; border-radius: 50%; cursor: pointer; z-index: 5;
+    transition: opacity 220ms ease;
+  }
+  /* Bug real encontrado verificando con Playwright: con el dock abierto,
+     este hitbox (70px) seguía tapando a los chips cercanos al centro —
+     ninguno de los nodos rankeados cerca del hub era clickeable. Se
+     desactiva por completo al abrir; cerrar se hace clickeando cualquier
+     espacio vacío del dock (ver listener en JS). */
+  .hud-mini-dock[data-open="1"] .hud-ring-idle { opacity: 0; pointer-events: none; }
+
+  .hud-mini-node-slot { position: absolute; left: 0; bottom: 0; width: 0; height: 0; }
+  .hud-mini-node {
+    position: absolute; left: 0; bottom: 0; width: 58px; height: 48px; margin-left: -29px; margin-bottom: -24px;
+    clip-path: polygon(18% 0%, 100% 0%, 82% 100%, 0% 100%);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    background: linear-gradient(135deg, rgba(79,216,232,0.16), rgba(5,10,12,0.85));
+    box-shadow:
+      0 0 3px rgba(79,216,232,0.5),
+      0 0 10px rgba(79,216,232,0.25),
+      0 0 22px rgba(79,216,232,0.12),
+      inset 0 0 0 1px rgba(79,216,232,0.4);
+    transition: transform 220ms cubic-bezier(0.22,1,0.36,1), box-shadow 220ms ease, background 220ms ease;
+    z-index: 3;
+  }
+  .hud-mini-node-icon { font-family: var(--hud-font-mono); font-size: 0.66rem; letter-spacing: 0.02em; color: var(--glow-soft); text-transform: uppercase; pointer-events: none; }
+  .hud-mini-node-label {
+    position: absolute; top: -20px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+    font-family: var(--hud-font-mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--hud-signal-red); text-shadow: 0 0 6px rgba(255,59,59,0.5);
+    /* Visible por defecto (no solo en hover): la rueda es el escenario
+       principal, tiene que mostrar de qué se trata cada widget sin
+       depender de interacción. */
+    opacity: 0.75; pointer-events: none; transition: opacity 150ms ease;
+  }
+  .hud-mini-node[data-state="focus"] {
+    transform: scale(1.28);
+    box-shadow: 0 0 4px rgba(79,216,232,0.7), 0 0 16px rgba(79,216,232,0.4), 0 0 32px rgba(79,216,232,0.18), inset 0 0 0 1px var(--glow);
+    z-index: 5;
+  }
+  .hud-mini-node[data-state="focus"] .hud-mini-node-label { opacity: 1; }
+  .hud-mini-node[data-state="select"] {
+    transform: scale(1.42);
+    box-shadow: 0 0 4px rgba(255,180,84,0.8), 0 0 18px rgba(255,180,84,0.45), 0 0 36px rgba(255,180,84,0.2), inset 0 0 0 1px var(--hud-amber);
+    z-index: 6;
+  }
+  .hud-mini-node[data-state="select"] .hud-mini-node-label { opacity: 1; }
+  .hud-mini-node[data-alert="1"] {
+    background: linear-gradient(135deg, rgba(255,180,84,0.2), rgba(5,10,12,0.85));
+    box-shadow: 0 0 4px rgba(255,180,84,0.6), 0 0 14px rgba(255,180,84,0.3), inset 0 0 0 1px rgba(255,180,84,0.5);
+  }
+  .hud-mini-node[data-alert="1"] .hud-mini-node-icon { color: var(--hud-amber-soft); }
+
+  @keyframes hud-materialize {
+    from { opacity: 0; transform: scale(0.96); filter: blur(3px); }
+    to { opacity: 1; transform: scale(1); filter: blur(0); }
+  }
+  .hud-materialize { animation: hud-materialize 320ms cubic-bezier(0.22,1,0.36,1) both; }
+  @media (prefers-reduced-motion: reduce) { .hud-materialize { animation: none; } }
   /* Opacidad baja a propósito: la línea recta centro-nodo tiene que existir
      (el pulso puntual viaja por ella, animateMotion/mpath) pero en reposo no
      debe leerse como un diagrama de red — la malla orgánica de arriba es la
@@ -1315,15 +1894,25 @@
 
     <div class="settings-section-head"><h3>LLM por rol</h3></div>
     <div class="llm-routing-list" id="llmRoutingList"></div>
+
+    <div class="settings-section-head"><h3>Posición del chat (Vista HUD)</h3></div>
+    <div class="settings-list" id="hudChatPositionList"></div>
+
+    <div class="settings-section-head"><h3>Plantillas propuestas por el curador</h3></div>
+    <div class="settings-list" id="templateProposalsList"></div>
   </div>
 
   <div class="brain-overlay" id="brainOverlay"></div>
   <div class="brain-panel" id="brainPanel">
     <div class="settings-head">
       <h3>Cerebro de Snarf</h3>
+      <div class="brain-view-toggle" role="tablist" aria-label="Vista del cerebro">
+        <button type="button" class="brain-view-toggle-btn active" id="brainViewToggleClassic" role="tab" aria-selected="true">Vista clásica</button>
+        <button type="button" class="brain-view-toggle-btn" id="brainViewToggleHud" role="tab" aria-selected="false">Vista HUD</button>
+      </div>
       <button class="settings-close" id="brainCloseBtn">✕</button>
     </div>
-    <div class="brain-layout">
+    <div class="brain-layout" id="brainLayoutClassic">
       <div class="brain-graph">
         <div class="brain-graph-inner" id="brainGraphInner">
           <svg id="brainSvg" viewBox="0 0 500 500">
@@ -1336,6 +1925,32 @@
         </div>
       </div>
       <div class="brain-feed" id="brainFeedList"></div>
+    </div>
+    <div class="brain-hud-view" id="brainHudView" hidden>
+      <div class="hud-mini-dock" id="hudMiniDock" data-open="1">
+        <svg class="hud-omega-svg" id="hudOmegaSvg" viewBox="0 0 300 190" preserveAspectRatio="xMidYMax meet">
+          <defs>
+            <filter id="hudGlowSoft" x="-80%" y="-80%" width="260%" height="260%">
+              <feGaussianBlur stdDeviation="2.4" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <filter id="hudGlowStrong" x="-140%" y="-140%" width="380%" height="380%">
+              <feGaussianBlur stdDeviation="5" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <g id="hudOmegaLeaders"></g>
+          <g id="hudOmegaHub" transform="translate(150,184)">
+            <circle class="hud-omega-ring-outer" r="98"/>
+            <circle class="hud-omega-ring-tick" r="78"/>
+            <circle class="hud-omega-ring-inner" r="54"/>
+            <circle class="hud-omega-core" r="12"/>
+          </g>
+        </svg>
+        <div class="hud-mini-dock-arc" id="hudMiniDockArc"></div>
+        <div class="hud-ring-idle" id="hudRingIdle" title="Abrir/cerrar el dock"></div>
+        <div class="hud-bubble-layer" id="hudBubbleLayer"></div>
+      </div>
     </div>
   </div>
 
@@ -1386,9 +2001,60 @@
   </div>
 
   <div class="view-dashboard" id="viewDashboard">
+    <div class="dash-view-toggle" role="tablist" aria-label="Vista del dashboard">
+      <button type="button" class="dash-view-toggle-btn active" id="dashViewToggleClassic" role="tab" aria-selected="true">Vista clásica</button>
+      <button type="button" class="dash-view-toggle-btn" id="dashViewToggleHud" role="tab" aria-selected="false">Vista HUD</button>
+    </div>
     <div class="dash-mobile-stack" id="dashboardInner"></div>
     <div class="dash-grid-desktop" id="dashGridDesktop"></div>
+    <div class="dash-hud-view" id="dashHudView" hidden>
+      <div class="dash-hud-banner" id="dashHudBanner"></div>
+      <div class="dash-hud-stage" id="dashHudStage">
+        <div class="orb-wrap dash-hud-orb" id="dashHudOrb">
+          <div class="rays"></div>
+          <div class="rays2"></div>
+          <div class="ring-outer"></div>
+          <div class="ring-inner"></div>
+          <div class="orb-sphere">
+            <div class="wire w1"></div>
+            <div class="wire w2"></div>
+            <div class="wire w3"></div>
+            <div class="wire w4"></div>
+            <div class="wire w5"></div>
+            <div class="wire w6"></div>
+            <div class="orb"></div>
+          </div>
+        </div>
+        <svg class="dash-hud-connections" id="dashHudConnections"></svg>
+        <div class="dash-hud-widgets" id="dashHudWidgets"></div>
+      </div>
+    </div>
   </div>
+  </div>
+
+  <div class="chat-dock" id="chatDock" hidden data-position="left">
+    <div class="chat-dock-toolbar" id="chatDockToolbar">
+      <button class="chat-dock-icon-btn" id="chatDockDrawerBtn" title="conversaciones y proyectos">☰</button>
+      <button class="chat-dock-icon-btn" id="chatDockFocusBtn" title="modo enfoque">⤢</button>
+    </div>
+    <div class="chat-dock-body" id="chatDockBody"></div>
+  </div>
+
+  <div class="dash-hud-sidebar-drawer" id="dashHudSidebarDrawer">
+    <div class="dash-hud-sidebar-drawer-toolbar">
+      <button class="dash-hud-sidebar-pin-btn" id="dashHudSidebarPinBtn" title="fijar abierto">📌</button>
+      <button class="chat-dock-icon-btn" id="dashHudSidebarCloseBtn" title="cerrar">✕</button>
+    </div>
+    <div class="dash-hud-sidebar-drawer-body" id="dashHudSidebarDrawerBody"></div>
+  </div>
+
+  <div class="node-drill-overlay" id="nodeDrillOverlay"></div>
+  <div class="node-drill-panel" id="nodeDrillPanel">
+    <div class="node-drill-head">
+      <h3 id="nodeDrillTitle">Actividad</h3>
+      <button class="settings-close" id="nodeDrillCloseBtn">✕</button>
+    </div>
+    <div class="node-drill-body" id="nodeDrillBody"></div>
   </div>
 
   <!-- Contenido del bloque de historial, reparentado a #dashGridDesktop una
@@ -1469,6 +2135,30 @@ const viewChat = document.getElementById("viewChat");
 const viewDashboard = document.getElementById("viewDashboard");
 const dashboardInner = document.getElementById("dashboardInner");
 const dashGridDesktop = document.getElementById("dashGridDesktop");
+const dashViewToggleClassicBtn = document.getElementById("dashViewToggleClassic");
+const dashViewToggleHudBtn = document.getElementById("dashViewToggleHud");
+const dashHudView = document.getElementById("dashHudView");
+const dashHudBanner = document.getElementById("dashHudBanner");
+const dashHudStage = document.getElementById("dashHudStage");
+const dashHudOrb = document.getElementById("dashHudOrb");
+const dashHudWidgets = document.getElementById("dashHudWidgets");
+const dashHudConnections = document.getElementById("dashHudConnections");
+const chatDock = document.getElementById("chatDock");
+const chatDockToolbar = document.getElementById("chatDockToolbar");
+const chatDockDrawerBtn = document.getElementById("chatDockDrawerBtn");
+const chatDockFocusBtn = document.getElementById("chatDockFocusBtn");
+const chatDockBody = document.getElementById("chatDockBody");
+const dashHudSidebarDrawer = document.getElementById("dashHudSidebarDrawer");
+const dashHudSidebarPinBtn = document.getElementById("dashHudSidebarPinBtn");
+const dashHudSidebarCloseBtn = document.getElementById("dashHudSidebarCloseBtn");
+const dashHudSidebarDrawerBody = document.getElementById("dashHudSidebarDrawerBody");
+const nodeDrillOverlay = document.getElementById("nodeDrillOverlay");
+const nodeDrillPanel = document.getElementById("nodeDrillPanel");
+const nodeDrillTitle = document.getElementById("nodeDrillTitle");
+const nodeDrillCloseBtn = document.getElementById("nodeDrillCloseBtn");
+const nodeDrillBody = document.getElementById("nodeDrillBody");
+const hudChatPositionList = document.getElementById("hudChatPositionList");
+const templateProposalsList = document.getElementById("templateProposalsList");
 const dashConvList = document.getElementById("dashConvList");
 const dashConvListPullIndicator = document.getElementById("dashConvListPullIndicator");
 const dashNewConvBtn = document.getElementById("dashNewConvBtn");
@@ -1496,6 +2186,17 @@ const brainSvg = document.getElementById("brainSvg");
 const brainFeedList = document.getElementById("brainFeedList");
 const brainGraphInner = document.getElementById("brainGraphInner");
 const brainParticlesCanvas = document.getElementById("brainParticles");
+const brainViewToggleClassicBtn = document.getElementById("brainViewToggleClassic");
+const brainViewToggleHudBtn = document.getElementById("brainViewToggleHud");
+const brainLayoutEl = document.getElementById("brainLayoutClassic");
+const brainHudViewEl = document.getElementById("brainHudView");
+const hudMiniDock = document.getElementById("hudMiniDock");
+const hudMiniDockArc = document.getElementById("hudMiniDockArc");
+const hudRingIdle = document.getElementById("hudRingIdle");
+const hudOmegaLeaders = document.getElementById("hudOmegaLeaders");
+const hudOmegaSvg = document.getElementById("hudOmegaSvg");
+const hudOmegaHub = document.getElementById("hudOmegaHub");
+const hudBubbleLayer = document.getElementById("hudBubbleLayer");
 
 for (let i = 0; i < 14; i++) {
   const p = document.createElement("div");
@@ -1678,6 +2379,17 @@ function addCodeBlockCopyButtons(container) {
   });
 }
 
+// Profundidad 3D del chat (Decisión 4, solo tiene efecto visual dentro de
+// #chatDock — ver CSS scoped a #chatDock .msg): 0 = el mensaje más nuevo,
+// crece hacia atrás en el tiempo. Tope en CHAT_DEPTH_MAX porque la fórmula
+// de opacidad/escala ya llega a ~0 ahí — más allá no aporta nada visible.
+const CHAT_DEPTH_MAX = 9;
+function reindexChatDepth() {
+  const msgs = chatInner.querySelectorAll(".msg");
+  const total = msgs.length;
+  msgs.forEach((el, i) => el.style.setProperty("--depth", Math.min(total - 1 - i, CHAT_DEPTH_MAX)));
+}
+
 function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliverable) {
   const div = document.createElement("div");
   div.className = "msg " + who;
@@ -1768,6 +2480,7 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliv
   }
   chatInner.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
+  reindexChatDepth();
   return div;
 }
 // Mientras Snarf piensa, el indicador de "..." suma una mini-animación del
@@ -1804,10 +2517,11 @@ function showTyping() {
   typingBubble.innerHTML = '<div class="thinking-row"><div class="typing"><span></span><span></span><span></span></div></div>';
   chatInner.appendChild(typingBubble);
   chat.scrollTop = chat.scrollHeight;
+  reindexChatDepth();
   loadThinkingBrainPreview(typingBubble);
 }
 function hideTyping() {
-  if (typingBubble) { typingBubble.remove(); typingBubble = null; }
+  if (typingBubble) { typingBubble.remove(); typingBubble = null; reindexChatDepth(); }
   if (brainOpenedFromThinking) {
     brainOpenedFromThinking = false;
     if (isBrainOpen()) closeBrainFullscreen();
@@ -1994,7 +2708,15 @@ function relativeTime(ts) {
   return Math.floor(diff / 86400) + " d";
 }
 function openSidebar() { sidebar.classList.add("open"); sidebarOverlay.classList.add("open"); refreshConvLists(); refreshProjectList(); }
-function closeSidebar() { sidebar.classList.remove("open"); sidebarOverlay.classList.remove("open"); }
+function closeSidebar() {
+  sidebar.classList.remove("open");
+  sidebarOverlay.classList.remove("open");
+  // El drawer lateral de Vista HUD (v2, declarado más abajo pero disponible
+  // acá por hoisting de `function`) reusa esta misma función como su punto
+  // de cierre "por selección" (elegir una conversación/proyecto) — no-op si
+  // el drawer no está abierto o si está fijado.
+  closeHudSidebarDrawer();
+}
 menuBtn.addEventListener("click", openSidebar);
 sidebarOverlay.addEventListener("click", closeSidebar);
 
@@ -2663,6 +3385,12 @@ desktopMedia.addEventListener("change", () => {
   // tiene el chat/historial reparentados — se hace acá, sin forzar ningún
   // cambio de vista (eso sería un salto no pedido en medio de una conversación).
   if (isDesktopDashboard()) reparentIntoDashboardOnce();
+  // Vista HUD del dashboard es desktop-only (Decisión 6, rediseño radial) —
+  // si la ventana se angosta por debajo de los 900px con Vista HUD activa,
+  // se desactivan sus efectos en vivo (poll, chat en el dock) sin tocar la
+  // preferencia guardada: al volver a ensanchar, reactiva HUD solo si
+  // dashboardPrefs.dashboard_view seguía siendo "hud".
+  else if (typeof deactivateDashHudSideEffectsOnly === "function") deactivateDashHudSideEffectsOnly();
   applyJarvisMode();
   if (currentView === "dashboard") refreshDashboard();
 });
@@ -3339,6 +4067,16 @@ let brainEdgeFlowPaths = {};
 let brainPollTimer = null;
 let brainSince = null;
 
+// Vista HUD (Fase 4-b del plan de HUD, ver SESSION_STATE.md) — panel
+// alternativo dentro del mismo #brainPanel, feed de texto en vez de grafo.
+// Corre su propio poll en paralelo al de la Vista clásica (nunca la
+// reemplaza) para que cambiar de pestaña no pierda datos ni tenga que
+// recargar nada — mismo criterio de "solo mientras está abierto" que el
+// resto del cerebro.
+let brainView = "classic"; // "classic" | "hud"
+let brainHudPollTimer = null;
+let brainHudSince = null;
+
 function buildBrainGraphSkeleton() {
   const cx = 250, cy = 250, inputR = 65, specialistR = 125, capabilityR = 195;
   const layout = brainLayoutAllNodes(cx, cy, inputR, specialistR, capabilityR);
@@ -3470,6 +4208,367 @@ function renderBrainFeed(events, replace) {
   if (replace) brainFeedList.innerHTML = rowsHtml;
   else brainFeedList.insertAdjacentHTML("afterbegin", rowsHtml);
   while (brainFeedList.children.length > 60) brainFeedList.lastElementChild.remove();
+}
+
+// --- Mini dock radial dentro de la Vista HUD (integrado a pedido del
+// fundador) — misma capa de gestos desacoplada del render de Fase 2
+// (HUDGestureController), inlineada acá porque web/index.html no tiene
+// mecanismo de archivos estáticos (ver ADR 0080). Datos reales de
+// GET /dashboard/dock_priority (Fase 5), nunca mock.
+function HUDGestureControllerMini(callbacks) {
+  this._callbacks = callbacks || {};
+  this._focused = null;
+  this._selected = null;
+}
+HUDGestureControllerMini.prototype._emit = function (name, id) {
+  const fn = this._callbacks[name];
+  if (typeof fn === "function") fn(id);
+};
+HUDGestureControllerMini.prototype.focus = function (id) {
+  if (this._focused === id) return;
+  if (this._focused !== null) this.blur(this._focused);
+  this._focused = id;
+  this._emit("onFocus", id);
+};
+HUDGestureControllerMini.prototype.blur = function (id) {
+  if (this._focused !== id) return;
+  this._focused = null;
+  this._emit("onBlur", id);
+};
+HUDGestureControllerMini.prototype.select = function (id) {
+  if (this._selected === id) { this.deselect(); return; }
+  const previous = this._selected;
+  this._selected = id;
+  if (previous !== null) this._emit("onDeselect", previous);
+  this._emit("onSelect", id);
+};
+HUDGestureControllerMini.prototype.deselect = function () {
+  if (this._selected === null) return;
+  const id = this._selected;
+  this._selected = null;
+  this._emit("onDeselect", id);
+};
+HUDGestureControllerMini.prototype.bindPointerSource = function (container) {
+  const self = this;
+  container.addEventListener("mouseenter", function (evt) {
+    const el = evt.target.closest("[data-hud-mini-id]");
+    if (el) self.focus(el.getAttribute("data-hud-mini-id"));
+  }, true);
+  container.addEventListener("mouseleave", function (evt) {
+    const el = evt.target.closest("[data-hud-mini-id]");
+    if (el) self.blur(el.getAttribute("data-hud-mini-id"));
+  }, true);
+  container.addEventListener("click", function (evt) {
+    const el = evt.target.closest("[data-hud-mini-id]");
+    if (el) self.select(el.getAttribute("data-hud-mini-id"));
+  });
+};
+
+// Cobertura completa (ADR 0089): antes un subconjunto de 9 nodos elegidos a
+// mano — dejaba afuera nodos reales como `documents` o `gmail_send`, justo
+// los que aparecen en pedidos concretos ("creá un documento", "mandale un
+// mail"). Ahora cubre TODOS los nodos reales de brain.NODE_TIER (más el
+// pseudo-nodo "cost" de la alerta de gasto) — mismo criterio de "sin dejar
+// ninguno afuera" que snarf/telemetry/detail.py en el backend.
+const HUD_MINI_NODE_META = {
+  orchestrator: { label: "orchestrator", icon: "ORC" },
+  input_text: { label: "texto", icon: "TXT" },
+  input_voice: { label: "voz", icon: "VOZ" },
+  input_file: { label: "archivo", icon: "ARC" },
+  specialist_gmail: { label: "gmail digest", icon: "SPG" },
+  specialist_projects_manage: { label: "proyectos", icon: "PRM" },
+  specialist_projects_tasks: { label: "tareas", icon: "PRT" },
+  specialist_projects_conversations: { label: "proy·chat", icon: "PRC" },
+  memory: { label: "memoria", icon: "MEM" },
+  drive: { label: "drive", icon: "DRV" },
+  knowledge: { label: "knowledge", icon: "KNW" },
+  documents: { label: "documentos", icon: "DOC" },
+  gmail_read: { label: "gmail", icon: "GML" },
+  gmail_manage: { label: "gmail org.", icon: "GMO" },
+  gmail_send: { label: "gmail envío", icon: "GMS" },
+  calendar_view: { label: "calendar", icon: "CAL" },
+  calendar_edit: { label: "calendar edit", icon: "CLE" },
+  youtube: { label: "youtube", icon: "YT" },
+  llm: { label: "llm", icon: "LLM" },
+  stt: { label: "stt", icon: "STT" },
+  tts: { label: "tts", icon: "TTS" },
+  personality: { label: "personalidad", icon: "PRS" },
+  utility: { label: "utilidad", icon: "UTL" },
+  notion: { label: "notion", icon: "NTN" },
+  cost: { label: "gasto del día", icon: "$" }
+};
+// Familia visual de cada nodo (ADR 0089) — el globo contextual es UN
+// componente compartido parametrizado por familia (ver .hud-bubble-* en el
+// CSS), no un widget a medida por tool: un nodo/tool nuevo hereda un globo
+// agregando una sola línea acá, sin código nuevo de render.
+const HUD_BUBBLE_FAMILY = {
+  memory: "scan", knowledge: "scan", notion: "scan", specialist_gmail: "scan",
+  documents: "document",
+  drive: "list", gmail_read: "list", gmail_manage: "list", calendar_view: "list", youtube: "list",
+  gmail_send: "dispatch", calendar_edit: "dispatch",
+  stt: "voice", tts: "voice",
+  llm: "think",
+  personality: "admin", utility: "admin",
+  specialist_projects_manage: "admin", specialist_projects_tasks: "admin", specialist_projects_conversations: "admin",
+  orchestrator: "system", cost: "system",
+  input_text: "input", input_voice: "input", input_file: "input"
+};
+const HUD_MINI_ARC_DEGREES = 150;
+const HUD_MINI_RADIUS = 260;
+// Techo real de chips simultáneos (igual al de antes, ahora elegido por
+// relevancia real entre TODOS los nodos en vez de ser un subconjunto fijo
+// de 9) — mostrar los ~24 nodos reales a la vez saturaría el arco; el
+// ranking de /dashboard/dock_priority ya ordena por actividad real, así
+// que el top-N es honestamente "lo más relevante ahora", no un recorte
+// arbitrario.
+const HUD_MINI_MAX_CHIPS = 9;
+let hudMiniNodeEls = {};
+let hudMiniSelectedNodo = null;
+
+function hudMiniCenterOutPositions(rankedIds) {
+  const n = rankedIds.length;
+  const positions = new Array(n);
+  const mid = Math.floor((n - 1) / 2);
+  positions[mid] = rankedIds[0];
+  let left = mid - 1, right = mid + 1, goRight = true;
+  for (let i = 1; i < n; i++) {
+    if (goRight && right < n) { positions[right++] = rankedIds[i]; }
+    else if (left >= 0) { positions[left--] = rankedIds[i]; }
+    else if (right < n) { positions[right++] = rankedIds[i]; }
+    goRight = !goRight;
+  }
+  return positions;
+}
+
+function buildHudMiniDock(orderedIds, alertIds) {
+  hudMiniDockArc.querySelectorAll(".hud-mini-node-slot").forEach((el) => el.remove());
+  hudOmegaLeaders.innerHTML = "";
+  hudMiniNodeEls = {};
+
+  // El SVG del hub/líneas guía usa el mismo espacio de píxeles reales que
+  // los nodos HTML (translate3d) — así las líneas guía terminan exacto en
+  // cada chip, sin aproximar. Se resetea el viewBox al tamaño real del
+  // contenedor en cada build (el panel puede cambiar de tamaño entre
+  // aperturas).
+  const w = hudMiniDock.clientWidth || 300;
+  const h = hudMiniDock.clientHeight || 190;
+  hudOmegaSvg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  // 100 (antes 34): mismo offset que .hud-mini-dock-arc/.hud-ring-idle en
+  // CSS — medido con Playwright contra el bounding box real de
+  // #brainPanel para que el anillo externo (r=98) no sobresalga por debajo
+  // del borde real del panel (ADR 0089).
+  const hubX = w / 2, hubY = h - 100;
+  hudOmegaHub.setAttribute("transform", `translate(${hubX},${hubY})`);
+
+  const ids = orderedIds.filter((id) => HUD_MINI_NODE_META[id]);
+  ids.forEach((id, i) => {
+    const meta = HUD_MINI_NODE_META[id];
+    const t = ids.length === 1 ? 0.5 : i / (ids.length - 1);
+    const angleDeg = -HUD_MINI_ARC_DEGREES / 2 + t * HUD_MINI_ARC_DEGREES;
+    const angleRad = (angleDeg * Math.PI) / 180;
+    const x = HUD_MINI_RADIUS * Math.sin(angleRad);
+    const z = HUD_MINI_RADIUS * (Math.cos(angleRad) - 1);
+    const y = -Math.abs(Math.sin(angleRad)) * 26;
+
+    const slot = document.createElement("div");
+    slot.className = "hud-mini-node-slot";
+    slot.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, ${z.toFixed(1)}px)`;
+
+    const el = document.createElement("div");
+    el.className = "hud-mini-node hud-materialize";
+    el.style.animationDelay = (i * 45) + "ms";
+    el.setAttribute("data-hud-mini-id", id);
+    el.setAttribute("data-state", "collapsed");
+    if (alertIds.has(id)) el.setAttribute("data-alert", "1");
+    el.innerHTML = `<span class="hud-mini-node-label">${escapeHtml(meta.label)}</span><span class="hud-mini-node-icon">${escapeHtml(meta.icon)}</span>`;
+
+    slot.appendChild(el);
+    hudMiniDockArc.appendChild(slot);
+    hudMiniNodeEls[id] = el;
+
+    // Línea guía real (no decorativa): mismo x/y que el chip HTML, desde
+    // el hub central — referencia directa del patrón "leader line + label"
+    // de las imágenes que mandó el fundador.
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("class", "hud-omega-leader");
+    line.setAttribute("data-hud-leader-for", id);
+    line.setAttribute("x1", hubX);
+    line.setAttribute("y1", hubY);
+    line.setAttribute("x2", hubX + x);
+    line.setAttribute("y2", hubY + y);
+    hudOmegaLeaders.appendChild(line);
+  });
+  // El rebuild reemplaza TODOS los chips — los globos ya abiertos tienen
+  // que re-anclarse a los chips nuevos (o pasar a "flotante" si su nodo
+  // quedó fuera del top-N esta vuelta), nunca quedar apuntando a un
+  // elemento que ya no existe en el DOM.
+  positionAllHudBubbles();
+}
+
+function hudLeaderLineFor(id) { return hudOmegaLeaders.querySelector(`[data-hud-leader-for="${id}"]`); }
+
+// --- Globos contextuales (ADR 0089) — muestran CONTENIDO real (`detalle`,
+// ver TELEMETRY_SCHEMA.md) por evento, no solo el pulso genérico de
+// pulseHudDockNode. Un globo por nodo activo, con TTL real (se van solos
+// cuando dejan de ser relevantes) y tope de simultáneos (se prioriza la
+// conversación activa sobre procesos de fondo no relacionados). ---
+const HUD_BUBBLE_TTL_MS = 20000;
+const HUD_BUBBLE_MAX_CONCURRENT = 4;
+let hudBubbles = {}; // nodo -> { el, family, detalle, verbo, conversationId, expiresAt }
+let hudActiveConversationId = null;
+
+function hudBubbleMetaFor(nodo) {
+  return HUD_MINI_NODE_META[nodo] || { label: nodo, icon: "" };
+}
+
+function renderHudBubbleContent(bubble, nodo) {
+  const meta = hudBubbleMetaFor(nodo);
+  bubble.el.className = `hud-bubble hud-bubble-${bubble.family} hud-materialize`;
+  bubble.el.innerHTML =
+    `<div class="hud-bubble-head"><span class="hud-bubble-icon">${escapeHtml(meta.icon)}</span>` +
+    `<span class="hud-bubble-verb">${escapeHtml(bubble.verbo || meta.label)}</span></div>` +
+    `<div class="hud-bubble-body">${escapeHtml(bubble.detalle)}</div>`;
+}
+
+function positionHudBubble(nodo) {
+  const bubble = hudBubbles[nodo];
+  if (!bubble) return;
+  const chip = hudMiniNodeEls[nodo];
+  if (chip) {
+    const dockRect = hudMiniDock.getBoundingClientRect();
+    const chipRect = chip.getBoundingClientRect();
+    bubble.el.style.left = (chipRect.left + chipRect.width / 2 - dockRect.left) + "px";
+    bubble.el.style.top = (chipRect.top - dockRect.top) + "px";
+    bubble.el.classList.remove("hud-bubble-unanchored");
+  } else {
+    bubble.el.classList.add("hud-bubble-unanchored");
+  }
+}
+
+function positionAllHudBubbles() {
+  Object.keys(hudBubbles).forEach(positionHudBubble);
+}
+
+function removeHudBubble(nodo) {
+  const bubble = hudBubbles[nodo];
+  if (!bubble) return;
+  delete hudBubbles[nodo];
+  bubble.el.classList.add("hud-bubble-out");
+  setTimeout(() => bubble.el.remove(), 260);
+}
+
+// Al elegir a quién sacrificar cuando se llega al tope: primero cualquier
+// globo que NO sea de la conversación activa (procesos de fondo, ej. un
+// digest de Gmail corriendo mientras el usuario está en otra charla), y
+// recién si todos pertenecen a la misma conversación, el más próximo a
+// expirar — implementa "que aparezcan contextualmente... en su jerarquía
+// correspondiente" (pedido explícito del fundador).
+function evictOldestHudBubble() {
+  const entries = Object.entries(hudBubbles);
+  if (entries.length === 0) return;
+  const unrelated = entries.filter(([, b]) => b.conversationId !== hudActiveConversationId);
+  const pool = unrelated.length > 0 ? unrelated : entries;
+  pool.sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+  removeHudBubble(pool[0][0]);
+}
+
+function pruneExpiredHudBubbles() {
+  const now = Date.now();
+  Object.keys(hudBubbles).forEach((nodo) => {
+    if (hudBubbles[nodo].expiresAt <= now) removeHudBubble(nodo);
+  });
+}
+
+function clearAllHudBubbles() {
+  Object.values(hudBubbles).forEach((b) => b.el.remove());
+  hudBubbles = {};
+  hudActiveConversationId = null;
+}
+
+// Punto de entrada real, llamado por cada evento nuevo de
+// GET /dashboard/telemetry_feed que traiga `detalle` — sin detalle no hay
+// contenido real que mostrar en un globo (el pulso del chip ya cubre "algo
+// pasó acá"), así que no se inventa uno vacío.
+function upsertHudBubble(ev) {
+  if (ev.conversation_id) hudActiveConversationId = ev.conversation_id;
+  if (!ev.detalle) return;
+  let bubble = hudBubbles[ev.nodo];
+  if (!bubble) {
+    if (Object.keys(hudBubbles).length >= HUD_BUBBLE_MAX_CONCURRENT) evictOldestHudBubble();
+    const el = document.createElement("div");
+    hudBubbleLayer.appendChild(el);
+    bubble = hudBubbles[ev.nodo] = { el, expiresAt: 0, conversationId: null };
+  }
+  bubble.family = HUD_BUBBLE_FAMILY[ev.nodo] || "system";
+  bubble.detalle = ev.detalle;
+  bubble.verbo = ev.verbo;
+  bubble.conversationId = ev.conversation_id || null;
+  bubble.expiresAt = Date.now() + HUD_BUBBLE_TTL_MS;
+  renderHudBubbleContent(bubble, ev.nodo);
+  positionHudBubble(ev.nodo);
+}
+
+const hudMiniController = new HUDGestureControllerMini({
+  onFocus: (id) => {
+    const el = hudMiniNodeEls[id]; if (el) el.setAttribute("data-state", "focus");
+    const line = hudLeaderLineFor(id); if (line) line.setAttribute("data-active", "1");
+  },
+  onBlur: (id) => {
+    const el = hudMiniNodeEls[id]; if (el && el.getAttribute("data-state") !== "select") el.setAttribute("data-state", "collapsed");
+    if (hudMiniSelectedNodo !== id) { const line = hudLeaderLineFor(id); if (line) line.removeAttribute("data-active"); }
+  },
+  onSelect: (id) => {
+    const el = hudMiniNodeEls[id]; if (el) el.setAttribute("data-state", "select");
+    hudMiniSelectedNodo = id;
+    const line = hudLeaderLineFor(id); if (line) line.setAttribute("data-active", "1");
+  },
+  onDeselect: (id) => {
+    const el = hudMiniNodeEls[id]; if (el) el.setAttribute("data-state", "collapsed");
+    hudMiniSelectedNodo = null;
+    const line = hudLeaderLineFor(id); if (line) line.removeAttribute("data-active");
+  }
+});
+hudMiniController.bindPointerSource(hudMiniDock);
+
+// Anillo Omega: idle (colapsado) por defecto, se "desbloquea" al click —
+// mismo comportamiento real del widget Omega del Mark III (un solo control
+// que abre en abanico bajo comando, no todo expandido de una). El mismo
+// anillo, encogido, sirve para volver a cerrar.
+function setHudDockOpen(open) {
+  hudMiniDock.setAttribute("data-open", open ? "1" : "0");
+}
+function isHudDockOpen() { return hudMiniDock.getAttribute("data-open") === "1"; }
+hudRingIdle.addEventListener("click", () => setHudDockOpen(!isHudDockOpen()));
+// Con el dock abierto el anillo se desactiva (ver CSS) para no tapar a los
+// chips cercanos al hub — cerrar entonces se hace clickeando cualquier
+// espacio vacío del dock (nunca sobre un chip real).
+hudMiniDock.addEventListener("click", (evt) => {
+  if (isHudDockOpen() && !evt.target.closest("[data-hud-mini-id]")) setHudDockOpen(false);
+});
+
+// "Story moment" real (no decorativo): si aparece una alerta de costo
+// genuina, el dock se abre solo una vez para llamar la atención — no en
+// cada poll, solo en el momento real en que la alerta aparece.
+let hudDockHadAlert = false;
+
+async function pollBrainHudDock() {
+  try {
+    const res = await apiFetch("/dashboard/dock_priority");
+    const data = await res.json();
+    // data.ranking ya viene ordenado por score descendente (todos los
+    // nodos reales, ver relevance.DOCK_NODE_IDS) — el top-N es "lo más
+    // relevante ahora mismo", honesto en vez de arbitrario, y evita saturar
+    // el arco con los ~24 nodos reales a la vez.
+    const rankedIds = data.ranking.slice(0, HUD_MINI_MAX_CHIPS).map((r) => r.nodo);
+    const alertIds = new Set(data.ranking.filter((r) => r.razones.includes("gasto_del_dia_sobre_umbral")).map((r) => r.nodo));
+    if (alertIds.size > 0) hudMiniDock.setAttribute("data-alert", "1");
+    else hudMiniDock.removeAttribute("data-alert");
+    if (alertIds.size > 0 && !hudDockHadAlert && !isHudDockOpen()) setHudDockOpen(true);
+    hudDockHadAlert = alertIds.size > 0;
+    buildHudMiniDock(hudMiniCenterOutPositions(rankedIds), alertIds);
+  } catch (e) {
+    // fallo silencioso: se reintenta en el próximo ciclo, mismo criterio que el resto del cerebro
+  }
 }
 
 function spawnPulse(ev) {
@@ -4132,6 +5231,80 @@ async function pollBrain() {
     // fallo silencioso: se reintenta en el próximo ciclo, mismo criterio que Gmail
   }
 }
+
+// --- Vista HUD (Fase 4-b): poll propio, en paralelo al de la Vista
+// clásica de arriba — corre siempre que el panel está abierto, sin
+// importar qué pestaña esté activa, para que cambiar de vista nunca pierda
+// datos ni tenga que recargar (pedido explícito del fundador). ---
+function stopBrainHudPolling() {
+  if (brainHudPollTimer) { clearInterval(brainHudPollTimer); brainHudPollTimer = null; }
+}
+function startBrainHudPolling() {
+  stopBrainHudPolling();
+  brainHudPollTimer = setInterval(() => { pollBrainHudDock(); pollBrainHudFeed(); }, BRAIN_POLL_MS);
+}
+// Reacción real por evento (pedido explícito: "que sea una manifestación
+// de los procesos de Snarf"): destella el chip + su línea guía. Solo en
+// polls incrementales (nunca en la primera carga con todo el historial de
+// una — eso sería puro ruido, no una reacción a algo que "está pasando").
+function pulseHudDockNode(nodo) {
+  const el = hudMiniNodeEls[nodo];
+  if (el) {
+    el.classList.remove("hud-pulse-fire");
+    void el.offsetWidth; // fuerza reflow para poder re-disparar la animación si ya estaba corriendo
+    el.classList.add("hud-pulse-fire");
+  }
+  const line = hudLeaderLineFor(nodo);
+  if (line) {
+    line.classList.remove("hud-leader-pulse");
+    void line.getBBox();
+    line.classList.add("hud-leader-pulse");
+  }
+}
+
+async function pollBrainHudFeed() {
+  try {
+    const url = brainHudSince === null ? "/dashboard/telemetry_feed" : `/dashboard/telemetry_feed?since=${brainHudSince}`;
+    const res = await apiFetch(url);
+    const data = await res.json();
+    const isFirstLoad = brainHudSince === null;
+    // Nunca en la primera carga (todo el historial de una) — eso sería
+    // ruido, no una reacción a algo que "está pasando" ahora (mismo
+    // criterio ya establecido para pulseHudDockNode, ADR 0088).
+    if (!isFirstLoad) {
+      data.events.forEach((ev) => {
+        pulseHudDockNode(ev.nodo);
+        upsertHudBubble(ev);
+      });
+    }
+    pruneExpiredHudBubbles();
+    brainHudSince = data.server_time;
+  } catch (e) {
+    // fallo silencioso: se reintenta en el próximo ciclo, mismo criterio que la Vista clásica
+  }
+}
+function setBrainView(view) {
+  brainView = view;
+  const isHud = view === "hud";
+  brainLayoutEl.hidden = isHud;
+  brainHudViewEl.hidden = !isHud;
+  brainViewToggleClassicBtn.classList.toggle("active", !isHud);
+  brainViewToggleHudBtn.classList.toggle("active", isHud);
+  brainViewToggleClassicBtn.setAttribute("aria-selected", String(!isHud));
+  brainViewToggleHudBtn.setAttribute("aria-selected", String(isHud));
+  // Bug real encontrado verificando con Playwright (ADR 0089): si el panel
+  // se abre en Vista clásica (default), la primera vez que se llama
+  // pollBrainHudDock() (dentro de openBrainFullscreen) #brainHudView todavía
+  // está `hidden` — .hud-mini-dock mide 0x0, así que buildHudMiniDock cae al
+  // fallback (300x190) y el hub queda geométricamente mal ubicado hasta el
+  // próximo ciclo de poll (hasta 3.5s después). Al pasar a Vista HUD, forzar
+  // un rebuild inmediato contra el tamaño real ya visible — nunca dejar que
+  // se autocorrija solo con el próximo tick.
+  if (isHud) pollBrainHudDock();
+}
+brainViewToggleClassicBtn.addEventListener("click", () => setBrainView("classic"));
+brainViewToggleHudBtn.addEventListener("click", () => setBrainView("hud"));
+
 async function openBrainFullscreen() {
   stopBrainMiniPolling(); // pantalla completa tiene su propio poll, más rico — no pedir el mismo snapshot dos veces
   brainOverlay.classList.add("open");
@@ -4143,13 +5316,26 @@ async function openBrainFullscreen() {
   resizeBrainCanvas(); // el tamaño real del panel puede haber cambiado desde el último cierre
   startBrainAnimationLoop();
   brainSince = null;
+  brainHudSince = null;
   await pollBrain(); // primera carga: historia completa, sin animar pulsos
   startBrainPolling();
+  // Orden importa: el dock se construye primero (buildHudMiniDock crea los
+  // chips/líneas guía desde cero), recién después el feed puede destellar
+  // sobre nodos que ya existen en el DOM — al revés, un pulso recién
+  // disparado se pierde porque el rebuild que sigue reemplaza el chip.
+  await pollBrainHudDock();
+  await pollBrainHudFeed();
+  startBrainHudPolling();
 }
 function closeBrainFullscreen() {
   brainOverlay.classList.remove("open");
   brainPanel.classList.remove("open");
   stopBrainPolling();
+  stopBrainHudPolling();
+  hudMiniSelectedNodo = null;
+  setHudDockOpen(false);
+  hudDockHadAlert = false;
+  clearAllHudBubbles();
   stopBrainAnimationLoop();
   document.getElementById("pulseLayer").innerHTML = "";
   // Frena las animaciones de latido/flujo mientras el panel está oculto —
@@ -4161,13 +5347,14 @@ function closeBrainFullscreen() {
   brainCamera.y = brainCamera.targetY = 250;
   brainCamera.zoom = brainCamera.targetZoom = 1;
   brainSince = null;
+  brainHudSince = null;
   if (currentView === "dashboard") startBrainMiniPolling();
 }
 brainOverlay.addEventListener("click", closeBrainFullscreen);
 brainCloseBtn.addEventListener("click", closeBrainFullscreen);
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) { stopBrainPolling(); stopBrainAnimationLoop(); return; }
-  if (isBrainOpen()) { pollBrain(); startBrainPolling(); startBrainAnimationLoop(); }
+  if (document.hidden) { stopBrainPolling(); stopBrainHudPolling(); stopBrainAnimationLoop(); return; }
+  if (isBrainOpen()) { pollBrain(); startBrainPolling(); pollBrainHudDock(); pollBrainHudFeed(); startBrainHudPolling(); startBrainAnimationLoop(); }
 });
 
 function makeReorderable(containerOrContainers, onReorder) {
@@ -4368,6 +5555,7 @@ const LLM_ROLES = [
   { role: "drive_vision", label: "Descripción de imágenes (Drive)" },
   { role: "project_summary", label: "Resumen de proyectos" },
   { role: "conversation_title", label: "Título automático de conversación" },
+  { role: "dashboard_curator", label: "Curación del dashboard (Vista HUD)" },
 ];
 // Nombres de modelo verificados con una llamada real el 2026-07-30 (ver ADR
 // de esta ronda) — gemini-2.5-flash-lite y la nomenclatura con puntos de
@@ -4470,6 +5658,7 @@ function reparentChatIntoDashboard() {
   );
   dashGridDesktop.appendChild(wrapper);
   document.getElementById("chatExpandBtn").addEventListener("click", openChatFocus);
+  chatHomeEl = body;
 }
 
 function reparentHistoryIntoDashboard() {
@@ -4491,6 +5680,12 @@ function reparentIntoDashboardOnce() {
 // menú hamburguesa de mobile (misma idea, reusada en vez de duplicada) se
 // mueven a un overlay a pantalla completa — nunca se clonan ni se
 // reconstruyen, solo cambian de padre, igual que el resto de este sistema.
+// chatHomeEl: a qué contenedor real tiene que volver el chat al cerrar el
+// modo enfoque — antes (v1) closeChatFocus() asumía SIEMPRE ".dash-chat-body"
+// hardcodeado, lo cual rompía si el modo enfoque se abría desde Vista HUD
+// (chatDockBody). Cada función de reparentado "de descanso" (Vista clásica
+// y Vista HUD) actualiza esta variable al mover el chat a su lugar.
+let chatHomeEl = null;
 let chatFocusOpen = false;
 function openChatFocus() {
   if (chatFocusOpen) return;
@@ -4503,6 +5698,10 @@ function openChatFocus() {
   chatFocusPanel.classList.add("open");
   refreshConvLists();
   refreshProjectList();
+  // Pedido explícito: entrar al modo enfoque tiene que dejar listo para
+  // escribir de una, sin un click extra — solo en escritorio (en mobile,
+  // enfocar un textarea dispara el teclado nativo sin que el usuario lo pida).
+  if (isDesktopDashboard()) textInput.focus();
 }
 function closeChatFocus() {
   if (!chatFocusOpen) return;
@@ -4511,10 +5710,9 @@ function closeChatFocus() {
   chatFocusPanel.classList.remove("open");
   sidebar.classList.remove("docked");
   document.body.appendChild(sidebar); // vuelve a su lugar de siempre, para el menú hamburguesa de mobile
-  const chatBody = document.querySelector(".dash-chat-body");
-  if (chatBody) {
-    chatBody.appendChild(chat);
-    chatBody.appendChild(controlBar);
+  if (chatHomeEl) {
+    chatHomeEl.appendChild(chat);
+    chatHomeEl.appendChild(controlBar);
   }
 }
 chatFocusOverlay.addEventListener("click", closeChatFocus);
@@ -4562,13 +5760,591 @@ async function refreshDashboard() {
     const summary = await (await apiFetch("/dashboard/summary")).json();
     lastSummary = summary;
     setUserLabel(summary.user_id);
-    if (isDesktopDashboard()) renderDesktopDashboard(summary);
-    else renderMobileDashboard(summary);
+    if (isDesktopDashboard()) {
+      // Vista clásica/HUD (Decisión R, rediseño radial): setDashboardView
+      // activa/desactiva todos los efectos reales (poll propio, reparentado
+      // del chat) — acá solo se decide cuál mostrar según lo persistido, sin
+      // volver a guardar la misma preferencia que ya se cargó.
+      setDashboardView(dashboardPrefs.dashboard_view === "hud" ? "hud" : "classic", { skipPersist: true });
+      if (dashboardPrefs.dashboard_view !== "hud") renderDesktopDashboard(summary);
+    } else {
+      renderMobileDashboard(summary);
+    }
   } catch (e) {
     dashboardInner.innerHTML = '<div class="dash-loading">error cargando el dashboard</div>';
   }
 }
 apiFetch("/dashboard/summary").then((r) => r.json()).then((d) => setUserLabel(d.user_id)).catch(() => {});
+
+// ===========================================================================
+// Vista HUD del dashboard — rediseño radial (ver plan/ADR correspondiente).
+// TODO este bloque es aditivo: nada de arriba (renderDesktopDashboard,
+// reparentChatIntoDashboard, etc.) se tocó — con el toggle en "clásica" el
+// dashboard de siempre sigue funcionando exactamente igual, sin pasar nunca
+// por acá (Decisión R: reversible de verdad, no solo en apariencia).
+// ===========================================================================
+
+// Estado en vivo del toggle — separado de dashboardPrefs.dashboard_view
+// (que es la preferencia persistida) porque acá hace falta saber si los
+// efectos de "estar en HUD ahora mismo" (poll corriendo, chat reparentado)
+// ya se activaron, para no reactivarlos de nuevo en cada refreshDashboard().
+let dashHudActive = false;
+let dashHudPollTimer = null;
+let dashHudNodeEls = {};
+let dashHudLineEls = {};
+let dashHudLastData = {};
+let dashHudLastWidgets = [];
+let dashHudTemplates = null;
+
+function setDashboardView(view, { skipPersist = false } = {}) {
+  const isHud = view === "hud";
+  dashboardPrefs.dashboard_view = isHud ? "hud" : "classic";
+  dashGridDesktop.hidden = isHud;
+  dashHudView.hidden = !isHud;
+  dashViewToggleClassicBtn.classList.toggle("active", !isHud);
+  dashViewToggleHudBtn.classList.toggle("active", isHud);
+  dashViewToggleClassicBtn.setAttribute("aria-selected", String(!isHud));
+  dashViewToggleHudBtn.setAttribute("aria-selected", String(isHud));
+  if (!skipPersist) persistPrefs();
+  if (isHud === dashHudActive) return; // ya estaba en ese estado — no repetir los efectos de abajo
+  dashHudActive = isHud;
+  if (isHud) {
+    chatDock.dataset.position = dashboardPrefs.hud_chat_position || "left";
+    reparentChatIntoDock();
+    chatDock.hidden = false;
+    startDashHudPolling();
+  } else {
+    stopDashHudPolling();
+    chatDock.hidden = true;
+    forceCloseHudSidebarDrawer();
+    reparentChatOutOfDock();
+    renderDesktopDashboard(lastSummary || { capabilities: {}, memory: {}, cost: {} });
+  }
+}
+dashViewToggleClassicBtn.addEventListener("click", () => setDashboardView("classic"));
+dashViewToggleHudBtn.addEventListener("click", () => setDashboardView("hud"));
+
+// Vista HUD es desktop-only (Decisión 6) — al angostar por debajo de los
+// 900px con HUD activa, se apagan sus efectos en vivo SIN tocar
+// dashboardPrefs.dashboard_view (la preferencia real del fundador), para
+// que al volver a ensanchar la ventana se reactive sola si correspondía.
+function deactivateDashHudSideEffectsOnly() {
+  if (!dashHudActive) return;
+  dashHudActive = false;
+  stopDashHudPolling();
+  chatDock.hidden = true;
+  forceCloseHudSidebarDrawer();
+  reparentChatOutOfDock();
+}
+
+// Mismo criterio "mover el nodo vivo, nunca clonar" que ya usan
+// reparentChatIntoDashboard/openChatFocus — el chat (#chat + .control-bar)
+// solo puede estar en un lugar a la vez; acá se mueve hacia/desde la capa
+// ambiente inferior en vez de hacia la grilla clásica o el modo enfoque.
+function reparentChatIntoDock() {
+  chatDockBody.appendChild(chat);
+  chatDockBody.appendChild(controlBar);
+  chatHomeEl = chatDockBody;
+}
+function reparentChatOutOfDock() {
+  const chatBody = document.querySelector(".dash-chat-body");
+  if (chatBody) {
+    chatBody.appendChild(chat);
+    chatBody.appendChild(controlBar);
+    chatHomeEl = chatBody;
+  }
+}
+chatDockFocusBtn.addEventListener("click", openChatFocus);
+
+// Drawer lateral de conversaciones/proyectos (Decisión 8, solo Vista HUD) —
+// reparenta el #sidebar real (nunca lo clona), igual criterio que
+// openChatFocus. "Fijado" evita el auto-cierre al elegir una conversación;
+// el botón ✕ siempre cierra, fijado o no (salida explícita).
+function openHudSidebarDrawer() {
+  sidebar.classList.add("hud-drawer");
+  dashHudSidebarDrawerBody.appendChild(sidebar);
+  dashHudSidebarDrawer.classList.add("open");
+  chatDock.classList.add("drawer-open");
+  refreshConvLists();
+  refreshProjectList();
+}
+function closeHudSidebarDrawer() {
+  if (dashboardPrefs.hud_sidebar_pinned) return;
+  forceCloseHudSidebarDrawer();
+}
+function forceCloseHudSidebarDrawer() {
+  dashHudSidebarDrawer.classList.remove("open");
+  chatDock.classList.remove("drawer-open");
+  if (sidebar.classList.contains("hud-drawer")) {
+    sidebar.classList.remove("hud-drawer");
+    document.body.appendChild(sidebar);
+  }
+}
+function toggleHudSidebarDrawer() {
+  if (dashHudSidebarDrawer.classList.contains("open")) forceCloseHudSidebarDrawer();
+  else openHudSidebarDrawer();
+}
+chatDockDrawerBtn.addEventListener("click", toggleHudSidebarDrawer);
+dashHudSidebarCloseBtn.addEventListener("click", () => {
+  dashboardPrefs.hud_sidebar_pinned = false;
+  dashHudSidebarPinBtn.classList.remove("pinned");
+  persistPrefs();
+  forceCloseHudSidebarDrawer();
+});
+dashHudSidebarPinBtn.addEventListener("click", () => {
+  dashboardPrefs.hud_sidebar_pinned = !dashboardPrefs.hud_sidebar_pinned;
+  dashHudSidebarPinBtn.classList.toggle("pinned", dashboardPrefs.hud_sidebar_pinned);
+  persistPrefs();
+});
+
+// Biblioteca de 24 plantillas (Decisión 1) — fuente única de verdad en el
+// backend (snarf/telemetry/widget_templates.py), se pide una sola vez y se
+// cachea acá; nunca se duplica a mano en JS.
+async function ensureDashHudTemplates() {
+  if (dashHudTemplates) return dashHudTemplates;
+  const res = await apiFetch("/dashboard/widget_templates");
+  const data = await res.json();
+  dashHudTemplates = data.templates;
+  return dashHudTemplates;
+}
+function dashHudTemplateFor(templateId) {
+  return (dashHudTemplates && dashHudTemplates[templateId]) || { tier: "small", width: 220, height: 150, slots: ["body", "caption"] };
+}
+
+// Empaquetado radial CONSTRUCTIVO (Decisión 9) — bug real encontrado con
+// Playwright, en dos formas distintas: (1) ningún cálculo puramente
+// analítico de radios/ángulos garantizaba cero superposición para tamaños
+// tan dispares (130-380px) en el espacio real disponible, y (2) un solver
+// iterativo de "empujar pares que se superponen" (probado después) podía
+// oscilar sin converger nunca en un grupo denso de varias cards, porque
+// resolver un par podía reintroducir el choque con un tercero ya resuelto.
+// Acá, en cambio, cada widget (ya en orden de score real descendente) se
+// coloca UNA sola vez, en el primer lugar de una espiral creciente desde el
+// centro que se verifica sin choque contra TODO lo ya colocado antes de
+// aceptarlo — garantiza cero superposición por construcción, nunca depende
+// de que un solver converja. "Más relevante = más cerca" sale solo de
+// procesar en orden de score y probar radios chicos primero.
+const HUD_COLLISION_PADDING = 16;
+const HUD_GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)); // filotaxis — evita alineación repetida entre anillos de la espiral
+// Mitad del tamaño visual real del orbe dentro del stage (ver CSS
+// `.dash-hud-stage .dash-hud-orb`, `scale(0.74)` sobre la esfera base) — se
+// usa para reservarlo como obstáculo real, nunca como una coordenada mágica.
+const HUD_ORB_HALF_SIZE = 72;
+
+// `cx`/`cy` SIEMPRE el centro real y completo del stage — tiene que
+// coincidir exactamente con dónde el CSS posiciona al orbe
+// (`.dash-hud-orb { left:50%; top:50% }`), nunca un centro corrido para
+// otro fin. Bug real encontrado con Playwright: una versión anterior movía
+// `cy` hacia arriba para "dejarle lugar" al chat-dock fijo de abajo —
+// technically funcionaba para ESE propósito, pero descentraba el origen de
+// la espiral respecto del orbe real (~130px de diferencia), así que el
+// widget "central" (rank 0) terminaba pisando al orbe en vez de rodearlo.
+// El margen para el chat-dock ahora se resuelve aparte, con `bottomReserve`
+// — solo empuja el LÍMITE inferior de búsqueda, nunca el origen.
+function packHudWidgets(widgets, sizeById, pinnedPositions, stageWidth, stageHeight, bottomReserve) {
+  const cx = stageWidth / 2, cy = stageHeight / 2;
+  const placed = [{ x: cx, y: cy, halfW: HUD_ORB_HALF_SIZE, halfH: HUD_ORB_HALF_SIZE }];
+  const positions = {};
+
+  function withinStage(x, y, halfW, halfH) {
+    return x - halfW >= 8 && x + halfW <= stageWidth - 8 && y - halfH >= 8 && y + halfH <= stageHeight - bottomReserve;
+  }
+  function collidesWithPlaced(x, y, halfW, halfH) {
+    for (const p of placed) {
+      const minDx = halfW + p.halfW + HUD_COLLISION_PADDING;
+      const minDy = halfH + p.halfH + HUD_COLLISION_PADDING;
+      if (Math.abs(x - p.x) < minDx && Math.abs(y - p.y) < minDy) return true;
+    }
+    return false;
+  }
+
+  // Los fijados ocupan su lugar tal cual, sin buscar — pero SÍ cuentan como
+  // obstáculo real para todo lo que se ubique después.
+  Object.keys(pinnedPositions).forEach((id) => {
+    const size = sizeById[id];
+    if (!size) return;
+    const pos = pinnedPositions[id];
+    positions[id] = { ...pos, ring: 0 };
+    placed.push({ x: pos.x, y: pos.y, halfW: size.width / 2, halfH: size.height / 2 });
+  });
+
+  widgets.forEach((widget) => {
+    const id = widget.node_id;
+    if (positions[id]) return; // ya fijado arriba
+    const size = sizeById[id];
+    if (!size) return;
+    const halfW = size.width / 2, halfH = size.height / 2;
+    const radiusStep = Math.max(halfW, halfH) * 0.55;
+    let found = null;
+    for (let ring = 0; ring < 80 && !found; ring++) {
+      const radius = ring * radiusStep;
+      const stepsInRing = ring === 0 ? 1 : Math.max(Math.round((2 * Math.PI * radius) / (radiusStep * 1.3)), 10);
+      for (let s = 0; s < stepsInRing; s++) {
+        const angle = (s / stepsInRing) * Math.PI * 2 - Math.PI / 2 + ring * HUD_GOLDEN_ANGLE;
+        const x = cx + radius * Math.cos(angle);
+        const y = cy + radius * Math.sin(angle);
+        if (!withinStage(x, y, halfW, halfH)) continue;
+        if (!collidesWithPlaced(x, y, halfW, halfH)) { found = { x, y, ring }; break; }
+      }
+    }
+    // No debería pasar con un stage de tamaño razonable, pero nunca hay que
+    // dejar un widget sin posición — cae en el centro antes que desaparecer.
+    if (!found) found = { x: cx, y: cy, ring: 0 };
+    positions[id] = found;
+    placed.push({ x: found.x, y: found.y, halfW, halfH });
+  });
+
+  return positions;
+}
+
+// Mismas tablas ya construidas para el dock de globos del panel Cerebro
+// (ADR 0089) — label/ícono por nodo y familia visual, sin duplicar acá:
+// HUD_MINI_NODE_META y HUD_BUBBLE_FAMILY ya cubren los 24 nodos reales +
+// el pseudo-nodo "cost".
+function dashHudMetaFor(nodeId) {
+  return HUD_MINI_NODE_META[nodeId] || { label: nodeId, icon: "" };
+}
+function dashHudFamilyFor(nodeId) {
+  return HUD_BUBBLE_FAMILY[nodeId] || "system";
+}
+
+// Mini-gráfico real (Decisión 3) — honesto: sin ninguna señal real, no
+// dibuja nada en vez de simular una serie plana o inventada.
+function renderActivitySparkline(series) {
+  if (!series || !series.length || !series.some((v) => v > 0)) return "";
+  const max = Math.max(...series, 0.0001);
+  const bars = series.map((v) => `<span class="dash-hud-slot-chart-bar" style="height:${Math.max((v / max) * 100, 4)}%"></span>`).join("");
+  return `<div class="dash-hud-slot-chart">${bars}</div>`;
+}
+function dashHudStatCellHTML(value, label) {
+  return `<div class="dash-hud-slot-stat"><div class="dash-hud-slot-stat-value">${escapeHtml(String(value))}</div><div class="dash-hud-slot-stat-label">${escapeHtml(label)}</div></div>`;
+}
+
+// Vocabulario de slots compartido por las 24 plantillas (ver
+// snarf/telemetry/widget_templates.py) — una plantilla nueva combina estos,
+// nunca hace falta CSS/JS a medida por plantilla individual.
+function dashHudBodySlotHTML(slot, widget, seen) {
+  switch (slot) {
+    case "icon":
+      return `<div class="dash-hud-slot-icon-big">${escapeHtml(dashHudMetaFor(widget.node_id).icon)}</div>`;
+    case "body":
+      return `<div class="dash-hud-slot-body">${escapeHtml(widget.last_detalle || `${widget.count_recent} eventos recientes`)}</div>`;
+    case "caption":
+      return widget.curator_caption ? `<div class="dash-hud-slot-caption">${escapeHtml(widget.curator_caption)}</div>` : "";
+    case "narrative":
+      return `<div class="dash-hud-slot-narrative">${escapeHtml(widget.curator_caption || widget.last_detalle || "sin novedades reales todavía")}</div>`;
+    case "chart":
+      return renderActivitySparkline(widget.cost_series && widget.cost_series.length ? widget.cost_series : widget.activity_buckets);
+    case "badge":
+      return `<div class="dash-hud-slot-badge">${widget.count_recent}</div>`;
+    case "list": {
+      const items = widget.recent_items || [];
+      return items.length ? `<ul class="dash-hud-slot-list">${items.map((it) => `<li>${escapeHtml(it.detalle)}</li>`).join("")}</ul>` : "";
+    }
+    case "timeline": {
+      const items = widget.recent_items || [];
+      return items.length
+        ? `<ul class="dash-hud-slot-timeline">${items.map((it) => `<li><span class="dash-hud-slot-timeline-time">${relativeTime(it.timestamp)}</span>${escapeHtml(it.detalle)}</li>`).join("")}</ul>`
+        : "";
+    }
+    case "wall": {
+      const items = widget.recent_items || [];
+      return items.length
+        ? `<div class="dash-hud-slot-wall">${items.map((it) => `<div class="dash-hud-slot-wall-item">${escapeHtml(it.detalle)}</div>`).join("")}</div>`
+        : "";
+    }
+    case "stat":
+      if (seen.stat) return ""; // el par ya se renderizó (ver más abajo, evita duplicar duo/duo_mini/comparison)
+      seen.stat = true;
+      return `<div class="dash-hud-slot-stat-row">${dashHudStatCellHTML(widget.count_recent, "recientes")}${dashHudStatCellHTML(widget.count_total, "total")}</div>`;
+    case "stat_grid":
+      return `<div class="dash-hud-slot-stat-grid">${dashHudStatCellHTML(widget.count_recent, "recientes")}${dashHudStatCellHTML(widget.count_total, "total")}${dashHudStatCellHTML(widget.score, "score")}${dashHudStatCellHTML(widget.last_timestamp ? relativeTime(widget.last_timestamp) : "—", "última vez")}</div>`;
+    case "gauge": {
+      const pct = Math.min(Math.round((widget.count_recent / 8) * 100), 100);
+      return `<div class="dash-hud-slot-gauge" style="--gauge-pct:${pct}" data-gauge-label="${widget.count_recent}"></div>`;
+    }
+    case "ticker":
+      return `<div class="dash-hud-slot-ticker">${escapeHtml(widget.last_detalle || `${widget.count_recent} eventos`)}</div>`;
+    default:
+      return "";
+  }
+}
+
+function dashHudNodeContentHTML(widget, template) {
+  const meta = dashHudMetaFor(widget.node_id);
+  const state = dashboardPrefs.hud_widget_state[widget.node_id] || "auto";
+  const pinIcon = state === "pinned" ? "📌" : "📍";
+  const pinTitle = state === "pinned" ? "dejar de fijar (vuelve a automático)" : "fijar acá";
+  const seen = {};
+  const bodyHTML = (template.slots || [])
+    .filter((s) => s !== "label") // ya está en el header de abajo, nunca se repite
+    .map((s) => dashHudBodySlotHTML(s, widget, seen))
+    .join("");
+  return `
+    <div class="dash-hud-node-head">
+      <span class="dash-hud-node-icon">${escapeHtml(meta.icon)}</span>
+      <span class="dash-hud-node-label">${escapeHtml(meta.label)}</span>
+      <button class="dash-hud-node-pin" data-dash-hud-pin="${escapeHtml(widget.node_id)}" title="${pinTitle}">${pinIcon}</button>
+    </div>
+    ${bodyHTML}
+  `;
+}
+
+function dashHudOpacityForIndex(index) {
+  return Math.max(1 - index * 0.07, 0.45);
+}
+function dashHudTransformFor(pos, opts) {
+  const z = -((pos.ring || 0) * 70);
+  if (opts && opts.exitToCenter) {
+    return `translate3d(${opts.cx}px, ${opts.cy}px, -220px) translate(-50%, -50%) scale(0.55)`;
+  }
+  return `translate3d(${pos.x}px, ${pos.y}px, ${z}px) translate(-50%, -50%)`;
+}
+
+// Reposición real vía FLIP (First-Last-Invert-Play, sin librería nueva,
+// mismo criterio "cero dependencias" del resto del frontend): un widget que
+// sigue siendo relevante NUNCA se destruye y recrea entre polls — solo
+// cambia su transform (posición + profundidad Z, ya anima solo por CSS
+// transition) y su contenido si cambió. Solo entran/salen del DOM los que
+// aparecen o dejan de ser relevantes. En el mismo paso se actualizan las
+// líneas de conexión (Decisión 5) — mismo ciclo de vida, sin una función
+// paralela separada.
+function renderDashboardHudWidgets(widgets) {
+  const stageRect = dashHudStage.getBoundingClientRect();
+  const width = stageRect.width || 600, height = stageRect.height || 400;
+  // Centro REAL y completo del stage — tiene que coincidir con dónde el CSS
+  // posiciona al orbe (`left:50%; top:50%`), nunca un centro corrido.
+  const cx = width / 2, cy = height / 2;
+  // Bug real encontrado con Playwright: el dock de chat (fijo, siempre
+  // activo mientras Vista HUD lo está) ocupa una franja real abajo del
+  // stage — #appRoot (donde vive el stage) trae su propio z-index, así que
+  // un widget colocado detrás del dock queda atrapado abajo suyo sin
+  // importar el z-index local del widget: invisible/inclickeable aunque el
+  // layout "creyera" que cabía ahí. Se reserva esa franja como un LÍMITE de
+  // búsqueda (`bottomReserve`, pasado a packHudWidgets), nunca corriendo el
+  // centro — correrlo desalineaba el origen de la espiral del orbe real
+  // (otro bug real encontrado, ver comentario en packHudWidgets).
+  const HUD_CHAT_DOCK_RESERVED_HEIGHT = 260;
+
+  const activeIds = widgets.map((w) => w.node_id);
+  const hiddenIds = Object.keys(dashHudNodeEls).filter((id) => !activeIds.includes(id));
+  hiddenIds.forEach((id) => {
+    const el = dashHudNodeEls[id];
+    delete dashHudNodeEls[id];
+    delete dashHudLastData[id];
+    el.dataset.anim = "leaving";
+    el.style.transform = dashHudTransformFor(null, { exitToCenter: true, cx, cy });
+    el.addEventListener("transitionend", () => el.remove(), { once: true });
+    const line = dashHudLineEls[id];
+    if (line) { line.remove(); delete dashHudLineEls[id]; }
+  });
+
+  const autoWidgets = [];
+  const pinnedPositions = {};
+  const sizeById = {};
+  activeIds.forEach((id) => {
+    const state = dashboardPrefs.hud_widget_state[id] || "auto";
+    if (state === "hidden") return;
+    const widget = widgets.find((w) => w.node_id === id);
+    const template = dashHudTemplateFor(widget.template || "standard");
+    sizeById[id] = { width: template.width, height: template.height };
+    const opts = dashboardPrefs.hud_widget_options[id];
+    if (state === "pinned" && opts) {
+      pinnedPositions[id] = {
+        x: cx + opts.radius * Math.cos(opts.angle),
+        y: cy + opts.radius * Math.sin(opts.angle),
+      };
+    } else {
+      autoWidgets.push(widget);
+    }
+  });
+  const positions = packHudWidgets(autoWidgets, sizeById, pinnedPositions, width, height, HUD_CHAT_DOCK_RESERVED_HEIGHT);
+
+  activeIds.forEach((id, index) => {
+    const state = dashboardPrefs.hud_widget_state[id] || "auto";
+    if (state === "hidden") return; // el fundador lo ocultó a mano — nunca se muestra, sin importar actividad real
+    const widget = widgets.find((w) => w.node_id === id);
+    const templateId = widget.template || "standard";
+    const template = dashHudTemplateFor(templateId);
+    let el = dashHudNodeEls[id];
+    let isNew = false;
+    if (!el) {
+      isNew = true;
+      el = document.createElement("div");
+      el.className = "dash-hud-node";
+      el.dataset.nodeId = id;
+      el.dataset.anim = "arriving";
+      el.addEventListener("animationend", () => el.removeAttribute("data-anim"), { once: true });
+      dashHudWidgets.appendChild(el);
+      dashHudNodeEls[id] = el;
+    }
+    el.dataset.family = dashHudFamilyFor(id);
+    el.dataset.state = state;
+    el.dataset.tier = widget.size_tier;
+    el.dataset.template = templateId;
+    el.style.width = template.width + "px";
+    el.style.height = template.height + "px";
+    if (widget.has_error_recent) el.setAttribute("data-alert", "1");
+    else el.removeAttribute("data-alert");
+    const pos = positions[id];
+    if (pos) {
+      el.style.transform = dashHudTransformFor(pos);
+      el.style.opacity = String(dashHudOpacityForIndex(index));
+      el.dataset.x = pos.x;
+      el.dataset.y = pos.y;
+
+      let line = dashHudLineEls[id];
+      if (!line) {
+        line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("class", "dash-hud-connection-line");
+        dashHudConnections.appendChild(line);
+        dashHudLineEls[id] = line;
+      }
+      line.setAttribute("x1", String(cx));
+      line.setAttribute("y1", String(cy));
+      line.setAttribute("x2", String(pos.x));
+      line.setAttribute("y2", String(pos.y));
+      line.style.opacity = String(dashHudOpacityForIndex(index) * 0.5);
+    }
+
+    const prev = dashHudLastData[id];
+    const changed = isNew || !prev || prev.last_timestamp !== widget.last_timestamp
+      || prev.curator_caption !== widget.curator_caption || prev.template !== templateId;
+    if (changed) {
+      el.innerHTML = dashHudNodeContentHTML(widget, template);
+      if (prev) {
+        el.classList.remove("dash-hud-node-updating");
+        void el.offsetWidth; // fuerza reflow para poder re-disparar la animación
+        el.classList.add("dash-hud-node-updating");
+      }
+    }
+    dashHudLastData[id] = widget;
+  });
+}
+dashHudWidgets.addEventListener("click", (evt) => {
+  const pinBtn = evt.target.closest("[data-dash-hud-pin]");
+  if (pinBtn) {
+    evt.stopPropagation();
+    toggleDashHudPin(pinBtn.dataset.dashHudPin);
+    return;
+  }
+  const node = evt.target.closest(".dash-hud-node");
+  if (node) openNodeDrillPanel(node.dataset.nodeId);
+});
+
+function toggleDashHudPin(nodeId) {
+  const current = dashboardPrefs.hud_widget_state[nodeId] || "auto";
+  if (current === "pinned") {
+    dashboardPrefs.hud_widget_state[nodeId] = "auto";
+    delete dashboardPrefs.hud_widget_options[nodeId];
+  } else {
+    // Fija en la posición real actual en vez de abrir un flujo de arrastre
+    // nuevo — más simple, mismo resultado visual: el widget deja de
+    // recalcularse por relevancia y se queda exactamente donde está.
+    const el = dashHudNodeEls[nodeId];
+    const stageRect = dashHudStage.getBoundingClientRect();
+    const cx = stageRect.width / 2, cy = stageRect.height / 2;
+    if (el && el.dataset.x !== undefined) {
+      const dx = parseFloat(el.dataset.x) - cx, dy = parseFloat(el.dataset.y) - cy;
+      dashboardPrefs.hud_widget_options[nodeId] = { angle: Math.atan2(dy, dx), radius: Math.sqrt(dx * dx + dy * dy) };
+    }
+    dashboardPrefs.hud_widget_state[nodeId] = "pinned";
+  }
+  persistPrefs();
+  renderDashboardHudWidgets(dashHudLastWidgets);
+}
+
+function renderDashHudBanner(curation) {
+  if (curation.curating) {
+    dashHudBanner.innerHTML = '<span class="dash-hud-banner-dot"></span>curando el dashboard...';
+    dashHudBanner.classList.add("curating");
+    return;
+  }
+  dashHudBanner.classList.remove("curating");
+  dashHudBanner.textContent = curation.headline || "";
+}
+
+async function pollDashHud() {
+  try {
+    await ensureDashHudTemplates(); // se cachea sola — solo pega la red la primera vez
+    const res = await apiFetch("/dashboard/widget_summaries");
+    const data = await res.json();
+    dashHudLastWidgets = data.widgets;
+    renderDashboardHudWidgets(data.widgets);
+  } catch (e) {
+    // fallo silencioso: se reintenta en el próximo ciclo, mismo criterio que el resto del dashboard
+  }
+  try {
+    const curRes = await apiFetch("/dashboard/curation");
+    const curation = await curRes.json();
+    renderDashHudBanner(curation);
+    // Reacción real de la esfera central (pedido explícito: "se mueve
+    // constantemente en función de la información presentada") — el pulso
+    // de "curating" solo se activa cuando el backend está de verdad
+    // llamando al LLM en ese momento, nunca decorativo.
+    dashHudOrb.classList.toggle("curating", !!curation.curating);
+  } catch (e) {}
+}
+
+function startDashHudPolling() {
+  stopDashHudPolling();
+  pollDashHud();
+  dashHudPollTimer = setInterval(pollDashHud, BRAIN_POLL_MS);
+}
+function stopDashHudPolling() {
+  if (dashHudPollTimer) {
+    clearInterval(dashHudPollTimer);
+    dashHudPollTimer = null;
+  }
+}
+document.addEventListener("visibilitychange", () => {
+  if (!dashHudActive) return;
+  if (document.hidden) stopDashHudPolling();
+  else startDashHudPolling();
+});
+
+// Drill-down genérico por nodo (Decisión 4): mismos datos reales que
+// /dashboard/telemetry_feed, filtrados a un solo nodo — funciona
+// automáticamente para cualquier nodo real, incluida cualquier capacidad
+// futura que todavía no tenga una vista propia más rica.
+async function openNodeDrillPanel(nodeId) {
+  const meta = dashHudMetaFor(nodeId);
+  nodeDrillTitle.textContent = meta.label || nodeId;
+  nodeDrillBody.innerHTML = loadingBody();
+  nodeDrillOverlay.classList.add("open");
+  nodeDrillPanel.classList.add("open");
+  try {
+    const res = await apiFetch(`/dashboard/node_activity/${encodeURIComponent(nodeId)}`);
+    const data = await res.json();
+    renderNodeDrillBody(data.events);
+  } catch (e) {
+    nodeDrillBody.innerHTML = '<div class="dash-loading">error cargando el detalle</div>';
+  }
+}
+function renderNodeDrillBody(events) {
+  if (!events.length) {
+    nodeDrillBody.innerHTML = '<div class="dash-loading">sin actividad registrada todavía</div>';
+    return;
+  }
+  nodeDrillBody.innerHTML = events
+    .slice()
+    .reverse()
+    .map(
+      (ev) => `
+    <div class="node-drill-row">
+      <div class="node-drill-row-verb">${escapeHtml(ev.verbo)}</div>
+      ${ev.detalle ? `<div class="node-drill-row-detalle">${escapeHtml(ev.detalle)}</div>` : ""}
+      <div class="node-drill-row-meta">${relativeTime(ev.timestamp)}</div>
+    </div>`
+    )
+    .join("");
+}
+function closeNodeDrillPanel() {
+  nodeDrillOverlay.classList.remove("open");
+  nodeDrillPanel.classList.remove("open");
+}
+nodeDrillOverlay.addEventListener("click", closeNodeDrillPanel);
+nodeDrillCloseBtn.addEventListener("click", closeNodeDrillPanel);
 
 /* ---------- panel de configuración ---------- */
 function openSettings() {
@@ -4578,6 +6354,8 @@ function openSettings() {
   renderPersonalitySection();
   renderProfileSection();
   renderLlmRoutingSection();
+  renderHudChatPositionSection();
+  renderTemplateProposalsSection();
 }
 function closeSettings() {
   settingsOverlay.classList.remove("open");
@@ -4600,6 +6378,58 @@ async function renderSettingsList() {
       if (currentView === "dashboard") refreshDashboard();
     });
   });
+}
+
+// Posición del chat en Vista HUD (Decisión 7) — mismo patrón visual de fila
+// + toggle que renderSettingsList, un valor a la vez (izquierda/centro/derecha).
+const HUD_CHAT_POSITIONS = [
+  { value: "left", label: "Izquierda (default)" },
+  { value: "center", label: "Centro" },
+  { value: "right", label: "Derecha" },
+];
+async function renderHudChatPositionSection() {
+  if (!dashboardPrefs) dashboardPrefs = await (await apiFetch("/dashboard/preferences")).json();
+  hudChatPositionList.innerHTML = HUD_CHAT_POSITIONS.map(({ value, label }) => `
+    <div class="settings-row">
+      <span>${escapeHtml(label)}</span>
+      <button class="settings-toggle ${dashboardPrefs.hud_chat_position === value ? "on" : ""}" data-hud-chat-position="${value}"></button>
+    </div>
+  `).join("");
+  hudChatPositionList.querySelectorAll("[data-hud-chat-position]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      dashboardPrefs.hud_chat_position = btn.dataset.hudChatPosition;
+      chatDock.dataset.position = dashboardPrefs.hud_chat_position;
+      persistPrefs();
+      renderHudChatPositionSection();
+    });
+  });
+}
+
+// Propuestas de plantilla del curador (Decisión 2, Track A) — de solo
+// lectura: nunca se aplican solas, esto es para que el fundador las vea y
+// decida si vale la pena construirlas a mano (ver CONSTITUTION.md Art. III/V).
+async function renderTemplateProposalsSection() {
+  try {
+    const res = await apiFetch("/dashboard/template_proposals");
+    const data = await res.json();
+    if (!data.proposals.length) {
+      templateProposalsList.innerHTML = '<div class="settings-row"><span style="opacity:0.6">sin propuestas todavía</span></div>';
+      return;
+    }
+    templateProposalsList.innerHTML = data.proposals
+      .slice()
+      .reverse()
+      .map(
+        (p) => `
+      <div class="settings-row" style="flex-direction:column; align-items:flex-start; gap:0.15rem;">
+        <strong>${escapeHtml(p.name)}</strong>
+        <span style="font-size:0.75rem; opacity:0.75;">${escapeHtml(p.reason)}</span>
+      </div>`
+      )
+      .join("");
+  } catch (e) {
+    templateProposalsList.innerHTML = '<div class="settings-row"><span>error cargando propuestas</span></div>';
+  }
 }
 settingsBtn.addEventListener("click", () => { userMenu.classList.remove("open"); openSettings(); });
 settingsCloseBtn.addEventListener("click", closeSettings);

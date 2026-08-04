@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Snarf — Dock radial HUD (prototipo, Fase 2)</title>
+<link rel="stylesheet" href="./hud_design_tokens.css">
+<style>
+  /* Prototipo autocontenido de la Fase 2 (dock radial) — datos mock,
+     todavía sin conectar al backend real. No se enlaza desde
+     web/index.html; Fase 5 reemplaza los datos mock por reales y decide
+     cómo se integra al dashboard. */
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--hud-bg-void);
+    color: var(--hud-text);
+    font-family: var(--hud-font-sans);
+    overflow: hidden;
+  }
+
+  .stage {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+
+  /* --- El dock radial: contenedor con perspectiva real --- */
+  .hud-dock {
+    position: relative;
+    width: 100%;
+    max-width: 900px;
+    height: 320px;
+    perspective: 1000px;
+    margin-bottom: 6vh;
+    /* `perspective` crea su propio contexto de apilado — sin un z-index
+       explícito acá, el z-index:4 de .hud-node solo gana DENTRO de este
+       contenedor, no contra el backdrop (hermano, con z-index propio) del
+       panel anclado. Con esto el dock entero queda por encima. */
+    z-index: 4;
+  }
+
+  .hud-dock-arc {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 0;
+    height: 0;
+    transform-style: preserve-3d;
+  }
+
+  /* Punto focal central — referencia visual del centro del arco, no
+     interactivo. */
+  .hud-focal-point {
+    position: absolute;
+    left: 50%;
+    bottom: -6px;
+    width: 6px;
+    height: 6px;
+    margin-left: -3px;
+    border-radius: 50%;
+    background: var(--hud-cyan);
+    box-shadow: var(--hud-glow-lg) var(--hud-cyan);
+    animation: hud-focal-pulse 2.4s ease-in-out infinite;
+  }
+
+  @keyframes hud-focal-pulse {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.6); }
+  }
+
+  /* --- Posicionamiento 3D real vs. animación de estado: dos transforms
+     sobre el MISMO elemento se pisan entre sí (una CSS animation escribe
+     `transform` directo y gana sobre lo que puso JS inline — mismo bug ya
+     documentado y resuelto en el cerebro actual, ver ADR 0069). Se separa
+     en dos elementos: `.hud-node-slot` (posición en el arco, puesta una
+     sola vez por JS, nunca animada) envolviendo a `.hud-node` (estado
+     collapsed/focus/select + animación de materialización, ambos sobre
+     `transform` pero sin competir con la posición porque viven en
+     elementos distintos). --- */
+  .hud-node-slot {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 0;
+    height: 0;
+  }
+
+  /* Fase 5: la alerta de costo (nodo sintético "cost", solo aparece cuando
+     el gasto del día real cruza el umbral) se distingue en ámbar incluso
+     colapsada — no hace falta hover para notar que pide atención. */
+  .hud-node[data-alert="1"] {
+    border-color: var(--hud-amber);
+    box-shadow: var(--hud-glow-sm) rgba(255, 180, 84, 0.35);
+  }
+  .hud-node[data-alert="1"] .hud-node-icon { color: var(--hud-amber-soft); }
+
+  .hud-node {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 52px;
+    height: 52px;
+    margin-left: -26px;
+    margin-bottom: -26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: var(--hud-bg-panel);
+    border: 1px solid var(--hud-border);
+    box-shadow: var(--hud-glow-sm) rgba(79, 216, 232, 0.2);
+    transition: transform 260ms var(--hud-ease-materialize), box-shadow 260ms ease, border-color 260ms ease;
+    will-change: transform;
+    /* Por encima del backdrop del panel anclado a propósito: con un nodo
+       ya seleccionado, clickear otro nodo cambia la selección directo (sin
+       forzar cerrar primero) — el backdrop solo intercepta clicks en el
+       resto de la pantalla. */
+    z-index: 4;
+  }
+
+  .hud-node-icon {
+    font-family: var(--hud-font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.02em;
+    color: var(--hud-cyan-soft);
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+
+  .hud-node-label {
+    position: absolute;
+    top: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-family: var(--hud-font-mono);
+    font-size: 0.7rem;
+    color: var(--hud-text-dim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+  }
+
+  /* Estado: focus (hover) — se expande, revela el label, no persiste */
+  .hud-node[data-state="focus"] {
+    transform: scale(1.35);
+    border-color: var(--hud-cyan);
+    box-shadow: var(--hud-glow-md) rgba(79, 216, 232, 0.55);
+    z-index: 5;
+  }
+  .hud-node[data-state="focus"] .hud-node-label { opacity: 1; }
+
+  /* Estado: select (click) — queda anclado, más grande y con acento ámbar
+     (capa de atención/selección explícita, distinto del cian informativo
+     de hover — mismo criterio semántico del token --hud-amber). */
+  .hud-node[data-state="select"] {
+    transform: scale(1.55);
+    border-color: var(--hud-amber);
+    box-shadow: var(--hud-glow-lg) rgba(255, 180, 84, 0.6);
+    z-index: 6;
+  }
+  .hud-node[data-state="select"] .hud-node-label {
+    opacity: 1;
+    color: var(--hud-amber-soft);
+  }
+  .hud-node[data-state="select"] .hud-node-icon { color: var(--hud-amber-soft); }
+
+  /* --- Panel anclado del nodo seleccionado — fuera del arco 3D (no hereda
+     perspectiva) para que el detalle quede siempre legible sin distorsión. --- */
+  .hud-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 3;
+  }
+
+  .hud-panel {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(420px, 88vw);
+    max-height: 60vh;
+    overflow-y: auto;
+    background: var(--hud-bg-panel-solid);
+    border: 1px solid var(--hud-border-amber);
+    box-shadow: var(--hud-glow-lg) rgba(255, 180, 84, 0.28);
+    border-radius: 10px;
+    padding: 18px 20px;
+    z-index: 10;
+  }
+
+  .hud-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+
+  .hud-panel-title {
+    font-family: var(--hud-font-mono);
+    color: var(--hud-amber-soft);
+    letter-spacing: 0.02em;
+  }
+
+  .hud-panel-close {
+    cursor: pointer;
+    background: none;
+    border: 1px solid var(--hud-border-amber);
+    color: var(--hud-amber-soft);
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    font-family: var(--hud-font-mono);
+    line-height: 1;
+  }
+
+  .hud-panel-agente {
+    font-size: 0.75rem;
+    color: var(--hud-text-dim);
+    margin-bottom: 14px;
+  }
+
+  .hud-feed-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 0.82rem;
+  }
+  .hud-feed-row:last-child { border-bottom: none; }
+  .hud-feed-verb { color: var(--hud-text); }
+  .hud-feed-meta { color: var(--hud-text-dim); }
+
+  .hint {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--hud-font-mono);
+    font-size: 0.78rem;
+    color: var(--hud-text-dim);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <div class="hint">HUD dock — hover expande (focus), click ancla (select), click afuera cierra<br><span id="sourceHint" style="opacity:0.7">cargando…</span></div>
+  <div class="stage">
+    <div class="hud-dock" id="hudDock">
+      <div class="hud-dock-arc" id="hudArc">
+        <div class="hud-focal-point"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./hud_gestures.js"></script>
+  <script>
+    // Metadatos estáticos por nodo (label/ícono/agente) — el vocabulario
+    // real de snarf/telemetry/brain.py. "cost" es el único sintético: no es
+    // un nodo del cerebro, es la alerta de gasto del día de Fase 5
+    // (snarf/telemetry/relevance.py:cost_alert), solo aparece cuando el
+    // backend real la reporta.
+    var NODE_META = {
+      drive: { agente: "capability", label: "drive", icon: "DRV" },
+      gmail_read: { agente: "capability", label: "gmail", icon: "GML" },
+      specialist_gmail: { agente: "specialist", label: "gmail digest", icon: "SPG" },
+      llm: { agente: "capability", label: "llm", icon: "LLM" },
+      memory: { agente: "capability", label: "memoria", icon: "MEM" },
+      knowledge: { agente: "capability", label: "knowledge", icon: "KNW" },
+      stt: { agente: "capability", label: "stt", icon: "STT" },
+      tts: { agente: "capability", label: "tts", icon: "TTS" },
+      calendar_view: { agente: "capability", label: "calendar", icon: "CAL" },
+      cost: { agente: "alert", label: "gasto del día", icon: "$" }
+    };
+    // Orden default (sin datos reales todavía, ej. abierto por file://) —
+    // el mismo de siempre en Fase 2, "cost" nunca aparece acá porque es
+    // una alerta real, no se simula.
+    var FALLBACK_ORDER = ["drive", "gmail_read", "specialist_gmail", "llm", "memory", "knowledge", "stt", "tts", "calendar_view"];
+
+    // Mismo criterio de verbo temático que snarf/telemetry/verbs.py — el
+    // contenido del panel sigue mockeado acá a propósito (Fase 5 conecta la
+    // PRIORIDAD del dock a datos reales, no el feed del panel — eso queda
+    // para cuando se decida la integración final al dashboard, Fase 4/5
+    // ya construyeron GET /dashboard/telemetry_feed para ese momento).
+    var MOCK_VERB = {
+      drive: "hojeando", gmail_read: "espiando el buzón", specialist_gmail: "curando",
+      llm: "pontificando", memory: "rebobinando", knowledge: "rastreando",
+      stt: "escuchando", tts: "hablando", calendar_view: "consultando la agenda",
+      cost: "alertando"
+    };
+
+    function buildMockFeed(nodeId) {
+      var verb = MOCK_VERB[nodeId] || "operando";
+      var rows = [];
+      for (var i = 0; i < 4; i++) {
+        var secondsAgo = (i + 1) * 37;
+        rows.push({ verb: verb, meta: "hace " + secondsAgo + "s · completo" });
+      }
+      return rows;
+    }
+
+    // Reordena una lista ya rankeada (mejor primero) a posiciones de arco
+    // centro-hacia-afuera: el rank 0 cae en el slot central (el más cerca
+    // de cámara por la perspectiva 3D) — "sube de prioridad y se mueve al
+    // centro", pedido explícito del fundador (Fase 5).
+    function centerOutPositions(rankedIds) {
+      var n = rankedIds.length;
+      var positions = new Array(n);
+      var mid = Math.floor((n - 1) / 2);
+      positions[mid] = rankedIds[0];
+      var left = mid - 1, right = mid + 1, goRight = true;
+      for (var i = 1; i < n; i++) {
+        if (goRight && right < n) { positions[right++] = rankedIds[i]; }
+        else if (left >= 0) { positions[left--] = rankedIds[i]; }
+        else if (right < n) { positions[right++] = rankedIds[i]; }
+        goRight = !goRight;
+      }
+      return positions;
+    }
+
+    var arc = document.getElementById("hudArc");
+    var dock = document.getElementById("hudDock");
+    var nodeEls = {};
+
+    var ARC_DEGREES = 130;
+    var RADIUS = 320;
+
+    function buildDock(orderedIds) {
+      arc.querySelectorAll(".hud-node-slot").forEach(function (el) { el.remove(); });
+      nodeEls = {};
+      var ids = orderedIds.filter(function (id) { return NODE_META[id]; });
+
+      ids.forEach(function (id, i) {
+        var meta = NODE_META[id];
+        var t = ids.length === 1 ? 0.5 : i / (ids.length - 1);
+        var angleDeg = -ARC_DEGREES / 2 + t * ARC_DEGREES;
+        var angleRad = (angleDeg * Math.PI) / 180;
+        var x = RADIUS * Math.sin(angleRad);
+        var z = RADIUS * (Math.cos(angleRad) - 1); // 0 al centro, negativo (recede) en los bordes
+        var y = -Math.abs(Math.sin(angleRad)) * 26; // leve arco vertical, no una fila plana
+
+        var slot = document.createElement("div");
+        slot.className = "hud-node-slot";
+        slot.style.transform = "translate3d(" + x.toFixed(1) + "px, " + y.toFixed(1) + "px, " + z.toFixed(1) + "px)";
+
+        var el = document.createElement("div");
+        el.className = "hud-node hud-materialize";
+        el.style.animationDelay = (i * 55) + "ms";
+        el.setAttribute("data-hud-id", id);
+        el.setAttribute("data-state", "collapsed");
+        if (id === "cost") el.setAttribute("data-alert", "1");
+        el.innerHTML =
+          '<span class="hud-node-label">' + meta.label + '</span>' +
+          '<span class="hud-node-icon">' + meta.icon + '</span>';
+
+        slot.appendChild(el);
+        arc.appendChild(slot);
+        nodeEls[id] = { el: el, slot: slot, node: Object.assign({ id: id }, meta) };
+      });
+    }
+
+    fetch("/dashboard/dock_priority", { credentials: "same-origin" })
+      .then(function (res) { if (!res.ok) throw new Error("http " + res.status); return res.json(); })
+      .then(function (data) {
+        var rankedIds = data.ranking.map(function (r) { return r.nodo; });
+        document.getElementById("sourceHint").textContent = "prioridad real: /dashboard/dock_priority";
+        buildDock(centerOutPositions(rankedIds));
+      })
+      .catch(function () {
+        document.getElementById("sourceHint").textContent = "orden default (sin servidor detrás)";
+        buildDock(FALLBACK_ORDER);
+      });
+
+    var panel = null;
+    var backdrop = null;
+
+    function renderPanel(nodeId) {
+      var entry = nodeEls[nodeId];
+      if (!entry) return;
+      var feed = buildMockFeed(nodeId);
+
+      backdrop = document.createElement("div");
+      backdrop.className = "hud-backdrop";
+      backdrop.setAttribute("data-hud-deselect", "1");
+      document.body.appendChild(backdrop);
+
+      panel = document.createElement("div");
+      panel.className = "hud-panel hud-materialize";
+      panel.innerHTML =
+        '<div class="hud-panel-header">' +
+        '  <span class="hud-panel-title">' + entry.node.label + '</span>' +
+        '  <button class="hud-panel-close" type="button" aria-label="Cerrar">×</button>' +
+        '</div>' +
+        '<div class="hud-panel-agente">agente: ' + entry.node.agente + ' · nodo: ' + entry.node.id + '</div>' +
+        feed.map(function (row) {
+          return '<div class="hud-feed-row"><span class="hud-feed-verb">' + row.verb + '</span><span class="hud-feed-meta">' + row.meta + '</span></div>';
+        }).join("");
+      document.body.appendChild(panel);
+      panel.querySelector(".hud-panel-close").addEventListener("click", function () {
+        controller.deselect();
+      });
+    }
+
+    function removePanel() {
+      if (panel) { panel.remove(); panel = null; }
+      if (backdrop) { backdrop.remove(); backdrop = null; }
+    }
+
+    var controller = new HUDGestureController({
+      onFocus: function (id) {
+        var entry = nodeEls[id];
+        if (entry) entry.el.setAttribute("data-state", "focus");
+      },
+      onBlur: function (id) {
+        var entry = nodeEls[id];
+        if (entry && entry.el.getAttribute("data-state") !== "select") {
+          entry.el.setAttribute("data-state", "collapsed");
+        }
+      },
+      onSelect: function (id) {
+        var entry = nodeEls[id];
+        if (entry) entry.el.setAttribute("data-state", "select");
+        renderPanel(id);
+      },
+      onDeselect: function (id) {
+        var entry = nodeEls[id];
+        if (entry) entry.el.setAttribute("data-state", "collapsed");
+        removePanel();
+      }
+    });
+
+    // Un solo binding, en document.body: cubre los nodos (dentro de dock,
+    // descendiente de body) Y el backdrop del panel anclado (se agrega
+    // directo a body, fuera de dock). Bindear ambos por separado hacía que
+    // un click en un nodo disparara select() dos veces (una por listener),
+    // el segundo llamado revertía el primero por el toggle de select().
+    controller.bindPointerSource(document.body);
+  </script>
+</body>
+</html>

@@ -3,7 +3,9 @@ import base64
 import os
 import socket
 import time
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -23,7 +25,22 @@ from snarf.runtime.user_profile import load_profile as load_user_profile, save_p
 from snarf.runtime import llm_routing
 from snarf.runtime import data_backup
 from snarf.knowledge.extraction import categorize_mime
-from snarf.telemetry import activity_log, brain, input_log, usage_tracker
+from snarf.specialists import dashboard_curator as dashboard_curator_module
+from snarf.specialists.dashboard_curator import DashboardCuratorSpecialist
+from snarf.telemetry import (
+    activity_log,
+    brain,
+    cost_history,
+    detail,
+    events,
+    input_log,
+    input_preprocessing,
+    relevance,
+    usage_tracker,
+    verbs,
+    widget_summary,
+    widget_templates,
+)
 from snarf.voice.router import TierUnavailable, VoiceRouter
 from snarf.runtime.web_auth import (
     SESSION_COOKIE_NAME,
@@ -42,6 +59,27 @@ voice_router = VoiceRouter()
 _elevenlabs_for_dashboard = ElevenLabsTTS()
 orchestrator = Orchestrator(user_id=DEFAULT_USER_ID)
 audio_store = AudioStore()
+
+
+def _dashboard_curation_snapshot() -> dict:
+    all_events = events.all_events()
+    today_key = datetime.now(ZoneInfo(cost_history.FOUNDER_TIMEZONE)).strftime("%Y-%m-%d")
+    day_summary = cost_history.by_day(all_events)
+    return widget_summary.curation_snapshot(all_events, day_summary, today_key=today_key)
+
+
+# Vista HUD del dashboard (rediseño radial) — Especialista Cognitivo real
+# (no un módulo de código más) que cura el dashboard a partir de datos ya
+# reales (ver snarf/telemetry/widget_summary.py). Mismo patrón cache-first
+# que GmailDigestSpecialist: nunca llama al LLM en cada request del
+# navegador, solo el loop periódico de abajo lo refresca de verdad.
+dashboard_curator = DashboardCuratorSpecialist(
+    snapshot_provider=_dashboard_curation_snapshot,
+    llm_factory=lambda: llm_routing.build_llm("dashboard_curator"),
+    user_id=DEFAULT_USER_ID,
+)
+dashboard_curating_in_progress = False
+
 
 def _google_connected(user_id: str) -> bool:
     return (GOOGLE_TOKENS_DIR / f"{user_id}.json").exists()
@@ -68,6 +106,42 @@ async def _periodic_audio_purge_loop():
         audio_store.purge_older_than(AUDIO_PURGE_MAX_AGE_SECONDS)
 
 
+# Cadencia real del curador del dashboard: nunca disparado por el poll del
+# navegador (GET /dashboard/widget_summaries siempre sirve el cache) — solo
+# este loop de backend llama al LLM de verdad. Chequea cada minuto si la
+# señal real cambió (nodo más relevante distinto, alerta de costo nueva,
+# cambio en la cantidad de errores recientes) para refrescar antes si hace
+# falta, pero nunca más seguido que eso — mismo criterio de control de costo
+# que ya evitó el incidente real de gasto documentado en este repo.
+DASHBOARD_CURATION_INTERVAL_SECONDS = 10 * 60
+DASHBOARD_CURATION_CHECK_INTERVAL_SECONDS = 60
+
+
+def _dashboard_curation_signal() -> tuple:
+    snapshot = _dashboard_curation_snapshot()
+    top_node = snapshot["summaries"][0]["node_id"] if snapshot["summaries"] else None
+    return (top_node, snapshot["cost_alert"] is not None, len(snapshot["recent_errors"]))
+
+
+async def _periodic_dashboard_curation_loop():
+    global dashboard_curating_in_progress
+    last_signal = None
+    elapsed_since_refresh = DASHBOARD_CURATION_INTERVAL_SECONDS  # refresca en el primer ciclo real
+    while True:
+        await asyncio.sleep(DASHBOARD_CURATION_CHECK_INTERVAL_SECONDS)
+        elapsed_since_refresh += DASHBOARD_CURATION_CHECK_INTERVAL_SECONDS
+        signal = _dashboard_curation_signal()
+        signal_changed = last_signal is not None and signal != last_signal
+        if elapsed_since_refresh >= DASHBOARD_CURATION_INTERVAL_SECONDS or signal_changed:
+            dashboard_curating_in_progress = True
+            try:
+                dashboard_curator.refresh()
+            finally:
+                dashboard_curating_in_progress = False
+            elapsed_since_refresh = 0
+        last_signal = signal
+
+
 @app.on_event("startup")
 async def warmup():
     orchestrator.warmup()
@@ -80,6 +154,7 @@ async def warmup():
         asyncio.create_task(_periodic_backup_loop())
         audio_store.purge_older_than(AUDIO_PURGE_MAX_AGE_SECONDS)
         asyncio.create_task(_periodic_audio_purge_loop())
+        asyncio.create_task(_periodic_dashboard_curation_loop())
 
 
 class SendRequest(BaseModel):
@@ -115,6 +190,16 @@ class DashboardPreferences(BaseModel):
     visible_widgets: dict[str, bool] = {}
     panel_order: list[str] = []
     widget_options: dict[str, dict] = {}
+    # Vista HUD del dashboard (rediseño radial) — campos aditivos, nunca
+    # tocan los tres de arriba (Vista clásica sigue funcionando igual que
+    # siempre, sin cambios, mismo criterio de reversibilidad real).
+    dashboard_view: str = "classic"
+    hud_widget_state: dict[str, str] = {}
+    hud_widget_options: dict[str, dict] = {}
+    # v2 del rediseño HUD: posición del chat y si el drawer de
+    # conversaciones/proyectos queda fijo abierto — también aditivos.
+    hud_chat_position: str = "left"
+    hud_sidebar_pinned: bool = False
 
 
 class PersonalityPreferences(BaseModel):
@@ -212,7 +297,7 @@ async def transcribe(file: UploadFile, user_id: str = Depends(require_user)):
 
 @app.post("/send", response_model=SendResponse)
 def send(payload: SendRequest, background_tasks: BackgroundTasks, user_id: str = Depends(require_user)):
-    input_log.record("text")
+    input_log.record("text", detalle=detail.truncate_detalle(payload.text))
     # Se chequea ANTES de handle() (que ya va a agregar la entrada de este
     # turno) si esta conversación todavía no tenía ningún mensaje — así se
     # sabe si este es el primer intercambio real, sin ambigüedad.
@@ -270,7 +355,7 @@ async def upload_file(file: UploadFile, project_id: str | None = Form(None), use
         raise HTTPException(400, "Google no conectado")
     content = await file.read()
     mime_type = file.content_type or "application/octet-stream"
-    input_log.record("file", category=categorize_mime(mime_type))
+    input_log.record("file", category=categorize_mime(mime_type), detalle=detail.truncate_detalle(file.filename))
     try:
         # Con project_id: sube a la carpeta real de ESE proyecto e indexa
         # etiquetado con su id, para que search_within() no quede siempre
@@ -364,6 +449,135 @@ def dashboard_brain(since: float | None = None, user_id: str = Depends(require_u
     return {"server_time": time.time(), **snap}
 
 
+# Fase 4-b del plan de HUD (Vista HUD del cerebro, ver SESSION_STATE.md):
+# recorte mecánico de texto ya real (nunca una llamada nueva al modelo, ver
+# TELEMETRY_SCHEMA.md, sección "Resumen truncado de input/output").
+TELEMETRY_FEED_SUMMARY_MAX_CHARS = 80
+
+
+@app.get("/dashboard/telemetry_feed")
+def dashboard_telemetry_feed(since: float | None = None, user_id: str = Depends(require_user)):
+    # Vista HUD del cerebro (Fase 4-b): mismo evento unificado real de Fase 1
+    # (data/telemetry_events.jsonl), ya anotado acá con el verbo temático
+    # determinístico (snarf/telemetry/verbs.py — nunca generado por el LLM)
+    # y un resumen recortado mecánicamente de `skill`, para que el frontend
+    # no tenga que duplicar ninguna de las dos tablas. Vista clásica sigue
+    # leyendo /dashboard/brain sin tocar — ambas vistas parten de los mismos
+    # tres logs reales que emiten el evento unificado (Fase 1), solo que la
+    # Vista HUD lo consume directo en vez de a través de brain.snapshot().
+    all_events = events.all_events()
+    if since is not None:
+        all_events = [e for e in all_events if e["timestamp"] > since]
+    feed = [
+        {
+            **e,
+            "verbo": verbs.verbo_tematico(e["nodo"], e["agente"], e["estado"], skill=e["skill"]),
+            "resumen": (e["skill"] or "")[:TELEMETRY_FEED_SUMMARY_MAX_CHARS],
+        }
+        for e in all_events[-100:]
+    ]
+    return {"server_time": time.time(), "events": feed}
+
+
+@app.get("/dashboard/dock_priority")
+def dashboard_dock_priority(user_id: str = Depends(require_user)):
+    # Fase 5 del plan de HUD: ranking real de nodos para el dock radial
+    # (Fase 2) — actividad reciente + alertas (errores) + gasto del día
+    # sobre el umbral (Fase 3), nunca datos mock. Ver
+    # snarf/telemetry/relevance.py.
+    all_events = events.all_events()
+    today_key = datetime.now(ZoneInfo(cost_history.FOUNDER_TIMEZONE)).strftime("%Y-%m-%d")
+    day_summary = cost_history.by_day(all_events)
+    ranking = relevance.dock_priority(all_events, relevance.DOCK_NODE_IDS, day_summary, today_key=today_key)
+    return {"server_time": time.time(), "ranking": ranking}
+
+
+@app.get("/dashboard/widget_summaries")
+def dashboard_widget_summaries(user_id: str = Depends(require_user)):
+    # Vista HUD del dashboard (rediseño radial): fuente única de qué widget
+    # se ve en el tablero nuevo — mismo motor de datos que ya usa el dock de
+    # globos contextuales del panel Cerebro (relevance.dock_priority), solo
+    # que acá se expone TODO nodo real con actividad relevante, no un top-N
+    # fijo. `curator_caption`/`curator_template` son opcionales: `None`
+    # significa "el Especialista todavía no lo curó" (nodos chicos, fuera
+    # del top-N curado) — en ese caso `template` cae a la plantilla default
+    # mecánica de su `size_tier`, nunca un placeholder inventado.
+    all_events = events.all_events()
+    today_key = datetime.now(ZoneInfo(cost_history.FOUNDER_TIMEZONE)).strftime("%Y-%m-%d")
+    day_summary = cost_history.by_day(all_events)
+    summaries = widget_summary.all_widget_summaries(all_events, day_summary, today_key=today_key)
+    curation = dashboard_curator.cached_curation() or {}
+    captions = curation.get("node_captions", {})
+    curated_templates = curation.get("node_templates", {})
+    for s in summaries:
+        # Bug real encontrado con Playwright: el template cacheado se elige
+        # para el size_tier que el nodo TENÍA en el momento de curarlo — si
+        # su relevancia bajó entre esa curación y este poll (el ranking se
+        # recalcula en cada request, la curación no), puede haber quedado
+        # con un size_tier más chico ahora. Usar el template viejo sin
+        # validar metía una card de 320px en el espacio angular angosto
+        # reservado para el tier "small", superponiéndose con vecinos.
+        curator_template = curated_templates.get(s["node_id"])
+        valid_for_current_tier = set(widget_templates.templates_for_tier(s["size_tier"]).keys())
+        s["curator_caption"] = captions.get(s["node_id"])
+        s["template"] = (
+            curator_template if curator_template in valid_for_current_tier
+            else widget_templates.DEFAULT_TEMPLATE_BY_TIER[s["size_tier"]]
+        )
+    return {"server_time": time.time(), "widgets": summaries}
+
+
+@app.get("/dashboard/widget_templates")
+def dashboard_widget_templates(user_id: str = Depends(require_user)):
+    # Estática — el frontend la pide una vez al entrar a Vista HUD y la
+    # cachea, en vez de duplicar a mano las 24 plantillas en JS.
+    return {"templates": widget_templates.WIDGET_TEMPLATES}
+
+
+@app.get("/dashboard/template_proposals")
+def dashboard_template_proposals(user_id: str = Depends(require_user)):
+    # Solo lectura — cola de propuestas del curador para que el fundador las
+    # revise (Track A del plan v2: nunca se aplican solas, ver
+    # snarf/specialists/dashboard_curator.py).
+    return {"proposals": dashboard_curator_module._load_template_proposals()}
+
+
+@app.get("/dashboard/curation")
+def dashboard_curation(user_id: str = Depends(require_user)):
+    curation = dashboard_curator.cached_curation()
+    return {
+        "server_time": time.time(),
+        "curating": dashboard_curating_in_progress,
+        "headline": curation["headline"] if curation else None,
+        "generated_at": curation["generated_at"] if curation else None,
+    }
+
+
+@app.get("/dashboard/node_activity/{node_id}")
+def dashboard_node_activity(node_id: str, since: float | None = None, user_id: str = Depends(require_user)):
+    # Drill-down genérico (ver plan del rediseño radial): mismos datos reales
+    # que /dashboard/telemetry_feed, filtrados a un solo nodo — funciona
+    # automáticamente para cualquier nodo real, incluida cualquier capacidad
+    # futura que todavía no tenga un panel de detalle propio como los que ya
+    # existen para drive/gmail/calendar/youtube.
+    all_events = [e for e in events.all_events() if e["nodo"] == node_id]
+    if since is not None:
+        all_events = [e for e in all_events if e["timestamp"] > since]
+    feed = [
+        {**e, "verbo": verbs.verbo_tematico(e["nodo"], e["agente"], e["estado"], skill=e["skill"])}
+        for e in all_events[-100:]
+    ]
+    return {"server_time": time.time(), "events": feed}
+
+
+@app.get("/dashboard/input_efficiency")
+def dashboard_input_efficiency(user_id: str = Depends(require_user)):
+    # Fase 6 del plan de HUD: auditoría real de cuánto contexto viaja
+    # alrededor de lo que el fundador efectivamente escribió, turno a
+    # turno. Ver snarf/telemetry/input_preprocessing.py.
+    return {"recent": input_preprocessing.recent(30), "summary": input_preprocessing.summary()}
+
+
 @app.get("/dashboard/preferences")
 def get_dashboard_preferences(user_id: str = Depends(require_user)):
     return load_prefs(user_id)
@@ -425,6 +639,15 @@ def dashboard_widget_usage(user_id: str = Depends(require_user)):
         except Exception as exc:
             result.setdefault("elevenlabs", {})["subscription_error"] = str(exc)
     return {"vendors": result}
+
+
+@app.get("/dashboard/cost_history")
+def dashboard_cost_history(user_id: str = Depends(require_user)):
+    # Fase 3 del plan de HUD (ver SESSION_STATE.md): agrega el evento
+    # unificado de telemetría (Fase 1) por día/agente/sesión — todos los
+    # eventos reales guardados hasta ahora, no solo los últimos N (una
+    # agregación histórica recortada mentiría el total).
+    return cost_history.summary(events.all_events())
 
 
 @app.get("/dashboard/widgets/drive")

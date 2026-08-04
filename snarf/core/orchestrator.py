@@ -35,7 +35,7 @@ from snarf.memory.episodic import EpisodicMemory
 from snarf.runtime import llm_routing, personality_prefs, user_profile
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
-from snarf.telemetry import activity_log
+from snarf.telemetry import activity_log, context, detail, input_preprocessing
 
 # Único usuario real hoy. El Orchestrator ya recibe un user_id explícito (en
 # vez de asumirlo implícitamente) para que agregar un segundo usuario en el
@@ -118,17 +118,11 @@ SYSTEM_PREFIX = (
     "decilo directo en la respuesta — qué podés hacer, qué no, y por qué — en vez de "
     "intentarlo a fuerza de llamadas a herramientas hasta quedarte sin margen y cortar "
     "el turno sin decir nada útil.\n\n"
-    "Tenés get_current_datetime (fecha/hora real) y measure_text_length (conteo exacto de "
-    "caracteres/palabras, hecho con código, nunca a ojo). Usá get_current_datetime antes de "
-    "timestampear cualquier cosa o cuando necesites saber con certeza qué día es hoy. Usá "
-    "measure_text_length siempre que una tarea tenga un límite duro de longitud: generá el "
-    "texto, medilo, recortá o regenerá más corto si excede, volvé a medir, y solo ahí "
-    "respondé — nunca reportes una cifra de longitud estimada.\n\n"
-    "Tenés herramientas para consultar conversaciones pasadas con el fundador, más allá "
-    "de la conversación actual: list_conversations, get_conversation, search_memory. "
-    "Usalas cuando te pregunten por algo dicho en otra conversación, cuando necesites "
-    "contexto que no está en la conversación actual, o cuando genuinamente creas que "
-    "recordar algo de otra conversación ayuda. Esto es también la base de Memoria "
+    "Cada herramienta ya trae, en su propia descripción del schema, qué hace y cuándo "
+    "usarla — no lo repitas ni lo asumas distinto de lo que ahí dice. Lo que sigue es "
+    "SOLO guía que va más allá de la descripción de una tool puntual (cruza varias, o "
+    "es un protocolo que no cabe ahí).\n\n"
+    "list_conversations/get_conversation/search_memory son también la base de Memoria "
     "consistente (CHARACTER.md): si un pedido revela un hueco real de capacidad — algo "
     "que el fundador necesitó y ninguna herramienta tuya resuelve — señalalo como "
     "propuesta concreta en la respuesta, nunca lo construyas ni lo actives por tu cuenta "
@@ -136,44 +130,21 @@ SYSTEM_PREFIX = (
     "patrones repetidos en conversaciones pasadas (nunca la hagas de forma automática o "
     "sin que la pidan), usá list_conversations + search_memory para juntar evidencia real "
     "antes de proponer candidatos a mejora o tarea nueva.\n\n"
-    "También tenés herramientas de solo lectura sobre Google Drive, Gmail, Calendar y "
-    "YouTube del fundador: drive_list_files, drive_read_file, gmail_list_messages, "
-    "gmail_read_message, calendar_list_calendars, calendar_list_upcoming_events, "
-    "gmail_list_labels, youtube_list_subscriptions, youtube_list_liked_videos. Usalas "
-    "para responder con contexto real cuando el fundador pregunte por su correo, su "
-    "agenda, sus archivos o sus videos.\n\n"
-    "Importante sobre calendar_list_upcoming_events: solo muestra eventos futuros a "
-    "partir de este momento. Si el fundador te habla de un evento y no aparece ahí "
-    "(por ejemplo porque ya pasó, o porque no sabés en qué calendario está), usá "
-    "calendar_search_events con el texto del título antes de concluir que no existe — "
-    "buscá en todos los calendarios relevantes si hace falta.\n\n"
-    "Tenés herramientas de organización que actúan sobre el mundo real pero son "
-    "reversibles y no salen de la cuenta del fundador (no requieren confirmación en dos "
-    "pasos, pero usalas solo cuando el fundador lo pida): gmail_create_label, "
-    "gmail_modify_message_labels, drive_create_folder, drive_move_file, "
-    "drive_rename_file.\n\n"
-    "Además tenés herramientas de alto impacto (Constitution, Artículo VII): "
-    "gmail_send_message, calendar_create_event, calendar_create_calendar, "
-    "calendar_delete_calendar, calendar_delete_event, calendar_move_event (mover un "
-    "evento entre calendarios puede notificar a invitados si el evento tiene invitados, "
-    "por eso lleva confirmación igual que borrar), gmail_delete_label, "
-    "drive_delete_file, drive_share_file (da acceso real a otra persona o vía link "
-    "público, aunque no borre nada), drive_update_document (reemplaza el contenido de un "
-    "Google Doc que YA EXISTE — distinto de drive_create_document, que siempre crea uno "
-    "nuevo) y project_delete. Su protocolo es "
-    "obligatorio, siempre, sin excepción: (1) llamalas primero con confirmed=false (o "
-    "sin ese campo) — no van a ejecutar nada, te van a devolver una vista previa; (2) "
-    "mostrale esa vista previa al fundador tal cual, con claridad, y preguntale si "
-    "confirma; (3) solo volvé a llamar a la misma herramienta con confirmed=true, y "
+    "Las herramientas de organización reversibles (etiquetas, mover/renombrar/crear "
+    "carpetas) no requieren confirmación en dos pasos, pero usalas solo cuando el "
+    "fundador lo pida, nunca por iniciativa propia.\n\n"
+    "Toda herramienta que su propia descripción marque como 'alto impacto' (Constitution, "
+    "Artículo VII) sigue este protocolo, obligatorio, siempre, sin excepción: (1) llamala "
+    "primero con confirmed=false (o sin ese campo) — no va a ejecutar nada, te va a "
+    "devolver una vista previa; (2) mostrale esa vista previa al fundador tal cual, con "
+    "claridad, y preguntale si confirma; (3) solo volvé a llamarla con confirmed=true, y "
     "exactamente los mismos datos, si el fundador respondió de forma explícita e "
-    "inequívoca que sí a ESA propuesta concreta, en este mismo intercambio. Nunca "
-    "asumas una confirmación implícita, y nunca combines la propuesta y la ejecución "
-    "en el mismo turno. Única excepción explícita: drive_update_document — una vez que "
-    "el fundador confirmó la edición de un documento puntual en esta conversación, "
-    "ediciones SIGUIENTES a ESE MISMO documento, más adelante en la misma conversación, "
-    "no necesitan volver a pedirle confirmación (ya la dio para ese documento en esta "
-    "sesión) — llamá directo con confirmed=true. Un documento distinto, o la misma "
-    "edición en una conversación nueva, sí vuelve a pedir confirmación desde cero.\n\n"
+    "inequívoca que sí a ESA propuesta concreta, en este mismo intercambio. Nunca asumas "
+    "una confirmación implícita, y nunca combines la propuesta y la ejecución en el mismo "
+    "turno. calendar_move_event: mover un evento entre calendarios puede notificar a "
+    "invitados si el evento tiene invitados, por eso lleva confirmación igual que borrar. "
+    "drive_update_document tiene su propia excepción a este protocolo (ver su "
+    "descripción) — no la repitas distinto de como está ahí.\n\n"
     "drive_list_files, gmail_list_messages, calendar_list_upcoming_events, "
     "calendar_search_events, youtube_list_subscriptions y youtube_list_liked_videos "
     "tienen un protocolo de confirmed EQUIVALENTE al de arriba, pero por un motivo "
@@ -1419,12 +1390,15 @@ class Orchestrator:
     def _handle_tool(self, name: str, tool_input: dict) -> object:
         handler = self._tool_handlers.get(name)
         if not handler:
-            activity_log.record(name, "unknown_tool")
+            activity_log.record(name, "unknown_tool", detalle=detail.extract(name, "unknown_tool", tool_input, None))
             return {"error": f"herramienta desconocida: {name}"}
         started = time.monotonic()
         try:
             result = handler(tool_input)
-            activity_log.record(name, "ok", duration_ms=(time.monotonic() - started) * 1000)
+            activity_log.record(
+                name, "ok", duration_ms=(time.monotonic() - started) * 1000,
+                detalle=detail.extract(name, "ok", tool_input, result),
+            )
             return result
         except Exception as exc:
             activity_log.record(name, "error", duration_ms=(time.monotonic() - started) * 1000, error=str(exc))
@@ -1448,49 +1422,68 @@ class Orchestrator:
         # lo necesita en cualquier caso).
         project_id = self._memory.get_conversation_project(conversation_id) if conversation_id else None
 
-        if not self._llm.available:
-            echo_text = (
-                "[modo eco - ANTHROPIC_API_KEY no configurada, ver .env.example] "
-                f"{user_input}"
-            )
-            response = LLMResponse(text=echo_text, speech=fallback_speech(echo_text))
-        else:
-            system = SYSTEM_PREFIX + self._identity
-            # Se relee en cada turno (no se cachea en __init__ como
-            # self._identity) — a diferencia de los documentos de identidad,
-            # este valor puede cambiar a mitad de una conversación (desde
-            # configuración o por la tool personality_set_sarcasm) y debe
-            # reflejarse sin reiniciar Snarf.
-            sarcasm_level = personality_prefs.load_prefs(self._user_id)["sarcasm_level"]
-            system += sarcasm_instruction(sarcasm_level)
-            # Se relee en cada turno por el mismo motivo que sarcasm_level —
-            # profile_set_name puede guardar el nombre a mitad de conversación
-            # y tiene que reflejarse en el turno siguiente, sin reiniciar.
-            system += profile_identity_instruction(user_profile.load_profile(self._user_id)["name"])
-            if project_id:
-                # Si el proyecto no existe más o no tiene prompt propio, se
-                # degrada en silencio (nunca rompe el turno).
-                project = self._projects.get(project_id)
-                if project and project.get("prompt"):
-                    system += (
-                        f"\n\nEstás trabajando dentro del proyecto '{project['name']}'. "
-                        f"Instrucciones propias de este proyecto:\n{project['prompt']}\n"
-                    )
-            messages = []
-            for entry in self._memory.recent(10, conversation_id=conversation_id):
-                messages.append({"role": "user", "content": _capped_for_replay(entry["input"])})
-                messages.append({"role": "assistant", "content": _capped_for_replay(entry["response"])})
-            messages.append({"role": "user", "content": user_input})
-            try:
-                response = self._llm.generate(
-                    system=system, messages=messages, tools=TOOLS, tool_handler=self._handle_tool
+        # Contexto por thread (snarf/telemetry/context.py, ver ADR 0079 y el
+        # precedente de ADR 0041 sobre threading.local en un singleton
+        # compartido): mientras dure este turno, cualquier evento de
+        # telemetría emitido más abajo (tool calls vía _handle_tool, la
+        # llamada al LLM) queda taggeado con este conversation_id — sin eso,
+        # "agregar costo por sesión" (Fase 3 del plan de HUD) no tendría de
+        # dónde sacar la sesión. Siempre se limpia en el finally, nunca
+        # sobrevive más allá de este turno.
+        context.set_conversation_id(conversation_id)
+        try:
+            if not self._llm.available:
+                echo_text = (
+                    "[modo eco - ANTHROPIC_API_KEY no configurada, ver .env.example] "
+                    f"{user_input}"
                 )
-            except Exception as exc:
-                # Antes esto tiraba un 500 crudo hasta /send — un fallo real
-                # del LLM (crédito agotado, rate limit, red) degrada con
-                # gracia igual que /transcribe, en vez de romper la request.
-                error_text = f"[error real del LLM, no pude responder: {exc}]"
-                response = LLMResponse(text=error_text, speech=fallback_speech(error_text))
+                response = LLMResponse(text=echo_text, speech=fallback_speech(echo_text))
+            else:
+                system = SYSTEM_PREFIX + self._identity
+                # Se relee en cada turno (no se cachea en __init__ como
+                # self._identity) — a diferencia de los documentos de identidad,
+                # este valor puede cambiar a mitad de una conversación (desde
+                # configuración o por la tool personality_set_sarcasm) y debe
+                # reflejarse sin reiniciar Snarf.
+                sarcasm_level = personality_prefs.load_prefs(self._user_id)["sarcasm_level"]
+                system += sarcasm_instruction(sarcasm_level)
+                # Se relee en cada turno por el mismo motivo que sarcasm_level —
+                # profile_set_name puede guardar el nombre a mitad de conversación
+                # y tiene que reflejarse en el turno siguiente, sin reiniciar.
+                system += profile_identity_instruction(user_profile.load_profile(self._user_id)["name"])
+                if project_id:
+                    # Si el proyecto no existe más o no tiene prompt propio, se
+                    # degrada en silencio (nunca rompe el turno).
+                    project = self._projects.get(project_id)
+                    if project and project.get("prompt"):
+                        system += (
+                            f"\n\nEstás trabajando dentro del proyecto '{project['name']}'. "
+                            f"Instrucciones propias de este proyecto:\n{project['prompt']}\n"
+                        )
+                messages = []
+                for entry in self._memory.recent(10, conversation_id=conversation_id):
+                    messages.append({"role": "user", "content": _capped_for_replay(entry["input"])})
+                    messages.append({"role": "assistant", "content": _capped_for_replay(entry["response"])})
+                history_chars = sum(len(m["content"]) for m in messages)
+                history_entries = len(messages) // 2
+                messages.append({"role": "user", "content": user_input})
+                # Fase 6 del plan de HUD: registro real de cuánto contexto
+                # viaja alrededor de lo que el fundador efectivamente
+                # escribió — nunca una llamada extra al modelo, solo
+                # tamaños ya calculados acá mismo.
+                input_preprocessing.record(conversation_id, user_input, len(system), history_chars, history_entries)
+                try:
+                    response = self._llm.generate(
+                        system=system, messages=messages, tools=TOOLS, tool_handler=self._handle_tool
+                    )
+                except Exception as exc:
+                    # Antes esto tiraba un 500 crudo hasta /send — un fallo real
+                    # del LLM (crédito agotado, rate limit, red) degrada con
+                    # gracia igual que /transcribe, en vez de romper la request.
+                    error_text = f"[error real del LLM, no pude responder: {exc}]"
+                    response = LLMResponse(text=error_text, speech=fallback_speech(error_text))
+        finally:
+            context.clear_conversation_id()
 
         self._memory.append(
             channel_name, user_input, response.text,
@@ -1514,12 +1507,15 @@ class Orchestrator:
             return
         first = entries[0]
         listing = f"Usuario: {first['input']}\n\nRespuesta: {first['response'][:500]}"
+        context.set_conversation_id(conversation_id)
         try:
             title = self._title_llm.generate(
                 system=CONVERSATION_TITLE_SYSTEM_PROMPT, messages=[{"role": "user", "content": listing}]
             ).text
         except Exception:
             return
+        finally:
+            context.clear_conversation_id()
         title = title.strip().strip('"').strip("'").rstrip(".")
         if title:
             self._memory.set_title(conversation_id, title[:CONVERSATION_TITLE_MAX_CHARS])

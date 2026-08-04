@@ -16,7 +16,7 @@ ROUTING_PATH = Path("data/llm_routing.json")
 # del fundador tras encontrar, con precios reales, que ningún proveedor
 # ofrece hoy "tan inteligente como Sonnet" y "notablemente más barato" a la
 # vez — ver ADR de esta ronda).
-ROLES = ("orchestrator", "gmail_digest", "drive_vision", "project_summary", "conversation_title")
+ROLES = ("orchestrator", "gmail_digest", "drive_vision", "project_summary", "conversation_title", "dashboard_curator")
 
 # Default = EXACTAMENTE el comportamiento de siempre (ver GMAIL_DIGEST_MODEL/
 # DRIVE_VISION_MODEL en orchestrator.py) — cero cambio hasta que el fundador
@@ -27,6 +27,7 @@ DEFAULT_ROUTING = {
     "drive_vision": {"provider": "anthropic", "model": "claude-haiku-4-5"},
     "project_summary": {"provider": "anthropic", "model": "claude-haiku-4-5"},
     "conversation_title": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    "dashboard_curator": {"provider": "anthropic", "model": "claude-haiku-4-5"},
 }
 
 # Cada proveedor mapea a una de las 3 Capacidades reales. xai/groq_llama

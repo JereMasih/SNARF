@@ -695,3 +695,93 @@ def test_drive_create_presentation_delegates_to_the_publisher(orchestrator, monk
         "drive_create_presentation", {"title": "T", "slides": [{"title": "s1"}], "destination": "device"}
     )
     assert result == {"id": "f3", "slides": [{"title": "s1"}], "destination": "device"}
+
+
+def test_handle_tags_telemetry_events_with_the_real_conversation_id(orchestrator, monkeypatch):
+    # Fase 3 del plan de HUD (historial de costos "por sesión") depende de
+    # que el evento unificado quede taggeado con el conversation_id real del
+    # turno que lo generó — ver snarf/telemetry/context.py.
+    from snarf.telemetry import events
+
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+
+    def fake_generate(system, messages, tools=None, tool_handler=None):
+        tool_handler("list_conversations", {})
+        return LLMResponse(text="ok", speech="ok")
+
+    monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
+
+    orchestrator.handle("text", "hola", conversation_id="conv-real-42")
+
+    entries = events.recent()
+    tool_event = next(e for e in entries if e["skill"] == "list_conversations")
+    assert tool_event["conversation_id"] == "conv-real-42"
+
+
+def test_conversation_context_is_cleared_after_handle_returns(orchestrator):
+    from snarf.telemetry import context
+
+    orchestrator.handle("text", "hola", conversation_id="conv-1")
+    assert context.get_conversation_id() is None
+
+
+def test_conversation_context_is_cleared_even_if_the_llm_raises(orchestrator, monkeypatch):
+    from snarf.telemetry import context
+
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+
+    def boom(system, messages, tools=None, tool_handler=None):
+        raise RuntimeError("fallo simulado del LLM")
+
+    monkeypatch.setattr(orchestrator._llm, "generate", boom)
+
+    orchestrator.handle("text", "hola", conversation_id="conv-2")
+    assert context.get_conversation_id() is None
+
+
+def test_background_tool_calls_outside_a_conversation_turn_have_no_conversation_id(orchestrator):
+    from snarf.telemetry import events
+
+    orchestrator._handle_tool("list_conversations", {})
+    entries = events.recent()
+    assert entries[-1]["conversation_id"] is None
+
+
+def test_handle_records_input_preprocessing_with_real_sizes(orchestrator, monkeypatch):
+    from snarf.telemetry import input_preprocessing
+
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    monkeypatch.setattr(
+        orchestrator._llm, "generate",
+        lambda system, messages, tools=None, tool_handler=None: LLMResponse(text="ok", speech="ok"),
+    )
+
+    orchestrator.handle("text", "hola snarf, esto es un mensaje corto", conversation_id="c1")
+
+    entries = input_preprocessing.recent()
+    entry = entries[-1]
+    assert entry["conversation_id"] == "c1"
+    assert entry["input_original"] == "hola snarf, esto es un mensaje corto"
+    assert entry["input_chars"] == len("hola snarf, esto es un mensaje corto")
+    assert entry["system_chars"] > 0
+    assert entry["history_chars"] == 0  # primer turno de la conversación, sin historial que replicar
+    assert entry["history_entries"] == 0
+    assert entry["total_sent_chars"] == entry["system_chars"] + entry["input_chars"]
+    assert entry["overhead_ratio"] > 1  # el system prompt solo ya es mucho más grande que el mensaje
+
+
+def test_handle_input_preprocessing_counts_replayed_history_on_a_second_turn(orchestrator, monkeypatch):
+    from snarf.telemetry import input_preprocessing
+
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    monkeypatch.setattr(
+        orchestrator._llm, "generate",
+        lambda system, messages, tools=None, tool_handler=None: LLMResponse(text="respuesta uno", speech="ok"),
+    )
+    orchestrator.handle("text", "primero", conversation_id="c1")
+    orchestrator.handle("text", "segundo", conversation_id="c1")
+
+    entries = input_preprocessing.recent()
+    second = entries[-1]
+    assert second["history_entries"] == 1
+    assert second["history_chars"] == len("primero") + len("respuesta uno")

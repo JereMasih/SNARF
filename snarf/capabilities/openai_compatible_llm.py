@@ -4,7 +4,7 @@ from typing import Callable
 
 from snarf.capabilities.anthropic_llm import MAX_OUTPUT_TOKENS, LLMResponse, split_speech
 from snarf.capabilities.base import Capability
-from snarf.telemetry import usage_tracker
+from snarf.telemetry import detail, usage_tracker
 
 MAX_TOOL_ROUNDS = 5
 
@@ -135,6 +135,14 @@ class OpenAICompatibleLLM(Capability):
         usage = getattr(response, "usage", None)
         if usage is None:
             return
+        text = ""
+        choices = getattr(response, "choices", None) or []
+        if choices and getattr(choices[0], "message", None):
+            text = choices[0].message.content or ""
         usage_tracker.record_generic_llm_call(
-            self._vendor, self.model, getattr(usage, "prompt_tokens", 0) or 0, getattr(usage, "completion_tokens", 0) or 0
+            self._vendor,
+            self.model,
+            getattr(usage, "prompt_tokens", 0) or 0,
+            getattr(usage, "completion_tokens", 0) or 0,
+            detalle=detail.truncate_detalle(text),
         )

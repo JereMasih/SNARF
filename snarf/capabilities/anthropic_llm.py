@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from snarf.capabilities.base import Capability
-from snarf.telemetry import usage_tracker
+from snarf.telemetry import detail, usage_tracker
 
 DEFAULT_MODEL = "claude-sonnet-5"
 MAX_TOOL_ROUNDS = 5
@@ -246,10 +246,17 @@ class AnthropicLLM(Capability):
         usage = getattr(response, "usage", None)
         if usage is None:
             return
+        # Texto real ya generado en esta ronda (mismo slice que hace la
+        # respuesta final más abajo) — nunca una llamada nueva al modelo,
+        # solo lo que el propio response ya trae (ver ADR 0089, campo
+        # `detalle`). Vacío en rondas puramente de tool_use, sin texto.
+        text = "".join(block.text for block in response.content if getattr(block, "type", None) == "text")
         usage_tracker.record_anthropic_call(
             self.model,
             getattr(usage, "input_tokens", 0) or 0,
             getattr(usage, "output_tokens", 0) or 0,
             getattr(usage, "cache_creation_input_tokens", 0) or 0,
             getattr(usage, "cache_read_input_tokens", 0) or 0,
+            stop_reason=getattr(response, "stop_reason", None),
+            detalle=detail.truncate_detalle(text),
         )

@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+from snarf.telemetry import relevance
+
 PREFS_DIR = Path("data/dashboard_prefs")
 
 # "history" (historial de conversaciones) y "chat" (el chat con Snarf en sí)
@@ -23,6 +25,22 @@ WIDGET_IDS = [
 # el núcleo de la app, no un widget más que el fundador pueda apagar sin querer.
 ALWAYS_VISIBLE_WIDGET_IDS = {"chat", "history"}
 GMAIL_MAX_RESULTS_CHOICES = [5, 10, 20]
+
+# Vista HUD del dashboard (rediseño radial) — preferencias completamente
+# ADITIVAS a las de arriba, nunca las tocan ni las reemplazan: la Vista
+# clásica (WIDGET_IDS/visible_widgets/panel_order/widget_options) sigue
+# funcionando exactamente igual que hoy, sin tocar una línea, para que el
+# fundador siempre pueda volver atrás con el toggle si la Vista HUD no lo
+# convence. `HUD_NODE_IDS` es un alias directo (no una copia) de
+# relevance.DOCK_NODE_IDS — crece solo cuando brain.NODE_TIER crece, mismo
+# protocolo de crecimiento que ya rige el resto de la telemetría.
+HUD_NODE_IDS = relevance.DOCK_NODE_IDS
+HUD_WIDGET_STATE_VALUES = {"auto", "pinned", "hidden"}
+DASHBOARD_VIEW_VALUES = {"classic", "hud"}
+# v2 del rediseño HUD (esfera 3D + drawer lateral) — igual de aditivos que
+# los de arriba. Default "left": el fundador pidió explícitamente que el
+# chat arranque a la izquierda en escritorio.
+HUD_CHAT_POSITION_VALUES = {"left", "center", "right"}
 
 GRID_COLUMNS = 12
 MIN_COL_SPAN, MAX_COL_SPAN = 1, GRID_COLUMNS
@@ -66,7 +84,45 @@ def _default_prefs() -> dict:
         "visible_widgets": {widget_id: True for widget_id in WIDGET_IDS},
         "panel_order": list(WIDGET_IDS),
         "widget_options": widget_options,
+        # Default "classic": cero sorpresa, mismo criterio que el toggle ya
+        # existente del panel Cerebro (`let brainView = "classic"`) — la
+        # Vista HUD es algo que el fundador elige ver, nunca algo que
+        # aparece solo.
+        "dashboard_view": "classic",
+        "hud_widget_state": {node_id: "auto" for node_id in HUD_NODE_IDS},
+        "hud_widget_options": {},
+        "hud_chat_position": "left",
+        "hud_sidebar_pinned": False,
     }
+
+
+def _normalize_hud_widget_state(raw: dict) -> dict:
+    raw_state = raw.get("hud_widget_state", {}) if isinstance(raw, dict) else {}
+    if not isinstance(raw_state, dict):
+        raw_state = {}
+    return {
+        node_id: (raw_state.get(node_id) if raw_state.get(node_id) in HUD_WIDGET_STATE_VALUES else "auto")
+        for node_id in HUD_NODE_IDS
+    }
+
+
+def _normalize_hud_widget_options(raw: dict) -> dict:
+    raw_options = raw.get("hud_widget_options", {}) if isinstance(raw, dict) else {}
+    if not isinstance(raw_options, dict):
+        return {}
+    options = {}
+    for node_id, opts in raw_options.items():
+        if node_id not in HUD_NODE_IDS or not isinstance(opts, dict):
+            continue
+        angle, radius = opts.get("angle"), opts.get("radius")
+        # bool es subclase de int — mismo chequeo ya establecido en
+        # _normalize_span de acá abajo para no normalizar True/False a 1/0
+        # en silencio.
+        angle_ok = isinstance(angle, (int, float)) and not isinstance(angle, bool)
+        radius_ok = isinstance(radius, (int, float)) and not isinstance(radius, bool)
+        if angle_ok and radius_ok:
+            options[node_id] = {"angle": float(angle), "radius": float(radius)}
+    return options
 
 
 def _normalize_span(raw_options: dict, widget_id: str) -> dict:
@@ -103,10 +159,29 @@ def _normalize(raw: dict) -> dict:
         gmail_max_results = GMAIL_MAX_RESULTS_CHOICES[0]
     widget_options["gmail"]["max_results"] = gmail_max_results
 
+    dashboard_view = raw.get("dashboard_view")
+    if dashboard_view not in DASHBOARD_VIEW_VALUES:
+        dashboard_view = "classic"
+
+    hud_chat_position = raw.get("hud_chat_position")
+    if hud_chat_position not in HUD_CHAT_POSITION_VALUES:
+        hud_chat_position = "left"
+
+    # bool es subclase de int en Python — mismo chequeo ya establecido en
+    # _normalize_span/_normalize_hud_widget_options de acá arriba, para que
+    # un payload no-bool (ej. 1, "true") no se cuele como True en silencio.
+    hud_sidebar_pinned_raw = raw.get("hud_sidebar_pinned")
+    hud_sidebar_pinned = hud_sidebar_pinned_raw if isinstance(hud_sidebar_pinned_raw, bool) else False
+
     return {
         "visible_widgets": visible,
         "panel_order": order,
         "widget_options": widget_options,
+        "dashboard_view": dashboard_view,
+        "hud_widget_state": _normalize_hud_widget_state(raw),
+        "hud_widget_options": _normalize_hud_widget_options(raw),
+        "hud_chat_position": hud_chat_position,
+        "hud_sidebar_pinned": hud_sidebar_pinned,
     }
 
 

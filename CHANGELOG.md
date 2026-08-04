@@ -2,6 +2,109 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-04] SNARF OS v2: 24 plantillas, profundidad 3D real, y el curador elige presentación
+
+- Tras probar la v1 (ADR 0090) en producción, el fundador pidió una pasada mucho más profunda inspirada en el HUD de Iron Man: widgets más grandes con más información real, sensación 3D genuina (no solo el orbe — también el chat y los widgets entre sí), líneas de conexión entre la esfera y cada widget, jerarquía por transparencia, input siempre visible con un botón de foco sutil (no la barra grande de v1), posición configurable del chat, y un curador que elija activamente **cómo** presentar cada widget, no solo qué texto poner. También pidió delegarle crear/modificar otros agentes — contrastado contra `CONSTITUTION.md` (Art. III/V/línea 109: ninguna autoridad nace de una delegación general de fondo), se separó en Track A (este ciclo: el curador propone plantillas visuales, nunca ejecuta código) y Track B (crear/modificar Specialists de verdad, fuera de alcance, iniciativa aparte con su propia gobernanza).
+- `snarf/telemetry/widget_templates.py` (nuevo): 24 plantillas, 3 tamaños × 8 variantes. El tamaño se asigna mecánicamente por ranking real (`assign_tier`, nunca el LLM); el curador solo elige la variante dentro de ese tamaño. `widget_summary.py` gana `recent_activity_buckets`/`recent_items` (histograma y lista real de actividad reciente, mecánicos, sin LLM) y `size_tier` por widget.
+- `dashboard_curator.py`: el curador ahora elige plantilla + puede proponer una nueva (persistida en cola de solo lectura para el fundador, nunca aplicada sola); el nodo `cost` se cura como cualquier otro (antes solo aparecía como contexto).
+- `web/index.html`: primera escena con perspectiva CSS real del archivo (`translate3d`/`perspective`) — widgets con profundidad por anillo, chat con burbujas alejándose hacia el fondo (`--depth`, acotado a Vista HUD); líneas de conexión SVG orbe→widget; chat-dock rediseñado (input siempre visible, botón de foco chico en vez de la barra grande, `openChatFocus`/`closeChatFocus` corregidos para funcionar desde cualquier vista); posición configurable del chat; drawer lateral de conversaciones/proyectos con pin.
+- Seis bugs reales encontrados y corregidos verificando con Playwright, cuatro de ellos en el mismo problema (el layout radial, documentados en cadena porque cada uno solo se hizo visible tras corregir el anterior): dos colisiones de z-index nuevas contra modales existentes; alineación radial sistemática entre anillos; un radio circular que no cabe en un rectángulo angosto de escritorio (y una elipse que rompía la garantía de separación); un solver iterativo de pares que **no convergía** en grupos densos (reemplazado por completo por un empaquetado constructivo por espiral, que garantiza cero superposición por construcción); el dock de chat fijo, invisible para el cálculo de layout. Además, una regresión real de cache: el `template` elegido por el curador se validaba contra el tamaño que el nodo tenía al momento de curarlo, no el actual.
+- 688/688 tests (28 nuevos). En el camino se encontró y corrigió una fuga real de test pollution (mismo tipo que ADR 0085): `test_app.py` nunca aislaba el `CACHE_DIR` de `dashboard_curator`, así que sus tests podían leer cache real de producción. Verificado con Playwright en servidor aislado, datos de actividad reales sembrados: cero superposiciones confirmadas programáticamente contra bounding boxes reales, curador probado con una llamada real al LLM, drawer/foco/posición/reversibilidad verificados de punta a punta, cero errores de consola. Ver ADR 0091.
+
+## [2026-08-04] SNARF OS: dashboard radial con Especialista curador real, reversible por toggle
+
+- El fundador pidió que el experimento del dock de globos (ADR 0089) deje de vivir dentro de un widget y se convierta en el dashboard principal: esfera central animada, widgets distribuidos por toda la pantalla que se reposicionan solos por relevancia real, con animación completa (entrada/salida/actualización), cada widget clickeable a un detalle, y el chat integrado como barra inferior colapsable. Pidió Especialistas de IA reales (no solo código) curando el dashboard, todo en un solo desarrollo — y, tras revisar el plan, un toggle real y persistido para volver a la versión clásica en cualquier momento si el rediseño no convence.
+- `snarf/telemetry/widget_summary.py` (nuevo): agregación real por nodo (`summarize_node`/`all_widget_summaries`/`curation_snapshot`), mismo motor de datos que ya usa el dock de globos (ADR 0089) — cero contenido inventado, `None` cuando un nodo no tuvo actividad real.
+- `snarf/specialists/dashboard_curator.py` (nuevo): `DashboardCuratorSpecialist`, mismo patrón cache-first que `GmailDigestSpecialist`. Nunca decide qué widgets existen (eso sigue siendo `relevance.dock_priority`, determinístico) — solo rephrasea datos reales ya agregados, con la misma frontera "nunca inventes" ya usada en `ProjectManager`. Refresca en un loop de backend cada 10 min o antes si la señal real cambió — nunca disparado por el poll del navegador.
+- `snarf/runtime/dashboard_prefs.py`: nuevos campos aditivos (`dashboard_view`, `hud_widget_state` auto/pinned/hidden, `hud_widget_options`) — la Vista clásica (`visible_widgets`/`panel_order`/`widget_options`) no se tocó, sigue funcionando exactamente igual.
+- `web/index.html`: toggle Vista clásica/HUD persistido (mismo componente visual que el del panel Cerebro); esfera central animada reaccionando a señales reales (curador corriendo de verdad); layout radial en anillos concéntricos con reposición real vía FLIP (nunca destruye/recrea un widget que sigue siendo relevante); drill-down genérico por nodo; barra de chat colapsable (`#chatDock`, solo Vista HUD, chat reparentado nunca clonado). Con el toggle en "clásica", cero cambios de comportamiento — todo lo nuevo es aditivo.
+- Cuatro bugs reales encontrados y corregidos verificando con Playwright (no a ojo): colisión de `transform` real entre `.orb-wrap` y el nuevo selector del orb (mismo tipo de bug ya visto en ADR 0069/0078, el orb aparecía ~90px fuera de centro); el chat dock seguía visible al angostar a mobile; el parser de captions del curador fallaba contra una respuesta REAL del LLM (no un mock) porque el modelo repetía el `(score N.N)` del prompt; el layout radial amontonaba widgets en medio círculo por dividir el ángulo por la capacidad máxima del anillo en vez de su ocupación real.
+- 660/660 tests (39 nuevos). Verificado con Playwright en servidor aislado: reversibilidad real (Vista clásica bit a bit igual que antes), reposición FLIP confirmada por identidad de elemento DOM, ciclo desktop→mobile→desktop sin duplicar el chat, y **el curador probado con una llamada real al LLM** (no mock) generando `headline` y captions correctos sobre datos reales sembrados. Ver ADR 0090.
+
+## [2026-08-04] Globos contextuales: contenido real por nodo, y cobertura total del dock
+
+- El fundador vio Dock v3 en producción y señaló el problema de fondo: "no está mostrando absolutamente nada... es un orbe que late... pero eso es todo lo que hace." Pidió, con un ejemplo concreto, que cada skill/capacidad/especialista tenga su propio widget mostrando contenido real (a quién se le mandó un mail, qué documento se creó, qué se buscó), apareciendo/desapareciendo por relevancia real. Rechazó un primer plan con cobertura parcial ("no veo... para cada skill capacidad o especialista, ni sus sub elementos") — este ciclo entrega cobertura completa.
+- Causa raíz: el evento unificado nunca capturó contenido, solo identificadores. `snarf/telemetry/detail.py` (nuevo): un extractor de `detalle` real por cada uno de los 60 tools del Orchestrator (verificado, no 68 como se estimó al planear), leyendo `tool_input`/`result` reales — nunca inventado. Wireado en los tres chokepoints reales (`activity_log`, `usage_tracker` para LLM/STT/TTS, `input_log`), con cobertura total exigida por test.
+- `DOCK_NODE_IDS` (antes 9 nodos elegidos a mano) ahora es `list(brain.NODE_TIER.keys())` — los 24 nodos reales completos. El frontend muestra el top-9 por relevancia real (ranking ya existente), no todos a la vez.
+- `web/index.html`: capa de globos contextuales (`#hudBubbleLayer`), 9 familias visuales compartidas (scan/document/list/dispatch/voice/think/admin/system/input) ancladas al chip real de cada nodo, con TTL real (~20s) y prioridad por conversación activa al llegar al tope de simultáneos. Tabla de feed eliminada por completo (pedido explícito: "no aporta nada").
+- Dos bugs reales de layout encontrados y corregidos verificando con Playwright (bounding box del hub contra `#brainPanel`, no a ojo): el hub se geometrizaba con un fallback 300×190 mientras la Vista HUD seguía oculta (hasta 130px fuera del panel); corregido el offset vertical del hub, insuficiente una vez sacada la tabla de feed.
+- 621/621 tests (16 nuevos, cobertura total verificada). Verificado con Playwright en servidor aislado: 4 familias de globos con contenido real confirmado, expiración real por TTL de punta a punta, hub dentro del panel con margen real, cero errores de consola. Backend requiere reinicio de producción; capa de globos y layout son 100% frontend. Ver ADR 0089.
+
+## [2026-08-03] La rueda como escenario principal, con reacción automática a eventos reales
+
+- El fundador reportó el problema de fondo del dock v2: por default aparecía colapsado ("un orbe en standby") y sin click no mostraba nada — pidió que sea "una manifestación de los procesos de Snarf", ocupando el escenario principal.
+- `web/index.html`: el dock arranca abierto por defecto (antes requería click), ocupa casi todo el panel (antes una franja de 190px), la tabla de texto se reduce a un renglón mínimo. Generalizado el "story moment" (antes solo la alerta de costo): cada evento real nuevo destella su chip y línea guía correspondiente, automáticamente, sin interacción.
+- 605/605 tests. Verificado con Playwright sembrando un evento real mientras el panel estaba abierto y capturando el destello en vivo (~1.8s después, dentro de la ventana de poll). Cambio 100% frontend, no requiere reiniciar producción. Ver ADR 0088.
+
+## [2026-08-03] Dock v2: glow volumétrico real (SVG) — el fundador rechazó la primera versión y autorizó reusar la estética literal de sus referencias
+
+- El fundador rechazó el resultado anterior ("círculos horribles, sin luz volumétrica, sin efecto 3D") y autorizó explícitamente reusar la estética literal de sus referencias visuales, incluido un acento rojo — **supersede, solo para este componente**, el límite de "color literal no" de ADR 0006/0037 (aclarado: nunca fue una regla de FOUNDATION/CONSTITUTION, era un ADR de diseño ordinario, revisable con autoridad real del fundador).
+- Reconstrucción real con SVG (no solo CSS): hub central con glow vía filtros `feGaussianBlur` reales, anillo de marcas rotando, líneas guía SVG desde el hub hasta cada chip (alineadas en píxeles reales, no aproximadas), chips en paralelogramo con glow en tres capas, etiquetas en el nuevo rojo `--hud-signal-red`.
+- Dos bugs reales encontrados y corregidos verificando con Playwright (`elementFromPoint`, no solo mirando el render): un typo real (`position: relative` en vez de `absolute`) rompía el hit-test de todos los chips; el hitbox invisible del anillo de apertura/cierre seguía tapando al chip más cercano al centro (típicamente el de mayor prioridad) incluso con el dock abierto.
+- 605/605 tests, cero errores de consola verificados en los tres estados (hover, select, cierre por click vacío). Ver ADR 0087.
+
+## [2026-08-03] Dock rediseñado como anillo Omega, inspirado en cómo se construyó realmente el HUD de Iron Man
+
+- El fundador compartió referencias visuales + la transcripción real de cómo The Orphanage construyó el HUD de Iron Man (2008). Se aplicó la lógica de diseño (nunca colores/branding literal, límite ya establecido en ADR 0006/0037): un solo anillo compacto ("widget Omega") que colapsa/expande bajo comando en vez de quedar siempre abierto, bordes con profundidad implícita (desvanecidos, nunca corte duro), y reacción real ("story moment") a una alerta genuina de costo — el dock se auto-abre una sola vez cuando el gasto del día cruza el umbral real (Fase 5), nunca de forma simulada.
+- `web/index.html`: `#hudRingIdle` (nuevo), `#hudMiniDock[data-open]` controla colapsado/expandido, `setHudDockOpen()`. Cero cambios de backend.
+- 605/605 tests. Verificado con Playwright contra un servidor real: colapsado por default, abre/cierra al click, auto-abre ante una alerta real sembrada, desvanecido de bordes confirmado en el DOM. No hizo falta reiniciar producción (cambio 100% frontend). Ver ADR 0086.
+
+## [2026-08-03] Fuga real de test-pollution visible en producción: corregida y purgada
+
+- El fundador reportó (con captura real) la Vista HUD inundada de filas sintéticas `gemini:gemini-3-pro-preview`. Causa real: `tests/test_gemini_llm.py` llamaba `.generate()` de verdad sin aislar `usage_tracker.DEFAULT_PATH`/`events.DEFAULT_PATH` — cada corrida de la suite completa escribía directo a los archivos reales del proyecto. Corrige además una atribución imprecisa de ADR 0077/0079: `test_llm_routing.py` nunca fue la fuente (nunca llama `.generate()`).
+- Purgadas 605 entradas sintéticas de `data/usage_log.jsonl` y 11 de `data/telemetry_events.jsonl`, con huella exacta e inequívoca (defaults literales del fixture de test) — verificado que ninguna entrada real se tocó. Backup tomado antes de purgar.
+- 605/605 tests, conteo de entradas sintéticas 605→605 tras correr la suite completa de nuevo (confirma la fuga cerrada, no solo una purga puntual). No hizo falta reiniciar el servidor de producción. Ver ADR 0085.
+
+## [2026-08-03] Fase 0-1 del plan de HUD: esquema de telemetría, evento unificado, fix de vendors invisibles en el cerebro
+
+### Arquitectura y código
+- `TELEMETRY_SCHEMA.md` (Fase 0, sin ADR propio — solo diseño/documentación): esquema de evento unificado (`nodo`/`agente`/`skill`/`modelo`/`tokens_in`/`tokens_out`/`costo_usd`/`latencia_ms`/`estado`) y tabla determinística de verbo temático por nodo. `web/hud_design_tokens.css`: sistema de diseño holográfico (paleta cian reusada de `--glow`, ámbar nuevo reservado para atención/alerta, animación de materialización, tipografía monoespaciada para datos) — todavía sin enlazar a `web/index.html`.
+- `snarf/telemetry/events.py` (nuevo): evento unificado emitido desde adentro de los tres logs reales ya existentes (`activity_log.record`, `usage_tracker.record`, `input_log.record`), sin agregar llamadas nuevas al modelo. `snarf/telemetry/verbs.py` (nuevo): la tabla de verbos, nunca generada por el LLM.
+- Cerrado el gap de `estado="truncado"`: `anthropic_llm.py` ahora pasa el `stop_reason` real de cada respuesta hasta el evento unificado.
+- Bug real encontrado y corregido en `brain.py`: los vendors `gemini`/`openai`/`xai`/`groq_llama`/`groq`/`local` (multi-proveedor de LLM y voz, ADR 0056/0067/0068) nunca tenían nodo mapeado — quedaban invisibles en el cerebro actual, no solo en la instrumentación nueva.
+- 570/570 tests. Ver ADR 0077.
+
+### Fase 2: dock radial HUD (prototipo)
+- `web/hud_gestures.js` (nuevo): capa de gestos desacoplada del render — `HUDGestureController` traduce mouse/touch a eventos abstractos (`focus`/`select`/etc.), reemplazable por otra fuente (eye-tracking, Fase 9) sin tocar el componente visual.
+- `web/hud_dock_prototype.html` (nuevo): arco de nodos con perspectiva 3D real (proyección cilíndrica, no `scale()` simulado), estados collapsed/focus/select, panel anclado con el verbo temático real de `verbs.py`. Datos mock, todavía sin backend.
+- Tres bugs reales encontrados y corregidos verificando con Playwright: posición 3D pisada por la animación de estado (mismo patrón que ADR 0069 del cerebro), doble binding de gestos duplicando el toggle de selección, y un backdrop tapando el resto de nodos por un contexto de apilado no considerado. Ver ADR 0078.
+
+### Fase 3: historial de costos por día/agente/sesión
+- `snarf/telemetry/context.py` (nuevo): `conversation_id` real por thread (`threading.local()`, mismo criterio que ADR 0041), seteado por `Orchestrator.handle()` — el evento unificado lo lee solo, sin parámetro nuevo en ninguna función `record_*`.
+- `snarf/telemetry/cost_history.py` (nuevo) + `GET /dashboard/cost_history`: agrega costo/tokens por día/agente/sesión desde el evento unificado. Costo desconocido nunca se cuenta como cero (mismo criterio que `usage_tracker.summarize()`).
+- `web/hud_cost_history_prototype.html` (nuevo): historial visual en el lenguaje de Fase 0, fetch real al endpoint con fallback a mock de la misma forma.
+- Gap real encontrado y corregido: `tests/test_app.py` no redirigía `events.DEFAULT_PATH`, seguía escribiendo al archivo real (corrige también una afirmación imprecisa del CHANGELOG/ADR 0077 anterior sobre el origen de esa fuga).
+- 584/584 tests. Ver ADR 0079.
+
+### Fase 4: Vista HUD del cerebro, en paralelo a la Vista clásica
+- `GET /dashboard/telemetry_feed` (nuevo): el evento unificado de Fase 1 anotado con verbo temático y resumen recortado, listo para render directo.
+- `web/index.html`: nuevo toggle "Vista clásica"/"Vista HUD" dentro del panel del cerebro — el grafo SVG/canvas existente queda **intacto, sin ningún cambio**, la Vista HUD es un feed de texto nuevo al lado, con poll propio en paralelo (cambiar de vista nunca pierde datos ni recarga nada).
+- Bug real de CSS encontrado y corregido verificando contra la app real (no un prototipo): `el.hidden` no ocultaba nada porque `display: flex` de una regla de autor le ganaba al `[hidden]` del user-agent — las dos vistas quedaban superpuestas. Corregido con selectores `[hidden]` de mayor especificidad.
+- Verificado de punta a punta contra un servidor real (datos aislados en un directorio temporal, cero riesgo para `data/` real): login, toggle entre vistas, evento real con `estado="truncado"` mostrando el modificador correcto ("conteniéndose en pontificando"), cero errores de consola.
+- 586/586 tests. Ver ADR 0080.
+
+### Fase 5: motor de relevancia contextual, conectado al dock radial
+- `snarf/telemetry/relevance.py` (nuevo) + `GET /dashboard/dock_priority`: ranking real de nodos por recencia/frecuencia de actividad, boost por error reciente ("alerta"), y alerta de costo cuando el gasto del día cruza un umbral ($1.00/día, decisión de diseño nueva declarada como tal). "Tarea activa"/"alertas pendientes" del pedido original no tienen sistema real detrás en Snarf — interpretadas con honestidad (actividad más reciente / errores recientes), documentado en ADR.
+- `web/hud_dock_prototype.html`: reemplaza el orden mock fijo de Fase 2 por `fetch('/dashboard/dock_priority')` (con el mismo fallback ya establecido). El nodo de mayor prioridad cae en el slot central real del arco — "sube de prioridad y se mueve al centro" es literal. Alerta de costo como nodo sintético nuevo, distinguido en ámbar.
+- 598/598 tests. Ver ADR 0081.
+
+### Fase 6: panel de optimización de entrada
+- `snarf/telemetry/input_preprocessing.py` (nuevo) + `GET /dashboard/input_efficiency`: registra, por turno, lo que el fundador escribió vs. el tamaño real del bundle completo enviado al LLM (system + historial + input) — Snarf no reescribe el mensaje, la ineficiencia real está en lo que viaja alrededor. `overhead_ratio` (chars enviados / chars escritos) como métrica central, nunca tokens inventados.
+- `web/hud_input_efficiency_prototype.html` (nuevo): tiles de resumen + tabla de turnos recientes, en el lenguaje de Fase 0, con overhead alto marcado en ámbar.
+- 601/601 tests. Ver ADR 0082.
+
+### Fase 7 (auditoría, en curso) — feedback real: verbos por tool + dock radial integrado en la Vista HUD
+- `snarf/telemetry/verbs.py`: `VERB_BY_SKILL`, un verbo propio por cada una de las 68 tools reales (antes compartían el genérico del nodo) — pedido explícito tras ver poca variedad en la Vista HUD real.
+- `web/index.html`: el dock radial de Fase 2/5 (nunca antes enlazado a la app real) se integra dentro de `#brainHudView` — datos reales de `/dashboard/dock_priority`, click en un nodo filtra el feed de texto al lado.
+- Bug real encontrado y corregido verificando contra un servidor real: una llave de cierre faltante en JS rompía el parseo de todo el `<script>` inline, dejando el dashboard entero sin inicializar (degradaba a la vista de chat/grabación sin ningún widget).
+- Servidor de producción (puerto 8002) reiniciado con el código corregido — mismo link de siempre.
+- 605/605 tests. Ver ADR 0083.
+
+### Fase 7/8, nodo Orchestrator: recorte de duplicación verificada en `SYSTEM_PREFIX`
+- Medido (no asumido) el solapamiento real entre la prosa de `SYSTEM_PREFIX` y las `description` que cada tool ya tiene en el schema — varios pasajes resultaban duplicados casi palabra por palabra (ej. `measure_text_length`, la excepción de `drive_update_document`). Recortado solo lo verificado como duplicado; el protocolo de confirmación en dos pasos y el resto de guía única quedan intactos.
+- `SYSTEM_PREFIX`: 15.385 → 13.211 caracteres (-14,1%). FOUNDATION/CONSTITUTION/CHARACTER evaluados y **no tocados** — ya económicos para lo que son, cortar hubiera arriesgado matiz real sin evidencia de grasa retórica.
+- 605/605 tests. Servidor de producción reiniciado, actividad real confirmada post-cambio. Ver ADR 0084.
+
 ## [2026-08-01] Edición de Google Docs existentes, integración con Notion, widget de uso de APIs completo
 
 ### Arquitectura y código

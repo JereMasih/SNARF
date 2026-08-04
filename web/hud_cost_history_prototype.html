@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Snarf — Historial de costos (Fase 3)</title>
+<link rel="stylesheet" href="./hud_design_tokens.css">
+<style>
+  /* Componente de historial de costos, Fase 3 del plan de HUD — lee
+     GET /dashboard/cost_history (endpoint real, ver app.py/cost_history.py)
+     cuando corre servido desde la app real; si no hay respuesta (ej.
+     abierto directo por file:// para verificación visual), usa datos mock
+     con la MISMA forma real que devuelve el endpoint. */
+
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--hud-bg-void);
+    color: var(--hud-text);
+    font-family: var(--hud-font-sans);
+  }
+
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 32px 20px 60px;
+  }
+
+  h1 {
+    font-family: var(--hud-font-mono);
+    font-size: 1rem;
+    font-weight: 400;
+    color: var(--hud-cyan-soft);
+    letter-spacing: 0.02em;
+    margin: 0 0 24px;
+  }
+
+  section.hud-glow-border {
+    border-radius: 10px;
+    background: var(--hud-bg-panel-solid);
+    padding: 16px 18px 20px;
+    margin-bottom: 22px;
+  }
+
+  section h2 {
+    font-family: var(--hud-font-mono);
+    font-size: 0.78rem;
+    color: var(--hud-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0 0 14px;
+  }
+
+  /* --- Historial por día: barras horizontales, altura = costo relativo --- */
+  .day-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 90px;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 0;
+  }
+  .day-label { font-family: var(--hud-font-mono); font-size: 0.74rem; color: var(--hud-text-dim); }
+  .day-bar-track { height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
+  .day-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--hud-cyan-dim), var(--hud-cyan));
+    border-radius: 4px;
+    width: 0%;
+    transition: width 500ms var(--hud-ease-materialize);
+  }
+  .day-cost { text-align: right; }
+
+  /* --- Ranking por agente / sesión: filas con barra proporcional --- */
+  .rank-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .rank-row:last-child { border-bottom: none; }
+  .rank-key { font-size: 0.85rem; }
+  .rank-key-mono { font-family: var(--hud-font-mono); font-size: 0.78rem; color: var(--hud-text-dim); }
+  .rank-bar-track { height: 5px; background: rgba(255,255,255,0.06); border-radius: 3px; margin-top: 5px; overflow: hidden; }
+  .rank-bar-fill { height: 100%; border-radius: 3px; width: 0%; transition: width 500ms var(--hud-ease-materialize); }
+  .rank-bar-fill.top { background: linear-gradient(90deg, var(--hud-amber-dim), var(--hud-amber)); }
+  .rank-bar-fill.rest { background: linear-gradient(90deg, var(--hud-cyan-dim), var(--hud-cyan)); }
+
+  .empty {
+    font-family: var(--hud-font-mono);
+    font-size: 0.78rem;
+    color: var(--hud-text-dim);
+    padding: 8px 0;
+  }
+
+  .source-note {
+    font-family: var(--hud-font-mono);
+    font-size: 0.7rem;
+    color: var(--hud-text-dim);
+    margin-top: -14px;
+    margin-bottom: 22px;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>historial de costo y consumo</h1>
+    <div class="source-note" id="sourceNote">cargando…</div>
+
+    <section class="hud-glow-border hud-materialize" id="sectionDay">
+      <h2>costo por día</h2>
+      <div id="dayRows"></div>
+    </section>
+
+    <section class="hud-glow-border hud-materialize" id="sectionAgente" style="animation-delay:70ms">
+      <h2>costo por agente</h2>
+      <div id="agenteRows"></div>
+    </section>
+
+    <section class="hud-glow-border hud-materialize" id="sectionSession" style="animation-delay:140ms">
+      <h2>costo por sesión</h2>
+      <div id="sessionRows"></div>
+    </section>
+  </div>
+
+  <script>
+    // Mock con la MISMA forma real que devuelve GET /dashboard/cost_history
+    // (snarf/telemetry/cost_history.py:summary) — usado solo si el fetch
+    // real falla (ej. archivo abierto por file://, sin servidor detrás).
+    var MOCK = {
+      by_day: [
+        { key: "2026-08-01", costo_usd: 0.42, tokens_in: 18000, tokens_out: 4200, llamadas: 12, errores: 0, llamadas_sin_costo_estimado: 1 },
+        { key: "2026-08-02", costo_usd: 0.18, tokens_in: 9000, tokens_out: 2100, llamadas: 7, errores: 1, llamadas_sin_costo_estimado: 0 },
+        { key: "2026-08-03", costo_usd: 0.61, tokens_in: 24000, tokens_out: 5300, llamadas: 15, errores: 0, llamadas_sin_costo_estimado: 2 }
+      ],
+      by_agente: [
+        { key: "capability", costo_usd: 0.85, tokens_in: 42000, tokens_out: 9800, llamadas: 26, errores: 1, llamadas_sin_costo_estimado: 2 },
+        { key: "specialist", costo_usd: 0.30, tokens_in: 7000, tokens_out: 1600, llamadas: 6, errores: 0, llamadas_sin_costo_estimado: 0 },
+        { key: "orchestrator", costo_usd: 0.06, tokens_in: 2000, tokens_out: 200, llamadas: 4, errores: 0, llamadas_sin_costo_estimado: 1 }
+      ],
+      by_session: [
+        { key: "c-8f21a0", costo_usd: 0.51, tokens_in: 20000, tokens_out: 4600, llamadas: 9, errores: 0, llamadas_sin_costo_estimado: 0 },
+        { key: "c-1b77e4", costo_usd: 0.29, tokens_in: 11000, tokens_out: 2400, llamadas: 5, errores: 0, llamadas_sin_costo_estimado: 1 },
+        { key: "c-990d2c", costo_usd: 0.11, tokens_in: 3000, tokens_out: 700, llamadas: 3, errores: 0, llamadas_sin_costo_estimado: 0 }
+      ]
+    };
+
+    function fmtUsd(n) { return "$" + n.toFixed(3); }
+
+    function renderDay(rows) {
+      var container = document.getElementById("dayRows");
+      if (!rows.length) { container.innerHTML = '<div class="empty">sin eventos todavía</div>'; return; }
+      var max = Math.max.apply(null, rows.map(function (r) { return r.costo_usd; })) || 1;
+      container.innerHTML = rows.map(function (r) {
+        var pct = Math.round((r.costo_usd / max) * 100);
+        return (
+          '<div class="day-row hud-data">' +
+          '<span class="day-label">' + r.key + '</span>' +
+          '<span class="day-bar-track"><span class="day-bar-fill" data-pct="' + pct + '"></span></span>' +
+          '<span class="day-cost">' + fmtUsd(r.costo_usd) + '</span>' +
+          '</div>'
+        );
+      }).join("");
+    }
+
+    function renderRank(rows, elId) {
+      var container = document.getElementById(elId);
+      if (!rows.length) { container.innerHTML = '<div class="empty">sin eventos todavía</div>'; return; }
+      var max = Math.max.apply(null, rows.map(function (r) { return r.costo_usd; })) || 1;
+      container.innerHTML = rows.map(function (r, i) {
+        var pct = Math.round((r.costo_usd / max) * 100);
+        var cls = i === 0 ? "top" : "rest";
+        return (
+          '<div class="rank-row">' +
+          '<div>' +
+          '  <span class="rank-key">' + r.key + '</span>' +
+          '  <div class="rank-bar-track"><span class="rank-bar-fill ' + cls + '" data-pct="' + pct + '"></span></div>' +
+          '</div>' +
+          '<span class="rank-key-mono hud-data">' + fmtUsd(r.costo_usd) + ' · ' + r.llamadas + ' llamadas' + (r.errores ? ' · ' + r.errores + ' err' : '') + '</span>' +
+          '</div>'
+        );
+      }).join("");
+    }
+
+    function render(data) {
+      renderDay(data.by_day);
+      renderRank(data.by_agente, "agenteRows");
+      renderRank(data.by_session, "sessionRows");
+      // Anima las barras después del primer paint (transición real de width).
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          document.querySelectorAll("[data-pct]").forEach(function (el) {
+            el.style.width = el.getAttribute("data-pct") + "%";
+          });
+        });
+      });
+    }
+
+    fetch("/dashboard/cost_history", { credentials: "same-origin" })
+      .then(function (res) { if (!res.ok) throw new Error("http " + res.status); return res.json(); })
+      .then(function (data) {
+        document.getElementById("sourceNote").textContent = "fuente: /dashboard/cost_history (real)";
+        render(data);
+      })
+      .catch(function () {
+        document.getElementById("sourceNote").textContent = "fuente: mock local (sin servidor detrás — misma forma que el endpoint real)";
+        render(MOCK);
+      });
+  </script>
+</body>
+</html>

@@ -112,12 +112,34 @@ TOOL_TO_NODE: dict[str, str] = {
     "notion_append_to_page": "notion",
 }
 
-VENDOR_TO_NODE: dict[str, str] = {"anthropic": "llm", "voyage": "knowledge"}
+# gemini/openai/xai/groq_llama son los 4 proveedores de LLM alternativos a
+# Anthropic (ADR 0067/0068, snarf/runtime/llm_routing.py) — todos ruteables
+# al mismo rol de conversación/especialista, así que caen en el mismo nodo
+# "llm" que Anthropic (la Capacidad que representan es la misma desde la
+# perspectiva de un usuario mirando el grafo: "razonando", no "cuál
+# proveedor"). "groq" (STT, ver voice/providers/groq_stt.py) cae en "stt".
+# Encontrado durante la instrumentación unificada de telemetría (Fase 1 del
+# plan de HUD, ver SESSION_STATE.md): estos vendors ya generaban entradas
+# reales en usage_log.jsonl desde ADR 0056/0067/0068 pero nunca tuvieron nodo
+# — quedaban invisibles en el cerebro sin que ningún test lo detectara.
+VENDOR_TO_NODE: dict[str, str] = {
+    "anthropic": "llm",
+    "gemini": "llm",
+    "openai": "llm",
+    "xai": "llm",
+    "groq_llama": "llm",
+    "groq": "stt",
+    "voyage": "knowledge",
+}
 # ElevenLabs es un solo vendor pero dos Capacidades reales y distinguibles:
 # usage_tracker ya registra el modelo real (`stt_scribe` vs `tts`,
 # usage_tracker.py) — el cerebro las separa en vez de mezclarlas en un nodo
 # "voz" genérico, porque el dato para separarlas ya existe.
 ELEVENLABS_MODEL_TO_NODE: dict[str, str] = {"stt_scribe": "stt", "tts": "tts"}
+# "local" es un vendor (ver usage_tracker.record_local_stt_call/
+# record_kokoro_tts_call) que también cubre dos Capacidades distintas según
+# el modelo — mismo criterio que ElevenLabs arriba.
+LOCAL_MODEL_TO_NODE: dict[str, str] = {"faster-whisper": "stt", "kokoro": "tts"}
 
 # input_log.jsonl registra el canal real por el que algo entró a Snarf
 # (/send, /transcribe, /files/upload) — el punto de entrada real, antes de
@@ -212,7 +234,12 @@ def snapshot(
 
     for entry in usage_entries:
         vendor = entry.get("vendor", "")
-        node_id = ELEVENLABS_MODEL_TO_NODE.get(entry.get("model", "")) if vendor == "elevenlabs" else VENDOR_TO_NODE.get(vendor)
+        if vendor == "elevenlabs":
+            node_id = ELEVENLABS_MODEL_TO_NODE.get(entry.get("model", ""))
+        elif vendor == "local":
+            node_id = LOCAL_MODEL_TO_NODE.get(entry.get("model", ""))
+        else:
+            node_id = VENDOR_TO_NODE.get(vendor)
         if node_id is None:
             continue
         ts = entry["timestamp"]

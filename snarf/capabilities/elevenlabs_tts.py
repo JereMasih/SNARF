@@ -3,7 +3,7 @@ import os
 import requests
 
 from snarf.capabilities.base import Capability
-from snarf.telemetry import usage_tracker
+from snarf.telemetry import detail, usage_tracker
 
 API_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 SUBSCRIPTION_URL = "https://api.elevenlabs.io/v1/user/subscription"
@@ -33,7 +33,7 @@ class ElevenLabsTTS(Capability):
             timeout=30,
         )
         response.raise_for_status()
-        usage_tracker.record_elevenlabs_tts_call(len(text))
+        usage_tracker.record_elevenlabs_tts_call(len(text), detalle=detail.truncate_detalle(text))
         return response.content
 
     def subscription_info(self) -> dict:

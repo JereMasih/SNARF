@@ -37,6 +37,9 @@ def test_speak_lets_the_caller_override_the_default_voice(monkeypatch):
     monkeypatch.setattr(
         module.requests, "post", lambda url, json, timeout: captured.update(json=json) or SimpleNamespace(ok=True, content=b"x")
     )
+    # Sin mockear esto, .speak() de verdad escribía en data/usage_log.jsonl real
+    # (costo $0.0, pero igual una entrada sintética de menos que limpiar).
+    monkeypatch.setattr(module.usage_tracker, "record_kokoro_tts_call", lambda chars, **k: None)
 
     make_tts().speak("hola", voice="ef_dora")
     assert captured["json"]["voice"] == "ef_dora"

@@ -1,6 +1,6 @@
 import requests
 
-from snarf.telemetry import usage_tracker
+from snarf.telemetry import detail, usage_tracker
 from snarf.voice.interface import TTSProvider
 
 DEFAULT_BASE_URL = "http://localhost:8880"
@@ -55,5 +55,5 @@ class KokoroTTS(TTSProvider):
         )
         if not response.ok:
             raise RuntimeError(f"Kokoro TTS {response.status_code}: {response.text}")
-        usage_tracker.record_kokoro_tts_call(len(text))
+        usage_tracker.record_kokoro_tts_call(len(text), detalle=detail.truncate_detalle(text))
         return response.content

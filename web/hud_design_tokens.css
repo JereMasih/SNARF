@@ -1,0 +1,151 @@
+/* ============================================================================
+   HUD DESIGN TOKENS — sistema de diseño "holográfico" (Fase 0 del plan de
+   dock radial / HUD, ver SESSION_STATE.md).
+
+   Archivo de diseño, todavía sin enlazar desde ningún HTML servido — Fase 2
+   lo importa recién al construir el dock radial. No modifica web/index.html.
+
+   Paleta: reusa lo que ya es real en el proyecto en vez de inventar de cero
+   (Principio VI de FOUNDATION.md aplicado a diseño, no solo a datos):
+
+   - Cian: --hud-cyan es idéntico a --glow de web/index.html (línea 9,
+     #4fd8e8) — ya es el acento de TODA la interfaz de Snarf, no una paleta
+     nueva paralela. Reusarlo mantiene una sola identidad visual.
+   - Ámbar: NO existe hoy en ningún token real de Snarf (la paleta del
+     cerebro de ADR 0033 tiene amarillo puro #ffe600 para archivos imagen,
+     pero es semánticamente "tipo de archivo", no "atención/alerta" — usarlo
+     acá sería pisar un significado ya asignado). --hud-amber es una
+     decisión de diseño nueva de esta fase, declarada como tal (no
+     proviene de ningún documento real del fundador, a diferencia de la
+     paleta del cerebro) — reservada para el layer de atención/alerta del
+     HUD (ej. Fase 5: el widget de costo sube de prioridad si se supera un
+     umbral de gasto). Cian = informativo/ambiente: ámbar = "esto necesita
+     tu atención".
+   - El resto de la paleta oscura (fondos, texto) reusa los tokens ya reales
+     de :root en web/index.html (--text, --text-dim, --error) en vez de
+     redefinir equivalentes con otro nombre.
+   ============================================================================ */
+
+:root {
+  /* --- Acentos --- */
+  --hud-cyan: #4fd8e8;        /* = --glow existente, mismo valor a propósito */
+  --hud-cyan-soft: #b6f5fb;   /* = --glow-soft existente */
+  --hud-cyan-dim: #1c5a63;    /* = --glow-dim existente */
+  --hud-amber: #ffb454;       /* nuevo — ver nota arriba: solo capa de alerta/atención */
+  --hud-amber-soft: #ffd9a8;
+  --hud-amber-dim: #6b4a1c;
+
+  /* --- Estado semántico (coherente con `estado` de TELEMETRY_SCHEMA.md) --- */
+  --hud-state-complete: var(--hud-cyan);
+  --hud-state-truncated: var(--hud-amber);
+  --hud-state-error: #e85a5a;  /* = --error existente en web/index.html */
+
+  /* --- Fondo oscuro --- */
+  --hud-bg-void: #000000;
+  --hud-bg-deep: #050a0c;      /* mismo valor que el fondo radial de .bg-glow */
+  --hud-bg-panel: rgba(5, 10, 12, 0.6);   /* mismo criterio que .menu-btn existente */
+  --hud-bg-panel-solid: #0a1216;
+  --hud-border: rgba(79, 216, 232, 0.3);  /* = rgba(--hud-cyan, 0.3), reusa el valor ya usado en .corner/.menu-btn */
+  --hud-border-amber: rgba(255, 180, 84, 0.35);
+
+  /* --- Texto --- */
+  --hud-text: #d7eef2;      /* = --text existente */
+  --hud-text-dim: #6f8891;  /* = --text-dim existente */
+
+  /* --- Tipografía --- */
+  --hud-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  --hud-font-mono: "SF Mono", "Menlo", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
+
+  /* --- Glow --- */
+  --hud-glow-sm: 0 0 6px;
+  --hud-glow-md: 0 0 14px;
+  --hud-glow-lg: 0 0 28px;
+
+  /* --- Timing de animación --- */
+  --hud-ease-materialize: cubic-bezier(0.22, 1, 0.36, 1);
+  --hud-duration-materialize: 420ms;
+  --hud-duration-dematerialize: 260ms;
+}
+
+/* ============================================================================
+   Utilidades de glow — bordes con resplandor sutil, no un halo saturado.
+   ============================================================================ */
+
+.hud-glow-border {
+  border: 1px solid var(--hud-border);
+  box-shadow: var(--hud-glow-sm) rgba(79, 216, 232, 0.25);
+}
+
+.hud-glow-border-amber {
+  border: 1px solid var(--hud-border-amber);
+  box-shadow: var(--hud-glow-sm) rgba(255, 180, 84, 0.25);
+}
+
+.hud-glow-text {
+  text-shadow: var(--hud-glow-sm) currentColor;
+}
+
+/* ============================================================================
+   Tipografía de datos técnicos — cualquier valor numérico/telemetría
+   (tokens, costo, latencia, timestamps) usa esta clase, nunca la sans por
+   default, para distinguir visualmente "dato medido" de "texto conversacional".
+   ============================================================================ */
+
+.hud-data {
+  font-family: var(--hud-font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* ============================================================================
+   Materialización — animación de aparición estándar de todo elemento HUD
+   nuevo (widget del dock, evento del feed, panel que se expande). No es un
+   fade simple: combina scale + blur para leer como "algo se está formando",
+   no como una transición de UI genérica.
+
+   Aparición: opacity 0→1, scale 0.92→1, blur(6px)→blur(0).
+   Desaparición (.hud-dematerialize): el inverso, más rápido (algo que se
+   apaga se retira más rápido de lo que tarda en formarse — asimetría
+   deliberada, no un descuido).
+   ============================================================================ */
+
+@keyframes hud-materialize {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes hud-dematerialize {
+  from {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.04);
+    filter: blur(8px);
+  }
+}
+
+.hud-materialize {
+  animation: hud-materialize var(--hud-duration-materialize) var(--hud-ease-materialize) both;
+}
+
+.hud-dematerialize {
+  animation: hud-dematerialize var(--hud-duration-dematerialize) var(--hud-ease-materialize) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-materialize,
+  .hud-dematerialize {
+    animation: none;
+  }
+}

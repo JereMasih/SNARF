@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Snarf — Panel de optimización de entrada (Fase 6)</title>
+<link rel="stylesheet" href="./hud_design_tokens.css">
+<style>
+  html, body { margin: 0; min-height: 100%; background: var(--hud-bg-void); color: var(--hud-text); font-family: var(--hud-font-sans); }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 32px 20px 60px; }
+  h1 { font-family: var(--hud-font-mono); font-size: 1rem; font-weight: 400; color: var(--hud-cyan-soft); letter-spacing: 0.02em; margin: 0 0 6px; }
+  .source-note { font-family: var(--hud-font-mono); font-size: 0.7rem; color: var(--hud-text-dim); margin-bottom: 22px; }
+
+  .summary-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  .summary-tile {
+    background: var(--hud-bg-panel-solid); border: 1px solid var(--hud-border); border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .summary-tile.warn { border-color: var(--hud-border-amber); }
+  .summary-tile-label { font-family: var(--hud-font-mono); font-size: 0.66rem; color: var(--hud-text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+  .summary-tile-value { font-family: var(--hud-font-mono); font-size: 1.3rem; margin-top: 4px; }
+  .summary-tile.warn .summary-tile-value { color: var(--hud-amber-soft); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  th { text-align: left; font-family: var(--hud-font-mono); font-size: 0.66rem; color: var(--hud-text-dim); text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  td { padding: 7px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: var(--hud-font-mono); vertical-align: top; }
+  td.input-text { font-family: var(--hud-font-sans); color: var(--hud-text); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  td.ratio-warn { color: var(--hud-amber-soft); }
+  .empty { font-family: var(--hud-font-mono); font-size: 0.78rem; color: var(--hud-text-dim); padding: 12px 0; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>panel de optimización de entrada</h1>
+    <div class="source-note" id="sourceNote">cargando…</div>
+
+    <div class="summary-row" id="summaryRow"></div>
+
+    <table>
+      <thead>
+        <tr><th>escribiste</th><th>chars</th><th>system</th><th>historial</th><th>total enviado</th><th>overhead</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <script>
+    // Mock con la misma forma real de GET /dashboard/input_efficiency
+    // (snarf/telemetry/input_preprocessing.py) — usado solo sin servidor
+    // detrás (ej. abierto por file://).
+    var MOCK = {
+      summary: { turns: 4, avg_overhead_ratio: 382.6, avg_total_sent_chars: 5333, avg_input_chars: 23 },
+      recent: [
+        { input_original: "hola, qué tenemos para hoy?", input_chars: 27, system_chars: 4800, history_chars: 0, total_sent_chars: 4827, overhead_ratio: 178.8 },
+        { input_original: "dale, mandalo", input_chars: 13, system_chars: 4800, history_chars: 340, total_sent_chars: 5153, overhead_ratio: 396.4 },
+        { input_original: "resumime el drive de la carpeta de marketing", input_chars: 45, system_chars: 4800, history_chars: 680, total_sent_chars: 5525, overhead_ratio: 122.8 },
+        { input_original: "gracias", input_chars: 7, system_chars: 4800, history_chars: 1020, total_sent_chars: 5827, overhead_ratio: 832.4 }
+      ]
+    };
+
+    function fmtRatio(r) { return r === null ? "—" : r.toFixed(1) + "x"; }
+    function fmtNum(n) { return n === null ? "—" : Math.round(n).toLocaleString("es-AR"); }
+
+    function renderSummary(s) {
+      var tiles = [
+        { label: "turnos registrados", value: fmtNum(s.turns) },
+        { label: "overhead promedio", value: fmtRatio(s.avg_overhead_ratio), warn: s.avg_overhead_ratio && s.avg_overhead_ratio > 50 },
+        { label: "prom. enviado (chars)", value: fmtNum(s.avg_total_sent_chars) },
+        { label: "prom. escrito (chars)", value: fmtNum(s.avg_input_chars) }
+      ];
+      document.getElementById("summaryRow").innerHTML = tiles.map(function (t) {
+        return '<div class="summary-tile hud-materialize' + (t.warn ? ' warn' : '') + '">' +
+          '<div class="summary-tile-label">' + t.label + '</div>' +
+          '<div class="summary-tile-value">' + t.value + '</div>' +
+          '</div>';
+      }).join("");
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+
+    function renderRows(recent) {
+      var tbody = document.getElementById("rows");
+      if (!recent.length) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty">sin turnos todavía</div></td></tr>'; return; }
+      tbody.innerHTML = recent.slice().reverse().map(function (r) {
+        var warn = r.overhead_ratio !== null && r.overhead_ratio > 50;
+        return '<tr>' +
+          '<td class="input-text">' + escapeHtml(r.input_original) + '</td>' +
+          '<td>' + fmtNum(r.input_chars) + '</td>' +
+          '<td>' + fmtNum(r.system_chars) + '</td>' +
+          '<td>' + fmtNum(r.history_chars) + '</td>' +
+          '<td>' + fmtNum(r.total_sent_chars) + '</td>' +
+          '<td class="' + (warn ? "ratio-warn" : "") + '">' + fmtRatio(r.overhead_ratio) + '</td>' +
+          '</tr>';
+      }).join("");
+    }
+
+    function render(data) {
+      renderSummary(data.summary);
+      renderRows(data.recent);
+    }
+
+    fetch("/dashboard/input_efficiency", { credentials: "same-origin" })
+      .then(function (res) { if (!res.ok) throw new Error("http " + res.status); return res.json(); })
+      .then(function (data) {
+        document.getElementById("sourceNote").textContent = "fuente: /dashboard/input_efficiency (real)";
+        render(data);
+      })
+      .catch(function () {
+        document.getElementById("sourceNote").textContent = "fuente: mock local (sin servidor detrás — misma forma que el endpoint real)";
+        render(MOCK);
+      });
+  </script>
+</body>
+</html>

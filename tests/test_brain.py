@@ -102,6 +102,37 @@ def test_snapshot_aggregates_usage_entries_by_vendor_and_splits_elevenlabs_by_mo
     assert result["nodes"]["tts"]["count"] == 1
 
 
+def test_snapshot_routes_alternative_llm_providers_to_the_llm_node():
+    # Encontrado durante la instrumentación unificada de telemetría (Fase 1
+    # del plan de HUD): estos 4 vendors ya generaban entradas reales en
+    # usage_log.jsonl desde ADR 0067/0068 pero nunca tuvieron nodo — quedaban
+    # invisibles en el cerebro sin que ningún test lo detectara.
+    usage = [
+        {"timestamp": 1.0, "vendor": "gemini", "model": "gemini-3.1-flash-lite"},
+        {"timestamp": 2.0, "vendor": "openai", "model": "gpt-5"},
+        {"timestamp": 3.0, "vendor": "xai", "model": "grok-4.1-fast"},
+        {"timestamp": 4.0, "vendor": "groq_llama", "model": "llama-3.3-70b"},
+    ]
+    result = brain.snapshot([], usage, [], {})
+    assert result["nodes"]["llm"]["count"] == 4
+
+
+def test_snapshot_routes_groq_stt_to_the_stt_node():
+    usage = [{"timestamp": 1.0, "vendor": "groq", "model": "whisper-large-v3-turbo"}]
+    result = brain.snapshot([], usage, [], {})
+    assert result["nodes"]["stt"]["count"] == 1
+
+
+def test_snapshot_splits_local_vendor_by_model_into_stt_and_tts_nodes():
+    usage = [
+        {"timestamp": 1.0, "vendor": "local", "model": "faster-whisper"},
+        {"timestamp": 2.0, "vendor": "local", "model": "kokoro"},
+    ]
+    result = brain.snapshot([], usage, [], {})
+    assert result["nodes"]["stt"]["count"] == 1
+    assert result["nodes"]["tts"]["count"] == 1
+
+
 def test_snapshot_routes_input_entries_by_channel():
     input_entries = [
         {"timestamp": 1.0, "channel": "text"},

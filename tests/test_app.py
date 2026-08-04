@@ -4,7 +4,8 @@ from fastapi.testclient import TestClient
 import app as app_module
 from snarf.memory.audio_store import AudioStore
 from snarf.memory.episodic import EpisodicMemory
-from snarf.telemetry import activity_log, input_log, usage_tracker
+from snarf.specialists import dashboard_curator as dashboard_curator_module
+from snarf.telemetry import activity_log, events, input_log, input_preprocessing, usage_tracker
 from snarf.voice.providers.kokoro_tts import KokoroTTS
 from snarf.voice.providers.local_stt import LocalWhisperSTT
 
@@ -40,6 +41,20 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(usage_tracker, "DEFAULT_PATH", tmp_path / "usage_log.jsonl")
     monkeypatch.setattr(activity_log, "DEFAULT_PATH", tmp_path / "activity_log.jsonl")
     monkeypatch.setattr(input_log, "DEFAULT_PATH", tmp_path / "input_log.jsonl")
+    # activity_log/usage_tracker/input_log ya redirigidos arriba, pero cada
+    # uno también emite el evento unificado (Fase 1 del plan de HUD) hacia
+    # events.DEFAULT_PATH — sin este monkeypatch, ese archivo real se sigue
+    # poluyendo con datos sintéticos de test aunque los otros tres no.
+    monkeypatch.setattr(events, "DEFAULT_PATH", tmp_path / "telemetry_events.jsonl")
+    monkeypatch.setattr(input_preprocessing, "DEFAULT_PATH", tmp_path / "input_preprocessing_log.jsonl")
+    # dashboard_curator es un Specialist con estado en disco propio (Vista
+    # HUD) — sin este redirect, estos tests leerían el cache REAL de
+    # producción (data/dashboard_curation/), como pasó de verdad: el loop
+    # periódico corrió con datos reales después de un restart de esta misma
+    # sesión y dejó un archivo real ahí, haciendo fallar un test que asumía
+    # cache vacío (mismo tipo de fuga que ADR 0085).
+    monkeypatch.setattr(dashboard_curator_module, "CACHE_DIR", tmp_path / "dashboard_curation")
+    monkeypatch.setattr(dashboard_curator_module, "TEMPLATE_PROPOSALS_PATH", tmp_path / "dashboard_template_proposals.json")
     monkeypatch.setenv("SNARF_ACCESS_PASSWORD", TEST_PASSWORD)
     monkeypatch.setenv("SESSION_SECRET", "test-session-secret")
     with TestClient(app_module.app, base_url="https://testserver") as c:
@@ -310,6 +325,194 @@ def test_dashboard_brain_since_param_filters_to_new_events_only(client, monkeypa
     assert second["events"][0]["node"] == "gmail_read"
 
 
+def test_dashboard_telemetry_feed_returns_events_with_verb_and_summary(client):
+    activity_log.record("drive_list_files", "ok", duration_ms=12.0)
+    res = client.get("/dashboard/telemetry_feed")
+    assert res.status_code == 200
+    data = res.json()
+    assert "server_time" in data
+    assert len(data["events"]) == 1
+    ev = data["events"][0]
+    assert ev["nodo"] == "drive"
+    assert ev["verbo"] == "hojeando el Drive"
+    assert ev["resumen"] == "drive_list_files"
+    assert ev["estado"] == "completo"
+
+
+def test_dashboard_telemetry_feed_since_param_filters_to_new_events_only(client):
+    activity_log.record("drive_list_files", "ok")
+    first = client.get("/dashboard/telemetry_feed").json()
+
+    activity_log.record("gmail_list_messages", "ok")
+    second = client.get(f"/dashboard/telemetry_feed?since={first['server_time']}").json()
+
+    assert len(second["events"]) == 1
+    assert second["events"][0]["nodo"] == "gmail_read"
+
+
+def test_dashboard_dock_priority_ranks_real_nodes_by_recent_activity(client):
+    activity_log.record("drive_list_files", "ok")
+    res = client.get("/dashboard/dock_priority")
+    assert res.status_code == 200
+    body = res.json()
+    assert "server_time" in body
+    top = body["ranking"][0]
+    assert top["nodo"] == "drive"
+    assert top["score"] > 0
+
+
+def test_dashboard_dock_priority_surfaces_cost_alert_when_threshold_crossed(client):
+    from snarf.telemetry import relevance
+
+    usage_tracker.record_anthropic_call("claude-sonnet-5", 1_000_000, 200_000)  # cruza el umbral de $1/día con margen
+    res = client.get("/dashboard/dock_priority")
+    ranking = res.json()["ranking"]
+    assert ranking[0]["nodo"] == "cost"
+    assert ranking[0]["score"] == relevance.COST_ALERT_SCORE
+
+
+def test_dashboard_widget_summaries_includes_real_activity(client):
+    activity_log.record("drive_list_files", "ok")
+    res = client.get("/dashboard/widget_summaries")
+    assert res.status_code == 200
+    body = res.json()
+    assert "server_time" in body
+    widget = next(w for w in body["widgets"] if w["node_id"] == "drive")
+    assert widget["count_total"] == 1
+    assert widget["curator_caption"] is None  # el Especialista todavía no curó nada — honesto, no un placeholder
+
+
+def test_dashboard_widget_summaries_excludes_nodes_without_real_activity(client):
+    res = client.get("/dashboard/widget_summaries")
+    assert res.json()["widgets"] == []
+
+
+def test_dashboard_widget_summaries_merges_real_curator_captions(client, monkeypatch):
+    import app as app_module
+
+    activity_log.record("drive_list_files", "ok")
+    monkeypatch.setattr(
+        app_module.dashboard_curator,
+        "cached_curation",
+        lambda: {"generated_at": 1.0, "headline": "x", "node_captions": {"drive": "una nota real curada"}},
+    )
+    res = client.get("/dashboard/widget_summaries")
+    widget = next(w for w in res.json()["widgets"] if w["node_id"] == "drive")
+    assert widget["curator_caption"] == "una nota real curada"
+
+
+def test_dashboard_widget_summaries_includes_mechanical_default_template(client):
+    # Antes de cualquier curación real, un widget todavía recibe una
+    # plantilla — el default mecánico de su size_tier, nunca un placeholder
+    # inventado por el curador.
+    from snarf.telemetry import widget_templates
+
+    activity_log.record("drive_list_files", "ok")
+    res = client.get("/dashboard/widget_summaries")
+    widget = next(w for w in res.json()["widgets"] if w["node_id"] == "drive")
+    assert widget["size_tier"] == "large"  # único widget activo -> rank 0
+    assert widget["template"] == widget_templates.DEFAULT_TEMPLATE_BY_TIER["large"]
+
+
+def test_dashboard_widget_summaries_merges_real_curator_template(client, monkeypatch):
+    import app as app_module
+
+    activity_log.record("drive_list_files", "ok")  # único widget activo -> rank 0 -> size_tier "large"
+    monkeypatch.setattr(
+        app_module.dashboard_curator,
+        "cached_curation",
+        lambda: {
+            "generated_at": 1.0, "headline": "x",
+            "node_captions": {"drive": "una nota real curada"},
+            "node_templates": {"drive": "deep_chart"},  # plantilla GRANDE válida, mismo tier que "drive" acá
+        },
+    )
+    res = client.get("/dashboard/widget_summaries")
+    widget = next(w for w in res.json()["widgets"] if w["node_id"] == "drive")
+    assert widget["template"] == "deep_chart"
+
+
+def test_dashboard_widget_summaries_discards_stale_cached_template_from_a_higher_tier(client, monkeypatch):
+    # Regresión de un bug real encontrado con Playwright: un nodo curado
+    # mientras era "medium" (con una plantilla de 320px) puede decaer a
+    # "small" en un poll posterior (el ranking se recalcula en vivo, la
+    # curación no) — usar la plantilla vieja sin validar metía una card
+    # grande en el espacio angosto reservado para widgets chicos.
+    import app as app_module
+    from snarf.telemetry import widget_templates
+
+    activity_log.record("drive_list_files", "ok")  # único widget activo -> rank 0 -> size_tier "large"
+    monkeypatch.setattr(
+        app_module.dashboard_curator,
+        "cached_curation",
+        lambda: {
+            "generated_at": 1.0, "headline": "x",
+            "node_captions": {"drive": "x"},
+            "node_templates": {"drive": "standard_wide"},  # plantilla MEDIANA, inválida para "large"
+        },
+    )
+    res = client.get("/dashboard/widget_summaries")
+    widget = next(w for w in res.json()["widgets"] if w["node_id"] == "drive")
+    assert widget["size_tier"] == "large"
+    assert widget["template"] == widget_templates.DEFAULT_TEMPLATE_BY_TIER["large"]
+
+
+def test_dashboard_widget_templates_endpoint_returns_all_24(client):
+    from snarf.telemetry import widget_templates
+
+    res = client.get("/dashboard/widget_templates")
+    assert res.status_code == 200
+    templates = res.json()["templates"]
+    assert len(templates) == 24
+    assert set(templates.keys()) == set(widget_templates.WIDGET_TEMPLATES.keys())
+    tiers = {t["tier"] for t in templates.values()}
+    assert tiers == {"small", "medium", "large"}
+
+
+def test_dashboard_template_proposals_endpoint_is_read_only_and_empty_by_default(client):
+    # La fixture `client` ya aísla TEMPLATE_PROPOSALS_PATH a un tmp_path.
+    res = client.get("/dashboard/template_proposals")
+    assert res.status_code == 200
+    assert res.json()["proposals"] == []
+
+
+def test_dashboard_curation_is_honest_before_any_refresh(client):
+    res = client.get("/dashboard/curation")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["headline"] is None
+    assert body["generated_at"] is None
+    assert body["curating"] is False
+
+
+def test_dashboard_node_activity_filters_to_a_single_node(client):
+    activity_log.record("drive_list_files", "ok")
+    activity_log.record("gmail_list_messages", "ok")
+    res = client.get("/dashboard/node_activity/drive")
+    assert res.status_code == 200
+    node_events = res.json()["events"]
+    assert len(node_events) == 1
+    assert node_events[0]["nodo"] == "drive"
+
+
+def test_dashboard_node_activity_since_param_filters_to_new_events_only(client):
+    activity_log.record("drive_list_files", "ok")
+    first = client.get("/dashboard/node_activity/drive").json()
+    activity_log.record("drive_read_file", "ok")
+    second = client.get(f"/dashboard/node_activity/drive?since={first['server_time']}").json()
+    assert len(second["events"]) == 1
+
+
+def test_dashboard_input_efficiency_reports_real_overhead(client):
+    input_preprocessing.record("c1", "hola", system_chars=400, history_chars=0, history_entries=0)
+    res = client.get("/dashboard/input_efficiency")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["recent"][0]["input_original"] == "hola"
+    assert body["recent"][0]["overhead_ratio"] > 1
+    assert body["summary"]["turns"] == 1
+
+
 def test_dashboard_preferences_defaults_before_any_save(client, tmp_path, monkeypatch):
     from snarf.runtime import dashboard_prefs
 
@@ -483,6 +686,19 @@ def test_dashboard_widget_usage_reports_real_metrics_per_vendor(client):
     assert vendors["anthropic"]["cost_usd"] > 0
     assert vendors["elevenlabs"]["characters"] == 120
     assert vendors["elevenlabs"]["cost_usd"] is None
+
+
+def test_dashboard_cost_history_aggregates_by_day_agente_and_session(client):
+    usage_tracker.record_anthropic_call("claude-sonnet-5", 1000, 500)
+    res = client.get("/dashboard/cost_history")
+    assert res.status_code == 200
+    body = res.json()
+    assert set(body.keys()) == {"by_day", "by_agente", "by_session"}
+    assert body["by_day"][0]["llamadas"] == 1
+    # "llm" (Anthropic) es un nodo; su agente/tier real (brain.NODE_TIER) es
+    # "capability" — no confundir nodo con agente acá.
+    assert body["by_agente"][0]["key"] == "capability"
+    assert body["by_agente"][0]["costo_usd"] > 0
 
 
 def test_dashboard_widget_usage_includes_real_elevenlabs_subscription_when_available(client, monkeypatch):
