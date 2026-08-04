@@ -74,3 +74,26 @@ def test_record_routes_unknown_tool_status_to_the_orchestrator_node(tmp_path):
     emitted = events.recent(path=events_path)
     assert emitted[0]["nodo"] == "orchestrator"
     assert emitted[0]["estado"] == "error"
+
+
+def test_record_propagates_preview_to_the_unified_event(tmp_path):
+    # ADR 0092: preview (título/link/snippet real de documento) tiene que
+    # llegar de punta a punta hasta el evento unificado, igual que detalle.
+    path = tmp_path / "activity.jsonl"
+    events_path = tmp_path / "events.jsonl"
+    preview = {"title": "Plan del canal", "link": "https://docs.google.com/document/d/x/edit", "snippet": None}
+    activity_log.record("drive_create_document", "ok", path=path, events_path=events_path, preview=preview)
+    from snarf.telemetry import events
+
+    emitted = events.recent(path=events_path)
+    assert emitted[0]["preview"] == preview
+
+
+def test_record_defaults_preview_to_none_when_not_a_document_tool(tmp_path):
+    path = tmp_path / "activity.jsonl"
+    events_path = tmp_path / "events.jsonl"
+    activity_log.record("search_memory", "ok", path=path, events_path=events_path)
+    from snarf.telemetry import events
+
+    emitted = events.recent(path=events_path)
+    assert emitted[0]["preview"] is None

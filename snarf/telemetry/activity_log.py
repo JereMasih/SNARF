@@ -19,14 +19,16 @@ def record(
     path: Path | None = None,
     events_path: Path | None = None,
     detalle: str | None = None,
+    preview: dict | None = None,
 ) -> None:
     """Registro append-only de cada herramienta que ejecuta el Orchestrator —
     qué se ejecutó y cuándo, base real (no inventada) para el cerebro de
     Snarf y, desde Fase 1 del plan de HUD, para el evento unificado de
     TELEMETRY_SCHEMA.md (ver snarf/telemetry/events.py). `detalle` (ADR 0089)
-    es el contenido real ya extraído por snarf/telemetry/detail.py en el
-    propio Orchestrator — este módulo solo lo transporta hasta el evento
-    unificado, nunca lo calcula. Ver Roadmaps en MASTER_MAP.md."""
+    y `preview` (ADR 0092) son contenido real ya extraído por
+    snarf/telemetry/detail.py en el propio Orchestrator — este módulo solo
+    los transporta hasta el evento unificado, nunca los calcula. Ver
+    Roadmaps en MASTER_MAP.md."""
     target = _target(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     timestamp = time.time()
@@ -39,7 +41,9 @@ def record(
     }
     with target.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    events.record_tool_event(tool_name, status, duration_ms=duration_ms, timestamp=timestamp, path=events_path, detalle=detalle)
+    events.record_tool_event(
+        tool_name, status, duration_ms=duration_ms, timestamp=timestamp, path=events_path, detalle=detalle, preview=preview
+    )
 
 
 def _read_all(path: Path | None) -> list[dict]:

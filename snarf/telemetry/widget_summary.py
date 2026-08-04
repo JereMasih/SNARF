@@ -56,12 +56,18 @@ def summarize_node(node_id: str, events: list[dict], now: float | None = None) -
     # legible, ver detail.py) no debe pisar el último contenido real que sí
     # hubo.
     last_detalle = next((e.get("detalle") for e in reversed(node_events) if e.get("detalle")), None)
+    # Igual criterio que last_detalle, pero para `preview` (ADR 0092,
+    # título/link/snippet real de documento) — independiente de
+    # last_detalle porque no todo evento con preview tiene el mismo evento
+    # "más reciente con detalle" (son dos campos que se completan por
+    # separado en detail.py).
+    last_preview = next((e.get("preview") for e in reversed(node_events) if e.get("preview")), None)
     # Para las plantillas de lista/timeline (v2) — los últimos hasta 5
     # eventos reales CON detalle, más reciente primero. Mismo criterio que
     # last_detalle: un evento sin detalle legible no ocupa un lugar en la
     # lista (nunca se rellena con una fila vacía para llegar a 5).
     recent_items = [
-        {"timestamp": e["timestamp"], "detalle": e["detalle"]}
+        {"timestamp": e["timestamp"], "detalle": e["detalle"], "preview": e.get("preview")}
         for e in reversed(node_events)
         if e.get("detalle")
     ][:5]
@@ -73,6 +79,7 @@ def summarize_node(node_id: str, events: list[dict], now: float | None = None) -
         "count_total": len(node_events),
         "last_timestamp": last_event["timestamp"],
         "last_detalle": last_detalle,
+        "last_preview": last_preview,
         "recent_items": recent_items,
         "has_error_recent": "error_reciente" in ranked["razones"],
         "score": ranked["score"],
@@ -93,6 +100,7 @@ def _cost_alert_summary(rank_entry: dict, day_summary: list[dict]) -> dict:
         "count_total": rank_entry.get("eventos_recientes", 0),
         "last_timestamp": None,
         "last_detalle": f"gasto de hoy: ${costo:.2f} (umbral ${umbral:.2f})",
+        "last_preview": None,  # el costo nunca es un documento real
         "recent_items": [],  # el costo no tiene "items" individuales — su serie real es cost_series
         "has_error_recent": False,
         "score": rank_entry["score"],

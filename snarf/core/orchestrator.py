@@ -1398,6 +1398,7 @@ class Orchestrator:
             activity_log.record(
                 name, "ok", duration_ms=(time.monotonic() - started) * 1000,
                 detalle=detail.extract(name, "ok", tool_input, result),
+                preview=detail.extract_preview(name, tool_input, result),
             )
             return result
         except Exception as exc:

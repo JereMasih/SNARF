@@ -478,6 +478,37 @@
   }
   .dash-hud-slot-stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; flex: 1 1 auto; }
   .dash-hud-slot-ticker { font-family: var(--hud-font-mono); font-size: 0.72rem; color: var(--glow-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; display: flex; align-items: center; gap: 0.35rem; }
+
+  /* --- Preview de documento (ADR 0092) — pedido explícito del fundador:
+     un globo que diga "leyendo X" sin mostrar nada del documento real "no
+     se vuelve útil". Reemplaza el slot de texto plano (body/list/timeline/
+     wall) cuando el evento trae un `preview` real — mismo family-color que
+     ya usa data-family="document" (ámbar), para que se lea como el mismo
+     tipo de contenido en cualquier plantilla donde caiga. */
+  .dash-hud-preview-card {
+    display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 auto; min-height: 0;
+    padding: 0.35rem 0.45rem; margin-top: 0.1rem; text-decoration: none; white-space: normal;
+    background: rgba(255,180,84,0.05); border: 1px solid rgba(255,180,84,0.22); border-radius: 6px;
+    overflow: hidden;
+  }
+  .dash-hud-preview-title {
+    font-size: 0.72rem; font-weight: 600; color: var(--hud-amber);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .dash-hud-preview-snippet {
+    font-size: 0.68rem; color: var(--text-dim); font-style: italic; line-height: 1.35;
+    overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+  }
+  .dash-hud-node[data-tier="small"] .dash-hud-preview-snippet { -webkit-line-clamp: 1; }
+  .dash-hud-node[data-tier="large"] .dash-hud-preview-snippet { -webkit-line-clamp: 5; font-size: 0.74rem; }
+  .dash-hud-preview-link {
+    align-self: flex-start; font-family: var(--hud-font-mono); font-size: 0.62rem; letter-spacing: 0.02em;
+    color: var(--glow-soft); text-decoration: none; opacity: 0.85; margin-top: 0.1rem; transition: opacity 150ms ease;
+  }
+  .dash-hud-preview-link:hover { opacity: 1; text-decoration: underline; }
+  /* Dentro de list/timeline cada <li> ya trae su propio spacing — sin el
+     margen extra pensado para cuando el preview reemplaza el slot "body". */
+  .dash-hud-slot-list .dash-hud-preview-card, .dash-hud-slot-timeline .dash-hud-preview-card { margin-top: 0; }
   .dash-hud-slot-ticker::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--hud-signal-red); flex-shrink: 0; animation: breathe 2.2s ease-in-out infinite; }
   .dash-hud-slot-gauge {
     width: 62%; aspect-ratio: 1; margin: 0 auto; border-radius: 50%; flex-shrink: 0;
@@ -590,6 +621,13 @@
   /* Sin contenedor propio (pedido explícito): la barra de input queda
      posada directo sobre el fondo del dashboard, igual que el chat. */
   .chat-dock .control-bar { background: none; border: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; padding-top: 0.4rem; }
+  /* Ancho coherente con el resto del chat (pedido explícito): la fila de
+     input venía topeada a 480px (el máximo pensado para la vista de chat
+     angosta de siempre), mucho más angosta que el propio chat-dock
+     (min(760px, 92vw)) — quedaba como un bloque chico centrado en vez de
+     ocupar el ancho real de la conversación. Scopeado a #chatDock: la vista
+     de chat clásica/modo enfoque no pidieron este cambio, siguen igual. */
+  #chatDock .text-row { max-width: none; }
   /* Los globos del chat tampoco llevan contenedor acá — única vista del
      ecosistema donde flotan directo sobre el fondo (pedido explícito, para
      que el degradado de arriba se vea bien). */
@@ -5394,12 +5432,33 @@ function dashHudStatCellHTML(value, label) {
 // Vocabulario de slots compartido por las 24 plantillas (ver
 // snarf/telemetry/widget_templates.py) — una plantilla nueva combina estos,
 // nunca hace falta CSS/JS a medida por plantilla individual.
+// Tarjeta de previsualización de documento (ADR 0092) — un globo que dice
+// "leyendo X" sin mostrar nada del documento real no aporta nada (pedido
+// explícito del fundador); reemplaza el texto plano de detalle cuando el
+// evento trae un `preview` real ({title, link, snippet} del backend, ver
+// snarf/telemetry/detail.py::extract_preview). Cualquiera de los tres puede
+// faltar (nunca se inventa el que falte) — la tarjeta solo muestra lo que
+// hay de verdad. El link es siempre clickeable de punta a punta hasta el
+// archivo real (nunca solo "leyendo..." como antes).
+function dashHudPreviewCardHTML(preview) {
+  if (!preview || (!preview.title && !preview.snippet && !preview.link)) return "";
+  const title = preview.title ? `<div class="dash-hud-preview-title">${escapeHtml(preview.title)}</div>` : "";
+  const snippet = preview.snippet ? `<div class="dash-hud-preview-snippet">${escapeHtml(preview.snippet)}</div>` : "";
+  const link = preview.link
+    ? `<a class="dash-hud-preview-link" href="${escapeHtml(preview.link)}" target="_blank" rel="noopener noreferrer">abrir archivo →</a>`
+    : "";
+  return `<div class="dash-hud-preview-card">${title}${snippet}${link}</div>`;
+}
+
 function dashHudBodySlotHTML(slot, widget, seen) {
   switch (slot) {
     case "icon":
       return `<div class="dash-hud-slot-icon-big">${escapeHtml(dashHudMetaFor(widget.node_id).icon)}</div>`;
-    case "body":
+    case "body": {
+      const previewHTML = dashHudPreviewCardHTML(widget.last_preview);
+      if (previewHTML) return previewHTML;
       return `<div class="dash-hud-slot-body">${escapeHtml(widget.last_detalle || `${widget.count_recent} eventos recientes`)}</div>`;
+    }
     case "caption":
       return widget.curator_caption ? `<div class="dash-hud-slot-caption">${escapeHtml(widget.curator_caption)}</div>` : "";
     case "narrative":
@@ -5410,18 +5469,20 @@ function dashHudBodySlotHTML(slot, widget, seen) {
       return `<div class="dash-hud-slot-badge">${widget.count_recent}</div>`;
     case "list": {
       const items = widget.recent_items || [];
-      return items.length ? `<ul class="dash-hud-slot-list">${items.map((it) => `<li>${escapeHtml(it.detalle)}</li>`).join("")}</ul>` : "";
+      return items.length
+        ? `<ul class="dash-hud-slot-list">${items.map((it) => `<li>${dashHudPreviewCardHTML(it.preview) || escapeHtml(it.detalle)}</li>`).join("")}</ul>`
+        : "";
     }
     case "timeline": {
       const items = widget.recent_items || [];
       return items.length
-        ? `<ul class="dash-hud-slot-timeline">${items.map((it) => `<li><span class="dash-hud-slot-timeline-time">${relativeTime(it.timestamp)}</span>${escapeHtml(it.detalle)}</li>`).join("")}</ul>`
+        ? `<ul class="dash-hud-slot-timeline">${items.map((it) => `<li><span class="dash-hud-slot-timeline-time">${relativeTime(it.timestamp)}</span>${dashHudPreviewCardHTML(it.preview) || escapeHtml(it.detalle)}</li>`).join("")}</ul>`
         : "";
     }
     case "wall": {
       const items = widget.recent_items || [];
       return items.length
-        ? `<div class="dash-hud-slot-wall">${items.map((it) => `<div class="dash-hud-slot-wall-item">${escapeHtml(it.detalle)}</div>`).join("")}</div>`
+        ? `<div class="dash-hud-slot-wall">${items.map((it) => `<div class="dash-hud-slot-wall-item">${dashHudPreviewCardHTML(it.preview) || escapeHtml(it.detalle)}</div>`).join("")}</div>`
         : "";
     }
     case "stat":
@@ -5461,10 +5522,17 @@ function dashHudOpacityForIndex(index) {
   return Math.max(1 - index * 0.07, 0.45);
 }
 function dashHudTransformFor(pos, opts) {
-  const z = -((pos.ring || 0) * 70);
+  // Bug real encontrado con Playwright: `pos` es `null` a propósito cuando
+  // un widget deja de ser relevante (ver el loop de `hiddenIds` en
+  // renderDashboardHudWidgets) — leer `pos.ring` ANTES de chequear
+  // `exitToCenter` tiraba una excepción sin capturar cada vez que un
+  // widget salía de la pantalla, interrumpiendo el resto del render de ese
+  // ciclo (los widgets siguientes en el mismo forEach quedaban sin
+  // actualizar). El chequeo de salida tiene que ir primero siempre.
   if (opts && opts.exitToCenter) {
     return `translate3d(${opts.cx}px, ${opts.cy}px, -220px) translate(-50%, -50%) scale(0.55)`;
   }
+  const z = -((pos.ring || 0) * 70);
   return `translate3d(${pos.x}px, ${pos.y}px, ${z}px) translate(-50%, -50%)`;
 }
 
@@ -5594,6 +5662,11 @@ function renderDashboardHudWidgets(widgets) {
   });
 }
 dashHudWidgets.addEventListener("click", (evt) => {
+  // El link "abrir archivo →" tiene que navegar al documento real, nunca
+  // abrir además el panel de detalle del nodo (mismo criterio que ya usaba
+  // el botón de pin, sacado en el fix anterior) — la navegación del <a> ya
+  // hace su trabajo sola, acá solo evitamos el side-effect del click.
+  if (evt.target.closest(".dash-hud-preview-link")) { evt.stopPropagation(); return; }
   const node = evt.target.closest(".dash-hud-node");
   if (node) openNodeDrillPanel(node.dataset.nodeId);
 });

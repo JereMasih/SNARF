@@ -107,3 +107,89 @@ def test_extract_never_raises_on_malformed_result_shape():
     # Ej. gmail_read_message espera un dict con "subject" — pasarle una
     # lista no debe romper nada.
     assert detail.extract("gmail_read_message", "ok", {"message_id": "1"}, ["no", "es", "un", "dict"]) is None
+
+
+# --- extract_preview (ADR 0092) --------------------------------------------
+
+
+def test_preview_extractors_only_reference_real_tools():
+    # A diferencia de DETAIL_EXTRACTORS, PREVIEW_EXTRACTORS es a propósito
+    # parcial (la mayoría de los tools no toca ningún documento real) — pero
+    # cualquier key tiene que seguir siendo un tool real del Orchestrator,
+    # nunca un nombre que ya no existe.
+    real_tool_names = {tool["name"] for tool in TOOLS}
+    assert set(detail.PREVIEW_EXTRACTORS.keys()) <= real_tool_names
+
+
+def test_extract_preview_returns_none_for_tool_without_document():
+    assert detail.extract_preview("search_memory", {"query": "x"}, []) is None
+
+
+def test_extract_preview_returns_none_when_tool_call_failed():
+    assert detail.extract_preview("drive_read_file", {"file_id": "f1", "mime_type": "application/pdf"}, {"error": "no se pudo"}) is None
+
+
+def test_every_preview_extractor_survives_empty_input_and_result():
+    for tool_name in detail.PREVIEW_EXTRACTORS:
+        for fake_input, fake_result in (({}, None), ({}, {}), ({}, []), (None, None)):
+            result = detail.extract_preview(tool_name, fake_input, fake_result)
+            assert result is None or isinstance(result, dict)
+
+
+def test_drive_read_file_preview_has_real_snippet_and_google_doc_link():
+    result = detail.extract_preview(
+        "drive_read_file",
+        {"file_id": "abc123", "mime_type": "application/vnd.google-apps.document"},
+        "Plan de contenido — Canal de edits de fútbol de Tommy...",
+    )
+    assert result["title"] is None  # el nombre real del archivo no viaja en tool_input/result — nunca se inventa
+    assert result["link"] == "https://docs.google.com/document/d/abc123/edit"
+    assert result["snippet"] == "Plan de contenido — Canal de edits de fútbol de Tommy..."
+
+
+def test_drive_read_file_preview_falls_back_to_generic_drive_link_for_non_google_mime():
+    result = detail.extract_preview("drive_read_file", {"file_id": "abc123", "mime_type": "application/pdf"}, "texto del pdf")
+    assert result["link"] == "https://drive.google.com/file/d/abc123/view"
+
+
+def test_drive_create_document_preview_has_real_title_and_link():
+    result = detail.extract_preview(
+        "drive_create_document",
+        {"title": "Plan del canal", "content": "..."},
+        {"id": "xyz", "name": "Plan del canal", "webViewLink": "https://docs.google.com/document/d/xyz/edit", "indexed": True, "location": "drive"},
+    )
+    assert result == {"title": "Plan del canal", "link": "https://docs.google.com/document/d/xyz/edit", "snippet": None}
+
+
+def test_drive_create_document_preview_uses_download_url_when_local_destination():
+    result = detail.extract_preview(
+        "drive_create_document",
+        {"title": "Nota local", "content": "...", "destination": "device"},
+        {"id": "local:1", "name": "Nota local.md", "path": "/x", "webViewLink": None, "indexed": True, "location": "device", "download_url": "/files/local/u1/Nota local.md"},
+    )
+    assert result["link"] == "/files/local/u1/Nota local.md"
+
+
+def test_notion_create_page_preview_has_real_title_and_url():
+    result = detail.extract_preview(
+        "notion_create_page", {"parent_page_id": "p1", "title": "Resumen semanal"}, {"id": "page1", "url": "https://www.notion.so/page1"}
+    )
+    assert result == {"title": "Resumen semanal", "link": "https://www.notion.so/page1", "snippet": None}
+
+
+def test_notion_read_page_preview_has_real_snippet_and_constructed_link():
+    result = detail.extract_preview("notion_read_page", {"page_id": "abc-123-def"}, "contenido real de la página")
+    assert result["link"] == "https://www.notion.so/abc123def"
+    assert result["snippet"] == "contenido real de la página"
+
+
+def test_drive_update_document_preview_has_link_only_on_confirmed_update():
+    result = detail.extract_preview(
+        "drive_update_document", {"file_id": "doc1", "new_content": "..."}, {"documentId": "doc1", "status": "updated"}
+    )
+    assert result == {"title": None, "link": "https://docs.google.com/document/d/doc1/edit", "snippet": None}
+
+
+def test_drive_update_document_preview_is_none_while_pending_confirmation():
+    pending = {"status": "pending_confirmation", "preview": {}, "instructions": "..."}
+    assert detail.extract_preview("drive_update_document", {"file_id": "doc1", "new_content": "..."}, pending) is None

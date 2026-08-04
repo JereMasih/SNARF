@@ -1,11 +1,12 @@
 from snarf.telemetry import relevance, widget_summary
 
 
-def _event(nodo, ts, estado="completo", detalle=None):
+def _event(nodo, ts, estado="completo", detalle=None, preview=None):
     return {
         "timestamp": ts, "nodo": nodo, "agente": "capability", "skill": f"{nodo}_tool",
         "modelo": None, "tokens_in": None, "tokens_out": None, "costo_usd": None,
         "latencia_ms": 10, "estado": estado, "conversation_id": "c1", "detalle": detalle,
+        "preview": preview,
     }
 
 
@@ -183,8 +184,8 @@ def test_summarize_node_recent_items_are_real_and_most_recent_first():
     ]
     summary = widget_summary.summarize_node("drive", events, now=1000.0)
     assert summary["recent_items"] == [
-        {"timestamp": 990.0, "detalle": "archivo B"},
-        {"timestamp": 900.0, "detalle": "archivo A"},
+        {"timestamp": 990.0, "detalle": "archivo B", "preview": None},
+        {"timestamp": 900.0, "detalle": "archivo A", "preview": None},
     ]
 
 
@@ -193,6 +194,45 @@ def test_summarize_node_recent_items_capped_at_five():
     summary = widget_summary.summarize_node("drive", events, now=1000.0)
     assert len(summary["recent_items"]) == 5
     assert summary["recent_items"][0]["detalle"] == "item 7"  # más reciente primero
+
+
+# --- preview de documento (ADR 0092) ---------------------------------------
+
+
+def test_summarize_node_last_preview_uses_the_most_recent_event_with_a_real_preview():
+    preview_a = {"title": "Plan A", "link": "https://docs.google.com/document/d/a/edit", "snippet": None}
+    preview_b = {"title": "Plan B", "link": "https://docs.google.com/document/d/b/edit", "snippet": None}
+    events = [
+        _event("drive", 900.0, detalle="leyendo A", preview=preview_a),
+        _event("drive", 950.0, detalle="algo sin documento"),  # sin preview: no debe pisar preview_a
+        _event("drive", 990.0, detalle="leyendo B", preview=preview_b),
+    ]
+    summary = widget_summary.summarize_node("drive", events, now=1000.0)
+    assert summary["last_preview"] == preview_b
+
+
+def test_summarize_node_last_preview_is_none_without_any_real_document():
+    events = [_event("drive", 990.0, detalle="listando archivos, sin documento puntual")]
+    summary = widget_summary.summarize_node("drive", events, now=1000.0)
+    assert summary["last_preview"] is None
+
+
+def test_summarize_node_recent_items_carry_their_own_preview():
+    preview_a = {"title": "Plan A", "link": "https://docs.google.com/document/d/a/edit", "snippet": None}
+    events = [
+        _event("drive", 900.0, detalle="leyendo A", preview=preview_a),
+        _event("drive", 990.0, detalle="listando archivos"),
+    ]
+    summary = widget_summary.summarize_node("drive", events, now=1000.0)
+    assert summary["recent_items"][0]["preview"] is None
+    assert summary["recent_items"][1]["preview"] == preview_a
+
+
+def test_cost_alert_summary_never_has_a_document_preview():
+    day_summary = [{"key": "2026-08-04", "costo_usd": 5.0, "llamadas": 10}]
+    summaries = widget_summary.all_widget_summaries([], day_summary, today_key="2026-08-04", now=1000.0)
+    cost_entry = next(s for s in summaries if s["node_id"] == "cost")
+    assert cost_entry["last_preview"] is None
 
 
 def test_cost_alert_summary_includes_a_real_multi_day_series_never_fabricated():

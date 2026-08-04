@@ -379,6 +379,109 @@ DETAIL_EXTRACTORS = {
 }
 
 
+# --- preview de documento (título/link/snippet real, ver ADR 0092) --------
+#
+# Distinto de DETAIL_EXTRACTORS de arriba: no busca cubrir todos los tools
+# (la mayoría no tiene ningún documento real que previsualizar), y a
+# propósito NUNCA hace una llamada de red nueva para completar un dato que
+# falta (ej. el título real de `drive_read_file`, que hoy no viaja en
+# `tool_input`/`result` — ver investigación en el PR de este ADR) — mismo
+# principio de honestidad que el resto de este archivo: mejor un campo
+# ausente que uno inventado o que agregue latencia oculta al turno del
+# usuario. El link SÍ se puede armar sin red: son URLs públicas y estables
+# documentadas por Google/Notion, nunca inventadas por Snarf.
+PREVIEW_MAX_CHARS = 160
+
+_DRIVE_MIME_TO_URL_TEMPLATE = {
+    "application/vnd.google-apps.document": "https://docs.google.com/document/d/{id}/edit",
+    "application/vnd.google-apps.spreadsheet": "https://docs.google.com/spreadsheets/d/{id}/edit",
+    "application/vnd.google-apps.presentation": "https://docs.google.com/presentation/d/{id}/edit",
+}
+
+
+def _drive_file_link(file_id, mime_type=None) -> str | None:
+    if not file_id:
+        return None
+    template = _DRIVE_MIME_TO_URL_TEMPLATE.get(mime_type or "")
+    if template:
+        return template.format(id=file_id)
+    return f"https://drive.google.com/file/d/{file_id}/view"
+
+
+def _notion_page_link(page_id) -> str | None:
+    if not page_id:
+        return None
+    return f"https://www.notion.so/{str(page_id).replace('-', '')}"
+
+
+def _preview(title=None, link=None, snippet=None) -> dict | None:
+    title = _truncate(title)
+    snippet = snippet.strip()[:PREVIEW_MAX_CHARS] if isinstance(snippet, str) and snippet.strip() else None
+    if title is None and link is None and snippet is None:
+        return None
+    return {"title": title, "link": link, "snippet": snippet}
+
+
+def _preview_drive_read_file(i, r):
+    if not isinstance(r, str):
+        return None
+    return _preview(link=_drive_file_link(_input_get(i, "file_id"), _input_get(i, "mime_type")), snippet=r)
+
+
+def _preview_drive_update_document(i, r):
+    if not isinstance(r, dict) or r.get("status") != "updated":
+        return None
+    return _preview(link=_drive_file_link(_input_get(i, "file_id"), "application/vnd.google-apps.document"))
+
+
+def _preview_created_document(i, r):
+    if not isinstance(r, dict):
+        return None
+    return _preview(
+        title=_input_get(i, "title"),
+        link=r.get("webViewLink") or r.get("download_url"),
+    )
+
+
+def _preview_notion_create_page(i, r):
+    if not isinstance(r, dict):
+        return None
+    return _preview(title=_input_get(i, "title"), link=r.get("url"))
+
+
+def _preview_notion_read_page(i, r):
+    if not isinstance(r, str):
+        return None
+    return _preview(link=_notion_page_link(_input_get(i, "page_id")), snippet=r)
+
+
+PREVIEW_EXTRACTORS = {
+    "drive_read_file": _preview_drive_read_file,
+    "drive_update_document": _preview_drive_update_document,
+    "drive_create_document": _preview_created_document,
+    "drive_create_spreadsheet": _preview_created_document,
+    "drive_create_presentation": _preview_created_document,
+    "notion_create_page": _preview_notion_create_page,
+    "notion_read_page": _preview_notion_read_page,
+}
+
+
+def extract_preview(tool_name: str, tool_input: dict, result: object) -> dict | None:
+    """Punto de entrada de la previsualización de documento — paralelo a
+    `extract()`, pero deliberadamente parcial (ver comentario de
+    PREVIEW_EXTRACTORS arriba): no todo tool tiene un documento real que
+    mostrar, así que no hay ningún test de cobertura total como el de
+    DETAIL_EXTRACTORS. `{"title", "link", "snippet"}`, cualquiera puede ser
+    `None` si ese dato en particular no está disponible de verdad."""
+    extractor = PREVIEW_EXTRACTORS.get(tool_name)
+    if extractor is None:
+        return None
+    try:
+        return extractor(tool_input, result)
+    except Exception:
+        return None
+
+
 def truncate_detalle(value) -> str | None:
     """Público — usado también por las capabilities de vendor (LLM/STT/TTS,
     ver anthropic_llm.py/gemini_llm.py/elevenlabs_*.py/kokoro_tts.py/

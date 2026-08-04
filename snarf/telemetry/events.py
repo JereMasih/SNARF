@@ -32,7 +32,7 @@ def _write(entry: dict, path: Path | None) -> None:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-def _event(nodo, agente, skill, estado, modelo=None, tokens_in=None, tokens_out=None, costo_usd=None, latencia_ms=None, timestamp=None, detalle=None) -> dict:
+def _event(nodo, agente, skill, estado, modelo=None, tokens_in=None, tokens_out=None, costo_usd=None, latencia_ms=None, timestamp=None, detalle=None, preview=None) -> dict:
     # conversation_id sale del contexto por thread (snarf/telemetry/context.py),
     # nunca de un parámetro nuevo en cada record_*() — Orchestrator.handle()
     # lo setea al entrar a un turno real y lo limpia en un finally. Eventos
@@ -56,10 +56,18 @@ def _event(nodo, agente, skill, estado, modelo=None, tokens_in=None, tokens_out=
         # real cuando existe; `None` si el tool no tiene contenido legible o
         # el extractor no encontró nada real (nunca se inventa).
         "detalle": detalle,
+        # `preview`: previsualización real de documento cuando el tool tocó
+        # uno (ver snarf/telemetry/detail.py::extract_preview y ADR 0092) —
+        # `{"title", "link", "snippet"}` con lo que haya de verdad, o `None`
+        # si el tool no tiene ningún documento real que mostrar. A
+        # diferencia de `detalle` (siempre texto), esto queda estructurado
+        # para que el frontend pueda armar una tarjeta clickeable en vez de
+        # solo una línea de texto.
+        "preview": preview,
     }
 
 
-def record_tool_event(tool_name: str, status: str, duration_ms: float | None = None, timestamp: float | None = None, path: Path | None = None, detalle: str | None = None) -> None:
+def record_tool_event(tool_name: str, status: str, duration_ms: float | None = None, timestamp: float | None = None, path: Path | None = None, detalle: str | None = None, preview: dict | None = None) -> None:
     """Un evento por cada tool que despacha el Orchestrator — llamar desde
     adentro de activity_log.record(), mismo criterio de nodo que ya usa
     brain.py para no mantener dos taxonomías paralelas."""
@@ -82,6 +90,7 @@ def record_tool_event(tool_name: str, status: str, duration_ms: float | None = N
             latencia_ms=duration_ms,
             timestamp=timestamp,
             detalle=detalle,
+            preview=preview,
         ),
         path,
     )
