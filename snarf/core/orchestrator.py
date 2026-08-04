@@ -30,12 +30,14 @@ from snarf.core.identity import load_identity
 from snarf.knowledge.document_publisher import DocumentPublisher
 from snarf.knowledge.drive_indexer import DriveIndexer
 from snarf.knowledge.extraction import ContentExtractor
+from snarf.knowledge.indexer import KnowledgeIndexer
+from snarf.knowledge.local_repo_source import LocalRepoKnowledgeSource
 from snarf.knowledge.vector_store import VectorStore
 from snarf.memory.episodic import EpisodicMemory
 from snarf.runtime import llm_routing, personality_prefs, user_profile
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
-from snarf.telemetry import activity_log, context, detail, input_preprocessing
+from snarf.telemetry import activity_log, context, detail, input_preprocessing, usage_tracker
 
 # Único usuario real hoy. El Orchestrator ya recibe un user_id explícito (en
 # vez de asumirlo implícitamente) para que agregar un segundo usuario en el
@@ -55,6 +57,40 @@ FOUNDER_TIMEZONE = "America/Argentina/Buenos_Aires"
 
 DRIVE_INDEX_DATA_DIR = Path("data/drive_index")
 LOCAL_FILES_DATA_DIR = Path("data/local_files")
+# Knowledge Layer generalizada (ver KNOWLEDGE.md) — dominios más allá de
+# 'personal' (que sigue viviendo en DRIVE_INDEX_DATA_DIR/DriveIndexer, sin
+# tocar). Hoy solo 'code' tiene una fuente real conectada.
+KNOWLEDGE_DATA_DIR = Path("data/knowledge")
+
+# Qué tools son de alto impacto (protocolo de confirmación en dos pasos,
+# ADR 0015) o de lectura masiva potencialmente costosa (ADR 0067) era hasta
+# ahora conocimiento tribal repartido en ~11 métodos (cuáles llaman a
+# self._pending()/self._bulk_read_gate()) — estas dos constantes lo vuelven
+# un hecho chequeable por test (ver tests/test_mcp_server.py), no solo
+# implícito en el código. Usadas por primera vez por el allowlist del
+# servidor MCP (ver ADR 0093, snarf/mcp/tools.py): ningún tool de acá puede
+# quedar expuesto ahí.
+HIGH_IMPACT_TOOLS = frozenset({
+    "gmail_send_message",
+    "calendar_create_event",
+    "calendar_create_calendar",
+    "calendar_delete_calendar",
+    "calendar_delete_event",
+    "calendar_move_event",
+    "gmail_delete_label",
+    "drive_delete_file",
+    "drive_share_file",
+    "drive_update_document",
+    "project_delete",
+})
+BULK_READ_GATED_TOOLS = frozenset({
+    "drive_list_files",
+    "gmail_list_messages",
+    "calendar_list_upcoming_events",
+    "calendar_search_events",
+    "youtube_list_subscriptions",
+    "youtube_list_liked_videos",
+})
 
 BULK_READ_CONFIRM_THRESHOLD = 50
 
@@ -173,6 +209,13 @@ SYSTEM_PREFIX = (
     "mostraste un drive_index_scan en esta conversación, mostraselo primero "
     "(cantidad de archivos, tamaño, desglose por tipo) y dejá que decida el alcance "
     "antes de arrancar.\n\n"
+    "Además de Drive, tenés acceso al propio código y documentación de Snarf: "
+    "codebase_search busca semánticamente ahí (requiere haber indexado antes con "
+    "knowledge_index_start(domain='code'), sin costo real más allá de embeddings). "
+    "knowledge_search(domain=...) es el mismo tipo de búsqueda generalizada a "
+    "cualquier dominio de la Knowledge Layer — 'personal' (Drive) o 'code' ya tienen "
+    "fuente real; el resto (business/trading/marketing/finance) todavía no, y el "
+    "tool te lo va a decir explícito en vez de devolver algo inventado.\n\n"
     "También podés crear archivos reales: drive_create_document (markdown, pdf o un "
     "Google Doc editable), drive_create_spreadsheet (xlsx o Google Sheet) y "
     "drive_create_presentation (pptx o Google Slides). Cuando el destino sea "
@@ -596,6 +639,79 @@ TOOLS = [
             "type": "object",
             "properties": {"query": {"type": "string"}, "top_k": {"type": "integer"}},
             "required": ["query"],
+        },
+    },
+    {
+        "name": "codebase_search",
+        "description": (
+            "Búsqueda semántica sobre el propio código y documentación de Snarf (snarf/**/*.py, "
+            "adr/*.md, tests/**/*.py, y los documentos de la raíz del repo) — el dominio 'code' de "
+            "la Knowledge Layer (ver KNOWLEDGE.md). Costo cero más allá de embeddings: no hace "
+            "ninguna llamada de red para leer el contenido, ya vive en disco. Requiere haber "
+            "indexado antes con knowledge_index_start(domain='code')."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}, "top_k": {"type": "integer"}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "knowledge_search",
+        "description": (
+            "Búsqueda semántica sobre un dominio real de la Knowledge Layer (ver KNOWLEDGE.md). "
+            "domain='personal' busca sobre Drive ya indexado (mismo motor que drive_search_knowledge); "
+            "domain='code' busca sobre el propio repositorio de Snarf. Los demás dominios (business/"
+            "trading/marketing/finance) todavía no tienen fuente real conectada — devuelve eso "
+            "explícito en vez de inventar resultados."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "domain": {
+                    "type": "string",
+                    "enum": ["personal", "code", "business", "trading", "marketing", "finance"],
+                },
+                "top_k": {"type": "integer"},
+            },
+            "required": ["query", "domain"],
+        },
+    },
+    {
+        "name": "knowledge_index_start",
+        "description": (
+            "Arranca (o reanuda) en segundo plano la indexación de un dominio de la Knowledge Layer. "
+            "Hoy solo domain='code' tiene una fuente real conectable por esta vía (el propio "
+            "repositorio) — domain='personal' se indexa con drive_index_start, no acá. Sin costo "
+            "real de vendor más allá de embeddings (Voyage)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"domain": {"type": "string", "enum": ["code"]}},
+            "required": ["domain"],
+        },
+    },
+    {
+        "name": "knowledge_index_status",
+        "description": "Progreso de la indexación de un dominio de la Knowledge Layer en curso (o de la última corrida).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"domain": {"type": "string", "enum": ["code"]}},
+            "required": ["domain"],
+        },
+    },
+    {
+        "name": "telemetry_cost_summary",
+        "description": (
+            "Costo real de operar Snarf (dólares reales por vendor — Anthropic/ElevenLabs/Voyage/etc. — "
+            "en las últimas 24hs y últimos N días), calculado a partir de usage_log.jsonl real. Esto es el "
+            "opex real de Snarf, no la caja/ingresos del negocio del fundador — esos todavía no tienen "
+            "fuente real conectada (ver KNOWLEDGE.md, dominio 'business')."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"recent_days": {"type": "integer", "description": "Default 7."}},
         },
     },
     {
@@ -1063,6 +1179,18 @@ class Orchestrator:
             vector_store=VectorStore(persist_directory=str(user_index_dir / "chroma")),
             manifest_path=user_index_dir / "manifest.json",
         )
+        # Knowledge Layer generalizada (ver KNOWLEDGE.md, ADR 0093): dominio
+        # 'code' indexa el propio repositorio de Snarf — costo cero más allá
+        # de embeddings, sin la complejidad de extracción por mimetype que
+        # Drive sí tiene. 'personal' sigue sirviéndose de self._drive_indexer
+        # sin cambios; este es un motor nuevo y aditivo, no un reemplazo.
+        code_index_dir = KNOWLEDGE_DATA_DIR / user_id / "code"
+        self._code_indexer = KnowledgeIndexer(
+            source=LocalRepoKnowledgeSource(),
+            embeddings=VoyageEmbeddings(),
+            vector_store=VectorStore(persist_directory=str(code_index_dir / "chroma"), collection_name="code"),
+            manifest_path=code_index_dir / "manifest.json",
+        )
         self._document_publisher = DocumentPublisher(
             builder=DocumentBuilder(),
             drive=self._drive,
@@ -1131,6 +1259,11 @@ class Orchestrator:
             "drive_index_status": lambda i: self._drive_indexer.status(),
             "drive_index_stop": lambda i: self._drive_indexer.stop(),
             "drive_search_knowledge": lambda i: self._drive_indexer.search(i["query"], top_k=i.get("top_k", 5)),
+            "codebase_search": lambda i: self._code_indexer.search(i["query"], top_k=i.get("top_k", 5)),
+            "knowledge_search": lambda i: self._tool_knowledge_search(i),
+            "knowledge_index_start": lambda i: self._knowledge_index_start(i["domain"]),
+            "knowledge_index_status": lambda i: self._knowledge_index_status(i["domain"]),
+            "telemetry_cost_summary": lambda i: usage_tracker.summarize(recent_days=i.get("recent_days", 7)),
             "drive_create_document": lambda i: self._document_publisher.create_document(
                 i["title"], i["content"], format=i.get("format", "markdown"), destination=i.get("destination", "drive")
             ),
@@ -1200,6 +1333,10 @@ class Orchestrator:
         return self._drive_indexer
 
     @property
+    def code_indexer(self) -> KnowledgeIndexer:
+        return self._code_indexer
+
+    @property
     def document_publisher(self) -> DocumentPublisher:
         return self._document_publisher
 
@@ -1222,6 +1359,42 @@ class Orchestrator:
         if not result.ok:
             return {"error": result.skipped_reason}
         return result.text
+
+    # Dominios reales de la Knowledge Layer generalizada (ver KNOWLEDGE.md) —
+    # 'personal' sigue sirviéndose de DriveIndexer sin cambios; 'code' es el
+    # nuevo motor genérico. El resto todavía no tiene fuente real conectada:
+    # se declara explícito en vez de fabricar un resultado (Principio VI).
+    _KNOWLEDGE_DOMAINS_WITHOUT_SOURCE_YET = ("business", "trading", "marketing", "finance")
+
+    def _tool_knowledge_search(self, i: dict) -> dict | list[dict]:
+        domain = i["domain"]
+        query = i["query"]
+        top_k = i.get("top_k", 5)
+        if domain == "personal":
+            return self._drive_indexer.search(query, top_k=top_k)
+        if domain == "code":
+            return self._code_indexer.search(query, top_k=top_k)
+        return {
+            "error": (
+                f"El dominio '{domain}' todavía no tiene una fuente real conectada en la Knowledge "
+                "Layer (ver KNOWLEDGE.md) — no hay nada indexado que buscar todavía."
+            )
+        }
+
+    def _knowledge_index_start(self, domain: str) -> dict:
+        if domain == "code":
+            return self._code_indexer.start()
+        return {
+            "error": (
+                f"Indexación no disponible todavía para domain='{domain}' por esta vía. "
+                "domain='personal' se indexa con drive_index_start, no con knowledge_index_start."
+            )
+        }
+
+    def _knowledge_index_status(self, domain: str) -> dict:
+        if domain == "code":
+            return self._code_indexer.status()
+        return {"error": f"Sin indexador real para domain='{domain}' todavía."}
 
     @staticmethod
     def _pending(preview: dict) -> dict:

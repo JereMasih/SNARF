@@ -178,6 +178,12 @@ def _drive_index_stop(i, r):
     return "deteniendo la indexación"
 
 
+# Knowledge Layer generalizada (ver KNOWLEDGE.md, ADR 0093) — mismas formas
+# de resultado que sus equivalentes de drive_index_*, reusadas tal cual.
+_knowledge_index_status = _drive_index_status
+_knowledge_index_start = _drive_index_start
+
+
 # --- documents ---------------------------------------------------------
 
 
@@ -291,6 +297,12 @@ def _measure_text_length(i, r):
     return None
 
 
+def _telemetry_cost_summary(i, r):
+    if isinstance(r, dict):
+        return _truncate(f"${r.get('today_usd', 0):.2f} hoy, ${r.get('total_usd', 0):.2f} total real")
+    return None
+
+
 # --- notion ------------------------------------------------------------
 
 
@@ -302,6 +314,7 @@ DETAIL_EXTRACTORS = {
     # utility
     "get_current_datetime": _get_current_datetime,
     "measure_text_length": _measure_text_length,
+    "telemetry_cost_summary": _telemetry_cost_summary,
     # memory
     "list_conversations": _list_count("conversaciones"),
     "get_conversation": _get_conversation,
@@ -321,6 +334,10 @@ DETAIL_EXTRACTORS = {
     "drive_index_status": _drive_index_status,
     "drive_index_stop": _drive_index_stop,
     "drive_search_knowledge": _from_input("query", prefix="buscando en lo indexado:"),
+    "codebase_search": _from_input("query", prefix="buscando en el código:"),
+    "knowledge_search": _from_input("query", prefix="buscando en lo indexado:"),
+    "knowledge_index_start": _knowledge_index_start,
+    "knowledge_index_status": _knowledge_index_status,
     # documents
     "drive_create_document": _from_input("title", prefix="redactando"),
     "drive_create_spreadsheet": _from_input("title", prefix="armando la planilla"),

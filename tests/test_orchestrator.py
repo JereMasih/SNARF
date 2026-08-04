@@ -785,3 +785,98 @@ def test_handle_input_preprocessing_counts_replayed_history_on_a_second_turn(orc
     second = entries[-1]
     assert second["history_entries"] == 1
     assert second["history_chars"] == len("primero") + len("respuesta uno")
+
+
+# --- Knowledge Layer generalizada (ver KNOWLEDGE.md, ADR 0093) -------------
+
+
+class _FakeDomainIndexer:
+    def __init__(self, search_result=None):
+        self.search_calls = []
+        self.start_called = False
+        self._status = {"running": False}
+        self._search_result = search_result if search_result is not None else [{"text": "resultado real"}]
+
+    def search(self, query, top_k=5):
+        self.search_calls.append((query, top_k))
+        return self._search_result
+
+    def start(self):
+        self.start_called = True
+        return {"status": "started"}
+
+    def status(self):
+        return self._status
+
+
+def test_knowledge_search_with_domain_personal_delegates_to_the_drive_indexer(orchestrator, monkeypatch):
+    fake = _FakeDomainIndexer()
+    monkeypatch.setattr(orchestrator, "_drive_indexer", fake)
+
+    result = orchestrator._handle_tool("knowledge_search", {"query": "impuestos", "domain": "personal"})
+
+    assert fake.search_calls == [("impuestos", 5)]
+    assert result == [{"text": "resultado real"}]
+
+
+def test_knowledge_search_with_domain_code_delegates_to_the_code_indexer(orchestrator, monkeypatch):
+    fake = _FakeDomainIndexer()
+    monkeypatch.setattr(orchestrator, "_code_indexer", fake)
+
+    result = orchestrator._handle_tool("knowledge_search", {"query": "orchestrator", "domain": "code", "top_k": 3})
+
+    assert fake.search_calls == [("orchestrator", 3)]
+    assert result == [{"text": "resultado real"}]
+
+
+def test_knowledge_search_with_a_domain_without_a_real_source_reports_it_explicitly_instead_of_inventing(orchestrator):
+    result = orchestrator._handle_tool("knowledge_search", {"query": "caja real", "domain": "business"})
+
+    assert "error" in result
+    assert "business" in result["error"]
+
+
+def test_codebase_search_always_uses_the_code_indexer(orchestrator, monkeypatch):
+    fake = _FakeDomainIndexer()
+    monkeypatch.setattr(orchestrator, "_code_indexer", fake)
+
+    result = orchestrator._handle_tool("codebase_search", {"query": "orchestrator"})
+
+    assert fake.search_calls == [("orchestrator", 5)]
+    assert result == [{"text": "resultado real"}]
+
+
+def test_knowledge_index_start_with_domain_code_starts_the_code_indexer(orchestrator, monkeypatch):
+    fake = _FakeDomainIndexer()
+    monkeypatch.setattr(orchestrator, "_code_indexer", fake)
+
+    result = orchestrator._handle_tool("knowledge_index_start", {"domain": "code"})
+
+    assert fake.start_called is True
+    assert result == {"status": "started"}
+
+
+def test_knowledge_index_start_with_domain_personal_reports_the_real_alternative_instead_of_starting_anything(orchestrator, monkeypatch):
+    fake = _FakeDomainIndexer()
+    monkeypatch.setattr(orchestrator, "_drive_indexer", fake)
+
+    result = orchestrator._handle_tool("knowledge_index_start", {"domain": "personal"})
+
+    assert fake.start_called is False
+    assert "drive_index_start" in result["error"]
+
+
+def test_knowledge_index_status_with_domain_code_reads_the_code_indexer(orchestrator, monkeypatch):
+    fake = _FakeDomainIndexer()
+    fake._status = {"running": True, "processed": 3}
+    monkeypatch.setattr(orchestrator, "_code_indexer", fake)
+
+    result = orchestrator._handle_tool("knowledge_index_status", {"domain": "code"})
+
+    assert result == {"running": True, "processed": 3}
+
+
+def test_knowledge_index_status_with_an_unsupported_domain_reports_it_explicitly(orchestrator):
+    result = orchestrator._handle_tool("knowledge_index_status", {"domain": "marketing"})
+
+    assert "error" in result

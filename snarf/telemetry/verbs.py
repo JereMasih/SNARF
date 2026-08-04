@@ -29,6 +29,7 @@ VERB_BY_SKILL: dict[str, str] = {
     # utility
     "get_current_datetime": "chequeando la hora",
     "measure_text_length": "midiendo el texto",
+    "telemetry_cost_summary": "revisando el gasto real",
     # memory
     "list_conversations": "hojeando conversaciones",
     "get_conversation": "releyendo",
@@ -48,6 +49,10 @@ VERB_BY_SKILL: dict[str, str] = {
     "drive_index_status": "revisando el progreso",
     "drive_index_stop": "frenando la indexación",
     "drive_search_knowledge": "rastreando lo indexado",
+    "codebase_search": "buscando en el propio código",
+    "knowledge_search": "buscando en lo indexado",
+    "knowledge_index_start": "indexando el conocimiento",
+    "knowledge_index_status": "revisando el progreso",
     # documents
     "drive_create_document": "redactando el documento",
     "drive_create_spreadsheet": "armando la planilla",

@@ -36,6 +36,12 @@ No existe todavía selección de Especialistas ni de Capacidades más allá del 
 
 Usa además su propia Capacidad de LLM, distinta a la de Snarf (`claude-haiku-4-5`, más barato) — categorizar correos es una tarea acotada, no necesita el modelo principal de Snarf. Un Especialista puede elegir la Capacidad de LLM que le convenga; no está atado a la de Snarf.
 
+# Especialistas de proceso separado (2026-08-04, ver ADR 0094)
+
+El contrato de un Especialista Cognitivo (razona sobre un dominio acotado, con metodología propia, sin identidad propia, sin hablar directamente con el fundador) no exige que corra en el mismo proceso Python que el Orchestrator — es una propiedad conceptual, no de despliegue. `GmailDigestSpecialist`/`DashboardCuratorSpecialist`/`ProjectManager` la satisfacen por llamado de método in-process; la Inteligencia Ejecutiva (`snarf/executive/`, board asesor de 7 roles — CEO/CTO/CFO/CMO/COO/Chief Research Officer/Chief Creative Officer) la satisface por un proceso separado que consulta un subconjunto curado y de solo lectura de las herramientas de Snarf vía MCP (ver ADR 0093), y devuelve su resultado a Snarf como resultado de herramienta (`executive_board_consult`) exactamente igual que cualquier otro Especialista. No es una cuarta capa: es una segunda estrategia de implementación de la misma capa ya definida en Architecture Review 0001/ADR 0003.
+
+Los roles ejecutivos tienen cero autoridad inherente — su única competencia es lectura vía el allowlist MCP (garantía estructural: las herramientas mutantes ni existen en su proceso, no una instrucción de prompt). Ningún rol tiene autoridad sobre otro; Snarf es el único sintetizador, nunca un rol "preside" a los demás. Toda afirmación de un rol lleva una etiqueta de base real (`hecho`/`inferencia`/`hipótesis`/`estimación`/`opinión`), verificada en código — una afirmación etiquetada `hecho` sin una fuente real citable se degrada mecánicamente a `inferencia`, nunca confiada al self-report del modelo. Mismo principio que ya rige a `DashboardCuratorSpecialist`: nunca inventar un dato que no esté ahí.
+
 # Memoria
 
 La memoria episódica es un registro append-only (`data/episodic_memory.jsonl`). Nunca se edita ni se borra una entrada existente; solo se agregan nuevas. Esto implementa directamente el Principio VIII de Foundation (Continuidad: preservar evidencia y evolución, no versiones idealizadas) y el Artículo VIII de Constitution (trazabilidad e irreversibilidad).

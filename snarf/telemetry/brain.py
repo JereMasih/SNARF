@@ -39,6 +39,7 @@ CENTER_NODE = "orchestrator"
 TOOL_TO_NODE: dict[str, str] = {
     "get_current_datetime": "utility",
     "measure_text_length": "utility",
+    "telemetry_cost_summary": "utility",
     "list_conversations": "memory",
     "get_conversation": "memory",
     "search_memory": "memory",
@@ -55,6 +56,15 @@ TOOL_TO_NODE: dict[str, str] = {
     "drive_index_status": "knowledge",
     "drive_index_stop": "knowledge",
     "drive_search_knowledge": "knowledge",
+    # Knowledge Layer generalizada (ver KNOWLEDGE.md, ADR 0093): mismo nodo
+    # 'knowledge' que ya representaba la indexación de Drive — domain='code'
+    # es la misma capacidad real (buscar/indexar sobre conocimiento) sirviendo
+    # una fuente nueva, no algo que un usuario reconocería como una
+    # subcapacidad distinta (criterio del protocolo de arriba).
+    "codebase_search": "knowledge",
+    "knowledge_search": "knowledge",
+    "knowledge_index_start": "knowledge",
+    "knowledge_index_status": "knowledge",
     "drive_create_document": "documents",
     "drive_create_spreadsheet": "documents",
     "drive_create_presentation": "documents",

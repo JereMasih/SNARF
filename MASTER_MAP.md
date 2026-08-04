@@ -49,13 +49,12 @@ Define autoridad, delegación, permisos, auditoría y gestión del riesgo.
 Documentos:
 
 - CONSTITUTION (vigente, v1.0) — nivel constitucional: quién tiene poder, cómo se transfiere, cómo se limita.
+- **POLICY_HIGH_IMPACT_ACTIONS (nuevo, v1.0, 2026-08-04)** — primera Política real del proyecto. Nombra, caso por caso, qué acciones nuevas (introducidas por Inteligencia Ejecutiva, Skill Factory y las ramas de capacidades — ver ADR 0093/0094/0095) requieren la confirmación de Constitution Art. VII y cuáles son competencia operativa ordinaria. Editable con menor fricción que Constitution (Art. IX), sin reabrir la Constitution cada vez que aparece un caso nuevo.
 
-**Vacío detectado en la auditoría constitucional de Constitution Design 0001:** este dominio necesita, a futuro, dos niveles adicionales que hoy no existen como tipo de documento distinto:
+**Vacío que quedaba detectado desde la auditoría constitucional de Constitution Design 0001, ahora parcialmente cerrado:** este dominio necesitaba dos niveles adicionales que no existían como tipo de documento distinto:
 
-- **Políticas** — posturas operativas revisables (ej. qué acciones requieren aprobación explícita, delegado vigente). Cambian con más fricción que un ajuste de código, pero sin necesidad de reabrir Constitution.
-- **Procedimientos** — pasos concretos de ejecución (ej. protocolo de verificación de sucesión, mecánica de notificación). Cambian con la menor fricción de los tres niveles.
-
-No se crean todavía por no existir contenido real que los justifique (Regla de crecimiento). Se registran aquí para que la próxima Política o Procedimiento real encuentre dónde vivir sin necesidad de reabrir esta discusión.
+- **Políticas** — posturas operativas revisables. `POLICY_HIGH_IMPACT_ACTIONS` es la primera real. Cambian con más fricción que un ajuste de código, pero sin necesidad de reabrir Constitution.
+- **Procedimientos** — pasos concretos de ejecución (ej. protocolo de verificación de sucesión, mecánica de notificación). Todavía no existe ninguno real — sigue sin contenido que lo justifique (Regla de crecimiento). Se registra aquí para que el próximo Procedimiento real encuentre dónde vivir sin necesidad de reabrir esta discusión.
 
 ## Cognition
 
@@ -75,11 +74,15 @@ Documentos previstos, sin crear todavía:
 - FOUNDER_MODEL
 - CONTEXT_ENGINE
 
-**Capacidad futura, pospuesta explícitamente por el fundador (2026-07-25):** que Snarf pueda conversar para automodificar su propio código o documentos (equivalente a operar sobre sí mismo a través de una herramienta tipo Claude Code). No implementada — se prioriza terminar interfaz y funcionamiento base primero. Ver ADR 0010.
+**Especialistas Cognitivos de proceso separado (Inteligencia Ejecutiva)** — ver COGNITION.md, sección "Especialistas de proceso separado", y ADR 0094. Realiza, en forma de un board de 7 roles asesores (CEO/CTO/CFO/CMO/COO/Chief Research Officer/Chief Creative Officer) que opinan sin ejecutar herramientas, el tipo de razonamiento que `DECISION_ENGINE`/`OPPORTUNITY_ENGINE` anticipaban conceptualmente — sin consumir esos slots, que siguen reservados arriba para un futuro motor determinístico que podría alimentar a este board, no reemplazarlo.
+
+**Capacidad de automodificación acotada, reabierta el 2026-08-04 (ver ADR 0095, supera a este mismo párrafo tal como constaba hasta hoy):** el 2026-07-25 (ADR 0010) el fundador pospuso explícitamente que Snarf pudiera conversar para automodificar su propio código o documentos a través de una herramienta tipo Claude Code — "se prioriza terminar interfaz y funcionamiento base primero." Con más de 90 ADRs y el producto en producción, el fundador reabrió esa postergación. Implementación real, acotada: la Skill Factory (ver Capabilities/Skills y ADR 0095) — Snarf puede invocar a Claude Code para construir y activar una skill nueva, siempre con confirmación explícita del fundador en dos pasos (construir, luego activar). Nunca editar FOUNDATION/CONSTITUTION/CHARACTER/COGNITION/MASTER_MAP por esta vía, y cada construcción quema su propia confirmación — no hay delegación general.
 
 ## Knowledge
 
 Todo el conocimiento operativo (negocios, trading, marketing, tecnología, filosofía, etc.).
+
+Documentos: **KNOWLEDGE.md** (nuevo, ver Roadmaps Fase 2 de vectorización — generalización del pipeline). Describe el contrato `KnowledgeSource`, el modelo de namespacing (dominio = colección real de Chroma, sub-alcance = filtro `where`, mismo mecanismo que ya usa Proyectos vía `project_id`, ver ADR 0045), y el estado real por dominio: **Personal** (Drive + memoria episódica) y **Código** (este mismo repositorio) tienen contenido real; **Negocio/Trading/Marketing/Finanzas** son namespaces reservados — Finanzas deja de estar vacío en cuanto la Capacidad de Finance (ver Capabilities/Skills) esté construida y conectada a una fuente real.
 
 ## Canon
 
@@ -150,6 +153,8 @@ Planificado, todavía sin construir: interfaz genérica de "fuente de conocimien
 ## Business
 
 Unidades económicas, productos, servicios y empresas.
+
+Arquitectura de datos decidida (2026-08-04): transacciones vía una Google Sheet real que el fundador mantiene (o exporta de su banco/contable actual) — reusa `GoogleDrive`, sin OAuth nuevo — más un tracker de recibos por visión (reusa la extracción por visión que Drive ya tiene para imágenes, ADR 0028). Sincronización bancaria en vivo (Plaid o similar) queda nombrada como upgrade real posterior, no como excusa para no construir la v1. Conectar una cuenta financiera real en vivo es la única acción de alto impacto de este dominio (ver `POLICY_HIGH_IMPACT_ACTIONS.md`) — leer/categorizar/reportar sobre datos ya provistos no lo es. Ver Capabilities/Skills (rama Finance) para las Especialistas concretas.
 
 ## Infrastructure
 
