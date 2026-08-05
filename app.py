@@ -542,6 +542,22 @@ def dashboard_template_proposals(user_id: str = Depends(require_user)):
     return {"proposals": dashboard_curator_module._load_template_proposals()}
 
 
+@app.get("/skill_proposals")
+def skill_proposals(user_id: str = Depends(require_user)):
+    # Registro de auditoría real de la Skill Factory (ver ADR 0095/0102) —
+    # cada intento de construir una skill (construida/activada/abortada/
+    # fallida), nunca una cola de acciones pendientes de aplicar.
+    return {"proposals": orchestrator.skill_factory.list_proposals()}
+
+
+@app.get("/skill_proposals/{proposal_id}")
+def skill_proposal_detail(proposal_id: str, user_id: str = Depends(require_user)):
+    manifest = orchestrator.skill_factory.load_manifest(proposal_id)
+    if manifest is None:
+        return {"error": f"proposal '{proposal_id}' no existe."}
+    return manifest
+
+
 @app.get("/dashboard/curation")
 def dashboard_curation(user_id: str = Depends(require_user)):
     curation = dashboard_curator.cached_curation()

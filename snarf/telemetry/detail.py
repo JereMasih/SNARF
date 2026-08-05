@@ -250,6 +250,19 @@ def _executive_board_consult(i, r):
     return None
 
 
+# --- specialist_skill_factory -----------------------------------------
+
+
+def _skill_factory_build(i, r):
+    if isinstance(r, dict) and "status" in r:
+        return _truncate(f"{_input_get(i, 'skill_name')}: {r['status']}")
+    return _truncate(f"construyendo {_input_get(i, 'skill_name')}")
+
+
+def _skill_factory_activate(i, r):
+    return _quoted("activando", _input_get(i, "proposal_id"))
+
+
 # --- specialist_projects_manage ---------------------------------------
 
 
@@ -404,6 +417,10 @@ DETAIL_EXTRACTORS = {
     "notion_append_to_page": _notion_append_to_page,
     # specialist_executive_board
     "executive_board_consult": _executive_board_consult,
+    # specialist_skill_factory
+    "skill_factory_build": _skill_factory_build,
+    "skill_factory_activate": _skill_factory_activate,
+    "skill_factory_status": _from_input("proposal_id", prefix="revisando"),
 }
 
 

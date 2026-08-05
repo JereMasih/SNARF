@@ -2,6 +2,16 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-05] Fase H de la expansión "Inteligencia Ejecutiva": Skill Factory, implementación real
+
+- Primera vía real por la que Snarf puede modificar su propio código fuente — acotada, con confirmación explícita en dos pasos (ADR 0095), auditable. `snarf/capabilities/claude_code.py::ClaudeCode` invoca el CLI real `claude -p ... --output-format json` (versión 2.1.220 instalada, verificado campo por campo antes de escribir código), con `--allowedTools` acotado a editar/leer/correr tests — nunca red, nunca `git commit`/`git push`.
+- `snarf/specialists/skill_factory.py::SkillFactorySpecialist`: toma un snapshot real de `git status --porcelain` antes y después de invocar a Claude Code — solo el delta cuenta como "tocado por esta construcción", robusto a que el working tree ya tenga cambios reales sin commitear de otra sesión en paralelo (el caso real de ahora mismo, ver ADR 0099). Si el delta toca un documento fundacional o cualquier archivo fuera del alcance esperado, la construcción se aborta sola; si la suite completa real no pasa después, queda `failed`, nunca se ofrece activar algo roto.
+- Dos tools nuevos de alto impacto (`skill_factory_build`, `skill_factory_activate`), mismo protocolo `_pending()`/`confirmed` de dos pasos que `gmail_send_message`; un tercero de solo lectura (`skill_factory_status`). Los tres quedan excluidos del allowlist MCP — la Inteligencia Ejecutiva nunca puede construir, activar, ni siquiera consultar una construcción.
+- `data/skill_proposals/` (nuevo): registro de auditoría real de cada intento, con endpoints de solo lectura `GET /skill_proposals` y `GET /skill_proposals/{id}`.
+- Activar de verdad reinicia el server real (mismo procedimiento de CLAUDE.md) — nunca queda "caliente" sin reiniciar.
+- Deliberadamente sin smoke test real de punta a punta esta vez (a diferencia de Fases C/D/E): invocar a Claude Code de verdad ahora mismo arriesgaría interferir con el trabajo real y sin commitear de la otra sesión en paralelo, y activar de verdad reiniciaría el server de producción sin necesidad. Recomendado para la primera vez que el working tree esté limpio.
+- 823/823 tests (28 nuevos). Ver ADR 0102.
+
 ## [2026-08-04] Fase G de la expansión "Inteligencia Ejecutiva": Skill Framework — convención `INPUT_SCHEMA`/`OUTPUT_SCHEMA`
 
 - De la propuesta original de 13 archivos por skill sobrevivió solo lo genuinamente nuevo: un dict `INPUT_SCHEMA`/`OUTPUT_SCHEMA` a nivel de módulo (misma forma que `orchestrator.TOOLS[i]["input_schema"]`), justificado porque la Skill Factory (Fase H) va a necesitar algo generable/validable por máquina.

@@ -11,6 +11,7 @@ from snarf.capabilities.anthropic_llm import (
     LLMResponse,
     fallback_speech,
 )
+from snarf.capabilities.claude_code import ClaudeCode
 from snarf.capabilities.docx_extractor import DocxExtractor
 from snarf.capabilities.document_builder import DocumentBuilder
 from snarf.capabilities.ffmpeg_audio import FfmpegAudioExtractor
@@ -38,6 +39,7 @@ from snarf.runtime import llm_routing, personality_prefs, user_profile
 from snarf.executive.specialist import ExecutiveBoardSpecialist
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
+from snarf.specialists.skill_factory import SkillFactorySpecialist
 from snarf.telemetry import activity_log, context, detail, input_preprocessing, usage_tracker
 
 # Único usuario real hoy. El Orchestrator ya recibe un user_id explícito (en
@@ -83,6 +85,9 @@ HIGH_IMPACT_TOOLS = frozenset({
     "drive_share_file",
     "drive_update_document",
     "project_delete",
+    # Skill Factory (Fase H, ver ADR 0095/0102): construir/activar una skill
+    "skill_factory_build",
+    "skill_factory_activate",
 })
 BULK_READ_GATED_TOOLS = frozenset({
     "drive_list_files",
@@ -291,6 +296,18 @@ SYSTEM_PREFIX = (
     "de cada rol trae su propia basis (hecho/inferencia/hipótesis/estimación/opinión) — nunca "
     "muestres ese detalle crudo salvo pedido explícito, sintetizá vos las posturas en una "
     "respuesta coherente, marcando con claridad si hay desacuerdo real entre roles.\n\n"
+    "skill_factory_build/skill_factory_activate (ver ADR 0095/0102): cuando el fundador pida "
+    "construir una skill nueva, VOS conversás en tu propia voz para juntar la especificación "
+    "(rama, nombre, qué tiene que hacer, qué Capacidades ya existentes puede reusar) — nunca "
+    "delegues esa conversación en la herramienta. Con la especificación clara, llamá "
+    "skill_factory_build con confirmed=false (o sin ese campo) para previsualizar, mostrale el "
+    "plan al fundador tal cual, y solo con un sí explícito volvé a llamarla con confirmed=true. Si "
+    "devuelve status='built', mostrale que los tests reales pasaron y preguntale si confirma "
+    "reiniciar el server para activarla — solo con un sí explícito nuevo llamá "
+    "skill_factory_activate con confirmed=true (mismo protocolo de dos pasos, una confirmación "
+    "nueva de verdad, nunca recordada de una construcción anterior). Si devuelve status='aborted' "
+    "o 'failed', mostrale el motivo real al fundador tal cual, nunca lo disimules ni reintentes "
+    "por tu cuenta.\n\n"
 )
 
 TOOLS = [
@@ -750,6 +767,62 @@ TOOLS = [
                 },
             },
             "required": ["question"],
+        },
+    },
+    {
+        "name": "skill_factory_build",
+        "description": (
+            "ALTO IMPACTO. Construye una skill nueva de verdad, invocando a Claude Code (ver ADR "
+            "0095/0102) — crea un módulo Specialist nuevo, su test, y suma el tool correspondiente "
+            "al Orchestrator, siguiendo el Skill Framework (ADR 0101). Solo llamala después de "
+            "conversar vos mismo con el fundador para juntar la especificación (rama, nombre, "
+            "descripción, y las aclaraciones que hagan falta) — vos hacés esa conversación en tu "
+            "propia voz, nunca esta herramienta. Alcance estrictamente acotado a construir/activar "
+            "una skill nueva: nunca edita FOUNDATION/CONSTITUTION/CHARACTER/COGNITION/MASTER_MAP ni "
+            "código fuera de ese flujo — si Claude Code se sale de ese alcance, la construcción se "
+            "aborta sola y te lo informa. Cada construcción es una confirmación nueva, nunca se "
+            "recuerda un 'sí' de una vez anterior."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "branch": {"type": "string", "description": "Rama del mapa (ej. research, finance, productivity)."},
+                "skill_name": {"type": "string"},
+                "description": {"type": "string"},
+                "clarifying_answers": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"question": {"type": "string"}, "answer": {"type": "string"}},
+                    },
+                },
+                "confirmed": {"type": "boolean"},
+            },
+            "required": ["branch", "skill_name", "description"],
+        },
+    },
+    {
+        "name": "skill_factory_activate",
+        "description": (
+            "ALTO IMPACTO. Activa una skill ya construida (status='built', ver skill_factory_status) "
+            "reiniciando el server real — nunca queda 'caliente' sin reiniciar (ver ADR 0095/0102). "
+            "Solo llamala después de que skill_factory_build haya devuelto status='built' con los "
+            "tests reales pasando, y con una confirmación explícita nueva del fundador para ESTE "
+            "reinicio puntual."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"proposal_id": {"type": "string"}, "confirmed": {"type": "boolean"}},
+            "required": ["proposal_id"],
+        },
+    },
+    {
+        "name": "skill_factory_status",
+        "description": "Estado real de una propuesta de skill (building/built/activated/aborted/failed), con el detalle de por qué si falló o se abortó.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"proposal_id": {"type": "string"}},
+            "required": ["proposal_id"],
         },
     },
     {
@@ -1254,6 +1327,12 @@ class Orchestrator:
         self._executive_board = ExecutiveBoardSpecialist(
             llm_factory_for_role=lambda role: llm_routing.build_resilient_llm(f"executive_{role}"), user_id=user_id
         )
+        # Skill Factory (Fase H, ver ADR 0095/0102): Snarf construyendo y
+        # activando una skill nueva de verdad, invocando a Claude Code —
+        # alcance estrecho y nombrado, cada construcción quema su propia
+        # confirmación (Constitution Art. VII, nunca una delegación general).
+        self._claude_code = ClaudeCode(cwd=Path.cwd())
+        self._skill_factory = SkillFactorySpecialist(claude_code=self._claude_code, repo_root=Path.cwd())
 
         self._tool_handlers = {
             "get_current_datetime": lambda i: self._tool_get_current_datetime(),
@@ -1312,6 +1391,9 @@ class Orchestrator:
             "knowledge_index_status": lambda i: self._knowledge_index_status(i["domain"]),
             "telemetry_cost_summary": lambda i: usage_tracker.summarize(recent_days=i.get("recent_days", 7)),
             "executive_board_consult": lambda i: self._executive_board.consult(i["question"], i.get("roles")),
+            "skill_factory_build": self._tool_skill_factory_build,
+            "skill_factory_activate": self._tool_skill_factory_activate,
+            "skill_factory_status": lambda i: self._skill_factory.status(i["proposal_id"]),
             "drive_create_document": lambda i: self._document_publisher.create_document(
                 i["title"], i["content"], format=i.get("format", "markdown"), destination=i.get("destination", "drive")
             ),
@@ -1379,6 +1461,10 @@ class Orchestrator:
     @property
     def executive_board(self) -> ExecutiveBoardSpecialist:
         return self._executive_board
+
+    @property
+    def skill_factory(self) -> SkillFactorySpecialist:
+        return self._skill_factory
 
     @property
     def drive_indexer(self) -> DriveIndexer:
@@ -1490,6 +1576,20 @@ class Orchestrator:
             "characters": len(text),
             "words": len(text.split()),
         }
+
+    def _tool_skill_factory_build(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending(
+                {"branch": i["branch"], "skill_name": i["skill_name"], "description": i["description"]}
+            )
+        return self._skill_factory.build_skill(
+            i["branch"], i["skill_name"], i["description"], i.get("clarifying_answers")
+        )
+
+    def _tool_skill_factory_activate(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending({"proposal_id": i["proposal_id"]})
+        return self._skill_factory.activate(i["proposal_id"])
 
     def _tool_gmail_send_message(self, i: dict) -> dict:
         if not i.get("confirmed"):

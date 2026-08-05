@@ -125,6 +125,11 @@ TOOL_TO_NODE: dict[str, str] = {
     # va al tier "specialist" aunque tenga una sola tool, mismo criterio ya
     # usado para specialist_gmail.
     "executive_board_consult": "specialist_executive_board",
+    # Skill Factory (Fase H, ver ADR 0095/0102) — Especialista Cognitivo
+    # nuevo, mismo criterio que specialist_gmail/specialist_executive_board.
+    "skill_factory_build": "specialist_skill_factory",
+    "skill_factory_activate": "specialist_skill_factory",
+    "skill_factory_status": "specialist_skill_factory",
 }
 
 # gemini/openai/xai/groq_llama son los 4 proveedores de LLM alternativos a
@@ -177,6 +182,7 @@ NODE_TIER: dict[str, str] = {
     "specialist_projects_tasks": "specialist",
     "specialist_projects_conversations": "specialist",
     "specialist_executive_board": "specialist",
+    "specialist_skill_factory": "specialist",
     "memory": "capability",
     "drive": "capability",
     "knowledge": "capability",
