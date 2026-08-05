@@ -80,6 +80,8 @@ VERB_BY_SKILL: dict[str, str] = {
     "content_write_blog_post": "redactando el post",
     "content_write_social_post": "redactando para redes",
     "content_write_newsletter": "redactando la newsletter",
+    # specialist_sales
+    "sales_sponsor_inbox_triage": "revisando propuestas de sponsors",
     # specialist_projects_manage
     "project_create": "fundando el proyecto",
     "project_list": "revisando proyectos",
@@ -133,6 +135,7 @@ VERB_BY_NODE: dict[str, str] = {
     "specialist_calendar": "revisando la agenda",
     "specialist_research": "investigando",
     "specialist_content": "redactando",
+    "specialist_sales": "cazando oportunidades",
     "specialist_projects_manage": "archivando",
     "specialist_projects_tasks": "anotando",
     "specialist_projects_conversations": "enlazando",

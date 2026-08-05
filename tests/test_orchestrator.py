@@ -708,6 +708,21 @@ def test_content_tools_route_to_the_correct_mode(orchestrator, monkeypatch):
         assert orchestrator._handle_tool(tool_name, {"brief": "x"}) == fake_result
 
 
+def test_sales_sponsor_inbox_triage_returns_cached_when_present(orchestrator, monkeypatch):
+    cached = {"generated_at": 1.0, "message_count": 2, "triage_text": "ya interpretado"}
+    monkeypatch.setattr(orchestrator._sponsor_inbox_triage, "cached_triage", lambda: cached)
+    monkeypatch.setattr(orchestrator._sponsor_inbox_triage, "refresh", lambda **kw: (_ for _ in ()).throw(AssertionError("no debería refrescar")))
+    assert orchestrator._handle_tool("sales_sponsor_inbox_triage", {}) == cached
+
+
+def test_sales_sponsor_inbox_triage_force_refresh_ignores_cache(orchestrator, monkeypatch):
+    cached = {"generated_at": 1.0, "message_count": 2, "triage_text": "viejo"}
+    fresh = {"generated_at": 2.0, "message_count": 3, "triage_text": "nuevo"}
+    monkeypatch.setattr(orchestrator._sponsor_inbox_triage, "cached_triage", lambda: cached)
+    monkeypatch.setattr(orchestrator._sponsor_inbox_triage, "refresh", lambda **kw: fresh)
+    assert orchestrator._handle_tool("sales_sponsor_inbox_triage", {"force_refresh": True}) == fresh
+
+
 def test_drive_read_file_delegates_to_the_content_extractor_not_raw_bytes(orchestrator, monkeypatch):
     # Regresión: antes llamaba directo a GoogleDrive.read_file_text(), que
     # decodifica cualquier binario (PDF, Word, imagen) como UTF-8 a lo

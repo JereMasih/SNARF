@@ -57,6 +57,8 @@ ROLES = (
     "content_blog_post",
     "content_social_post",
     "content_newsletter",
+    # Fase I, rama Sales.
+    "sponsor_inbox_triage",
 )
 
 # Default = EXACTAMENTE el comportamiento de siempre (ver GMAIL_DIGEST_MODEL/
@@ -83,6 +85,7 @@ DEFAULT_ROUTING = {
     "content_blog_post": {"provider": "anthropic", "model": "claude-sonnet-5"},
     "content_social_post": {"provider": "anthropic", "model": "claude-haiku-4-5"},
     "content_newsletter": {"provider": "anthropic", "model": "claude-sonnet-5"},
+    "sponsor_inbox_triage": {"provider": "anthropic", "model": "claude-haiku-4-5"},
 }
 
 # Cada proveedor mapea a una de las 3 Capacidades reales. xai/groq_llama

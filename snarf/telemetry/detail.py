@@ -264,6 +264,15 @@ def _content_brief(i, r):
     return _quoted("redactando", _input_get(i, "brief"))
 
 
+# --- specialist_sales ---------------------------------------------------
+
+
+def _sales_sponsor_inbox_triage(i, r):
+    if isinstance(r, dict):
+        return _truncate(f"revisando {r.get('message_count', 0)} correos")
+    return None
+
+
 # --- specialist_executive_board --------------------------------------------
 
 
@@ -410,6 +419,8 @@ DETAIL_EXTRACTORS = {
     "content_write_blog_post": _content_brief,
     "content_write_social_post": _content_brief,
     "content_write_newsletter": _content_brief,
+    # specialist_sales
+    "sales_sponsor_inbox_triage": _sales_sponsor_inbox_triage,
     # specialist_projects_manage
     "project_create": _from_input("name", prefix="creando proyecto"),
     "project_list": _list_count("proyectos"),

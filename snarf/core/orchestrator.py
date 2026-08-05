@@ -41,6 +41,7 @@ from snarf.executive.specialist import ExecutiveBoardSpecialist
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
 from snarf.specialists.productivity.calendar_brief import CalendarBriefSpecialist
+from snarf.specialists.sales.sponsor_inbox_triage import SponsorInboxTriageSpecialist
 from snarf.specialists.content.mode import BLOG_POST_CONFIG, NEWSLETTER_CONFIG, SOCIAL_POST_CONFIG
 from snarf.specialists.content.specialist import ContentSpecialist
 from snarf.specialists.research.mode import COMPETITOR_WATCH_CONFIG, DEEP_RESEARCH_CONFIG, TREND_SCAN_CONFIG
@@ -596,6 +597,21 @@ TOOLS = [
             "type": "object",
             "properties": {"brief": {"type": "string"}, "reference_material": {"type": "string"}},
             "required": ["brief"],
+        },
+    },
+    {
+        "name": "sales_sponsor_inbox_triage",
+        "description": (
+            "Interpreta correos recientes de Gmail que podrían ser oportunidades reales de sponsor/"
+            "partnership (búsqueda acotada, no la bandeja entera) — separa oportunidades reales de "
+            "menciones casuales de la palabra clave, y señala cuáles conviene responder primero. "
+            "Usala cuando el fundador pregunte algo como '¿tengo propuestas de sponsors?' o similar. "
+            "Por defecto devuelve la última interpretación disponible; usá force_refresh=true solo "
+            "si el fundador pide explícitamente una versión actualizada ahora mismo."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"force_refresh": {"type": "boolean"}},
         },
     },
     {
@@ -1372,6 +1388,11 @@ class Orchestrator:
         self._calendar_brief = CalendarBriefSpecialist(
             self._calendar, lambda: llm_routing.build_resilient_llm("calendar_brief"), user_id
         )
+        # Fase I, rama Sales — mismo patrón cache-first, búsqueda de Gmail
+        # acotada a oportunidades reales de sponsor/partnership.
+        self._sponsor_inbox_triage = SponsorInboxTriageSpecialist(
+            self._gmail, lambda: llm_routing.build_resilient_llm("sponsor_inbox_triage"), user_id
+        )
 
         # Pipeline de vectorización de Drive (ver ADR 0028): mismo criterio de
         # "modelo barato para tarea acotada" que el digest de Gmail, esta vez
@@ -1531,6 +1552,7 @@ class Orchestrator:
             "content_write_newsletter": lambda i: self._content_specialists["newsletter"].draft(
                 i["brief"], i.get("reference_material", "")
             ),
+            "sales_sponsor_inbox_triage": self._tool_sales_sponsor_inbox_triage,
             "drive_index_scan": lambda i: self._drive_indexer.scan(query=i.get("query")),
             "drive_index_catalog_unsupported": lambda i: self._drive_indexer.catalog_unsupported(query=i.get("query")),
             "drive_index_start": lambda i: self._drive_indexer.start(query=i.get("query")),
@@ -1821,6 +1843,11 @@ class Orchestrator:
         if i.get("force_refresh"):
             return self._calendar_brief.refresh()
         return self._calendar_brief.cached_brief() or self._calendar_brief.refresh()
+
+    def _tool_sales_sponsor_inbox_triage(self, i: dict) -> dict:
+        if i.get("force_refresh"):
+            return self._sponsor_inbox_triage.refresh()
+        return self._sponsor_inbox_triage.cached_triage() or self._sponsor_inbox_triage.refresh()
 
     def _tool_drive_delete_file(self, i: dict) -> dict:
         if not i.get("confirmed"):

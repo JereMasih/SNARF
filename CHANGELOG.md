@@ -2,6 +2,12 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-05] Fase I (Sales) de la expansión "Inteligencia Ejecutiva"
+
+- Único código genuinamente nuevo: `SponsorInboxTriageSpecialist` (`snarf/specialists/sales/`), mismo patrón cache-first que `GmailDigestSpecialist` pero con una búsqueda de Gmail real y acotada a oportunidades de sponsor/partnership. Tool nuevo `sales_sponsor_inbox_triage`.
+- Proposal Drafts y Lead Enrichment/Pipeline Review cerrados sin código nuevo — ya cubiertos por `drive_create_document` y por Proyectos (`project_list`/`project_get`/`project_search`) + `knowledge_search` como pipeline liviano, mismo criterio que la rama Memory. Un CRM dedicado (ej. HubSpot) queda nombrado como upgrade futuro, no como bloqueo de v1.
+- 872/872 tests (8 nuevos). Ver ADR 0106.
+
 ## [2026-08-05] Fase I (Content) de la expansión "Inteligencia Ejecutiva"
 
 - `snarf/specialists/content/`: `ContentSpecialist`, una sola clase real con tres configs (`blog_post`/`social_post`/`newsletter`, mismo patrón que Research/Inteligencia Ejecutiva) — redacta con `AnthropicLLM`, publica e indexa con `DocumentPublisher`. Disciplina de honestidad adaptada: solo las afirmaciones concretas sobre el fundador/su negocio tienen que basarse en `reference_material` real, el resto es trabajo creativo libre.
