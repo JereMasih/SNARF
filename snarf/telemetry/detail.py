@@ -273,6 +273,21 @@ def _sales_sponsor_inbox_triage(i, r):
     return None
 
 
+# --- specialist_finance --------------------------------------------------
+
+
+def _finance_books_categorize(i, r):
+    if isinstance(r, dict):
+        return _truncate(f"categorizando {r.get('transaction_count', 0)} transacciones")
+    return None
+
+
+def _finance_monthly_pnl(i, r):
+    if isinstance(r, dict):
+        return _truncate(f"P&L: neto {r.get('net', 0)}")
+    return None
+
+
 # --- specialist_executive_board --------------------------------------------
 
 
@@ -421,6 +436,9 @@ DETAIL_EXTRACTORS = {
     "content_write_newsletter": _content_brief,
     # specialist_sales
     "sales_sponsor_inbox_triage": _sales_sponsor_inbox_triage,
+    # specialist_finance
+    "finance_books_categorize": _finance_books_categorize,
+    "finance_monthly_pnl": _finance_monthly_pnl,
     # specialist_projects_manage
     "project_create": _from_input("name", prefix="creando proyecto"),
     "project_list": _list_count("proyectos"),

@@ -2,6 +2,13 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-05] Fase I (Finance v1) de la expansión "Inteligencia Ejecutiva"
+
+- Confirmado sin código nuevo: `GoogleDrive.read_file_text()` ya exporta un Google Sheet real como CSV — la premisa del plan ("reusa GoogleDrive/Sheets, sin OAuth nuevo") se verificó real antes de escribir nada.
+- `snarf/specialists/finance/transactions.py::parse_transactions_csv` (parseo real y tolerante, columnas en español o inglés), `BooksCategorizeSpecialist` (categoriza transacciones reales vía LLM), `MonthlyPnLSpecialist` (P&L determinístico, sin LLM, sobre transacciones ya categorizadas).
+- Explícitamente diferidos, nombrados con motivo concreto (no bloqueados por vendor): `TaxPrepSpecialist` (necesita investigar la estructura real de Schedule C), `AnomalyScanSpecialist`/`SubsAuditSpecialist` (necesitan volumen real de transacciones para calibrar umbrales, no hay datos reales todavía), `ReceiptsTrackerSpecialist` (la extracción por visión ya existe, falta el flujo de asociación a una transacción real).
+- 890/890 tests (18 nuevos). Ver ADR 0107.
+
 ## [2026-08-05] Fase I (Sales) de la expansión "Inteligencia Ejecutiva"
 
 - Único código genuinamente nuevo: `SponsorInboxTriageSpecialist` (`snarf/specialists/sales/`), mismo patrón cache-first que `GmailDigestSpecialist` pero con una búsqueda de Gmail real y acotada a oportunidades de sponsor/partnership. Tool nuevo `sales_sponsor_inbox_triage`.

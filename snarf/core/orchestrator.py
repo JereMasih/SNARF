@@ -44,6 +44,8 @@ from snarf.specialists.productivity.calendar_brief import CalendarBriefSpecialis
 from snarf.specialists.sales.sponsor_inbox_triage import SponsorInboxTriageSpecialist
 from snarf.specialists.content.mode import BLOG_POST_CONFIG, NEWSLETTER_CONFIG, SOCIAL_POST_CONFIG
 from snarf.specialists.content.specialist import ContentSpecialist
+from snarf.specialists.finance.books_categorize import BooksCategorizeSpecialist
+from snarf.specialists.finance.monthly_pnl import MonthlyPnLSpecialist
 from snarf.specialists.research.mode import COMPETITOR_WATCH_CONFIG, DEEP_RESEARCH_CONFIG, TREND_SCAN_CONFIG
 from snarf.specialists.research.specialist import ResearchSpecialist
 from snarf.specialists.skill_factory import SkillFactorySpecialist
@@ -612,6 +614,41 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {"force_refresh": {"type": "boolean"}},
+        },
+    },
+    {
+        "name": "finance_books_categorize",
+        "description": (
+            "Lee una Google Sheet real de transacciones (file_id, mantenida por el fundador o "
+            "exportada de su banco/contable — columnas date/description/amount o "
+            "fecha/descripcion/monto) y categoriza cada transacción real vía LLM. Nunca inventa una "
+            "transacción que no esté en la Sheet real."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"file_id": {"type": "string"}},
+            "required": ["file_id"],
+        },
+    },
+    {
+        "name": "finance_monthly_pnl",
+        "description": (
+            "Calcula un P&L real y determinístico (ingresos, gastos por categoría, neto) sobre "
+            "transacciones YA categorizadas (ver finance_books_categorize) — nunca un LLM, es una "
+            "suma real sobre montos reales."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "transactions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"amount": {"type": "number"}, "category": {"type": "string"}},
+                    },
+                }
+            },
+            "required": ["transactions"],
         },
     },
     {
@@ -1393,6 +1430,14 @@ class Orchestrator:
         self._sponsor_inbox_triage = SponsorInboxTriageSpecialist(
             self._gmail, lambda: llm_routing.build_resilient_llm("sponsor_inbox_triage"), user_id
         )
+        # Fase I, rama Finance — v1 sin vendor nuevo: una Google Sheet real
+        # que el fundador mantiene, leída vía GoogleDrive.read_file_text()
+        # (ya exporta un Sheet real como CSV). monthly_pnl es determinístico,
+        # nunca un LLM.
+        self._books_categorize = BooksCategorizeSpecialist(
+            self._drive, lambda: llm_routing.build_resilient_llm("books_categorize"), user_id
+        )
+        self._monthly_pnl = MonthlyPnLSpecialist()
 
         # Pipeline de vectorización de Drive (ver ADR 0028): mismo criterio de
         # "modelo barato para tarea acotada" que el digest de Gmail, esta vez
@@ -1553,6 +1598,8 @@ class Orchestrator:
                 i["brief"], i.get("reference_material", "")
             ),
             "sales_sponsor_inbox_triage": self._tool_sales_sponsor_inbox_triage,
+            "finance_books_categorize": lambda i: self._books_categorize.categorize(i["file_id"]),
+            "finance_monthly_pnl": lambda i: self._monthly_pnl.compute(i["transactions"]),
             "drive_index_scan": lambda i: self._drive_indexer.scan(query=i.get("query")),
             "drive_index_catalog_unsupported": lambda i: self._drive_indexer.catalog_unsupported(query=i.get("query")),
             "drive_index_start": lambda i: self._drive_indexer.start(query=i.get("query")),

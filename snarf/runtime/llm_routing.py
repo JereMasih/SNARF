@@ -59,6 +59,9 @@ ROLES = (
     "content_newsletter",
     # Fase I, rama Sales.
     "sponsor_inbox_triage",
+    # Fase I, rama Finance. monthly_pnl es determinístico (sin LLM), no
+    # necesita rol de ruteo.
+    "books_categorize",
 )
 
 # Default = EXACTAMENTE el comportamiento de siempre (ver GMAIL_DIGEST_MODEL/
@@ -86,6 +89,7 @@ DEFAULT_ROUTING = {
     "content_social_post": {"provider": "anthropic", "model": "claude-haiku-4-5"},
     "content_newsletter": {"provider": "anthropic", "model": "claude-sonnet-5"},
     "sponsor_inbox_triage": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    "books_categorize": {"provider": "anthropic", "model": "claude-haiku-4-5"},
 }
 
 # Cada proveedor mapea a una de las 3 Capacidades reales. xai/groq_llama

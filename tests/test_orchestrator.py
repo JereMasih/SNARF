@@ -723,6 +723,17 @@ def test_sales_sponsor_inbox_triage_force_refresh_ignores_cache(orchestrator, mo
     assert orchestrator._handle_tool("sales_sponsor_inbox_triage", {"force_refresh": True}) == fresh
 
 
+def test_finance_books_categorize_delegates_with_the_real_file_id(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._books_categorize, "categorize", lambda file_id: {"file_id": file_id})
+    assert orchestrator._handle_tool("finance_books_categorize", {"file_id": "sheet-1"}) == {"file_id": "sheet-1"}
+
+
+def test_finance_monthly_pnl_delegates_to_the_deterministic_computation(orchestrator, monkeypatch):
+    transactions = [{"amount": 10.0, "category": "x"}]
+    monkeypatch.setattr(orchestrator._monthly_pnl, "compute", lambda t: {"received": t})
+    assert orchestrator._handle_tool("finance_monthly_pnl", {"transactions": transactions}) == {"received": transactions}
+
+
 def test_drive_read_file_delegates_to_the_content_extractor_not_raw_bytes(orchestrator, monkeypatch):
     # Regresión: antes llamaba directo a GoogleDrive.read_file_text(), que
     # decodifica cualquier binario (PDF, Word, imagen) como UTF-8 a lo
