@@ -257,6 +257,13 @@ def _research_topic(i, r):
     return _quoted("investigando", _input_get(i, "topic"))
 
 
+# --- specialist_content ----------------------------------------------
+
+
+def _content_brief(i, r):
+    return _quoted("redactando", _input_get(i, "brief"))
+
+
 # --- specialist_executive_board --------------------------------------------
 
 
@@ -399,6 +406,10 @@ DETAIL_EXTRACTORS = {
     "research_deep_dive": _research_topic,
     "research_trend_scan": _research_topic,
     "research_competitor_watch": _research_topic,
+    # specialist_content
+    "content_write_blog_post": _content_brief,
+    "content_write_social_post": _content_brief,
+    "content_write_newsletter": _content_brief,
     # specialist_projects_manage
     "project_create": _from_input("name", prefix="creando proyecto"),
     "project_list": _list_count("proyectos"),

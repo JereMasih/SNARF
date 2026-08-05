@@ -693,6 +693,21 @@ def test_research_tools_route_to_the_correct_mode(orchestrator, monkeypatch):
         assert orchestrator._handle_tool(tool_name, {"topic": "x"}) == fake_result
 
 
+def test_content_tools_route_to_the_correct_mode(orchestrator, monkeypatch):
+    for tool_name, mode in (
+        ("content_write_blog_post", "blog_post"),
+        ("content_write_social_post", "social_post"),
+        ("content_write_newsletter", "newsletter"),
+    ):
+        fake_result = {"draft_text": f"borrador de {mode}", "document": None}
+        monkeypatch.setattr(
+            orchestrator._content_specialists[mode],
+            "draft",
+            lambda brief, reference_material="", fake_result=fake_result: fake_result,
+        )
+        assert orchestrator._handle_tool(tool_name, {"brief": "x"}) == fake_result
+
+
 def test_drive_read_file_delegates_to_the_content_extractor_not_raw_bytes(orchestrator, monkeypatch):
     # Regresión: antes llamaba directo a GoogleDrive.read_file_text(), que
     # decodifica cualquier binario (PDF, Word, imagen) como UTF-8 a lo

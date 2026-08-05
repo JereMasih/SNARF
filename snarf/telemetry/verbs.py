@@ -76,6 +76,10 @@ VERB_BY_SKILL: dict[str, str] = {
     "research_deep_dive": "investigando a fondo",
     "research_trend_scan": "rastreando tendencias",
     "research_competitor_watch": "vigilando a la competencia",
+    # specialist_content
+    "content_write_blog_post": "redactando el post",
+    "content_write_social_post": "redactando para redes",
+    "content_write_newsletter": "redactando la newsletter",
     # specialist_projects_manage
     "project_create": "fundando el proyecto",
     "project_list": "revisando proyectos",
@@ -128,6 +132,7 @@ VERB_BY_NODE: dict[str, str] = {
     "specialist_gmail": "curando",
     "specialist_calendar": "revisando la agenda",
     "specialist_research": "investigando",
+    "specialist_content": "redactando",
     "specialist_projects_manage": "archivando",
     "specialist_projects_tasks": "anotando",
     "specialist_projects_conversations": "enlazando",

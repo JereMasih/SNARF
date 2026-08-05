@@ -2,6 +2,13 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-05] Fase I (Content) de la expansión "Inteligencia Ejecutiva"
+
+- `snarf/specialists/content/`: `ContentSpecialist`, una sola clase real con tres configs (`blog_post`/`social_post`/`newsletter`, mismo patrón que Research/Inteligencia Ejecutiva) — redacta con `AnthropicLLM`, publica e indexa con `DocumentPublisher`. Disciplina de honestidad adaptada: solo las afirmaciones concretas sobre el fundador/su negocio tienen que basarse en `reference_material` real, el resto es trabajo creativo libre.
+- Generación de imágenes queda fuera de esta ronda a propósito — `IMAGE_GENERATION_RESEARCH.md` ya investigó el espacio, sin decisión de vendor del fundador todavía.
+- Tres tools nuevos (`content_write_blog_post`, `content_write_social_post`, `content_write_newsletter`), nodo `specialist_content`.
+- 864/864 tests (6 nuevos). Ver ADR 0105.
+
 ## [2026-08-05] Fase I (Research) de la expansión "Inteligencia Ejecutiva"
 
 - `snarf/capabilities/web_search.py::TavilySearch` (vendor decidido en el plan) + `GoogleYouTube.get_video_captions()` (real, pero limitado por la propia API de YouTube a videos que el fundador posee — un video de terceros devuelve `None`, tratado como "sin captions"). El fallback a ffmpeg+STT para videos de terceros del plan original NO se construyó — necesita una dependencia nueva (`yt-dlp`) con consideraciones reales de ToS, queda como decisión pendiente del fundador.

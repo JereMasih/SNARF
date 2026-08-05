@@ -41,6 +41,8 @@ from snarf.executive.specialist import ExecutiveBoardSpecialist
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
 from snarf.specialists.productivity.calendar_brief import CalendarBriefSpecialist
+from snarf.specialists.content.mode import BLOG_POST_CONFIG, NEWSLETTER_CONFIG, SOCIAL_POST_CONFIG
+from snarf.specialists.content.specialist import ContentSpecialist
 from snarf.specialists.research.mode import COMPETITOR_WATCH_CONFIG, DEEP_RESEARCH_CONFIG, TREND_SCAN_CONFIG
 from snarf.specialists.research.specialist import ResearchSpecialist
 from snarf.specialists.skill_factory import SkillFactorySpecialist
@@ -562,6 +564,38 @@ TOOLS = [
                 "video_urls": {"type": "array", "items": {"type": "string"}},
             },
             "required": ["topic"],
+        },
+    },
+    {
+        "name": "content_write_blog_post",
+        "description": (
+            "Redacta un borrador real de post de blog a partir de un brief, lo publica como "
+            "documento real en Drive y lo deja indexado. Si pasás reference_material (datos reales "
+            "sobre el fundador/su negocio), la redacción se basa en eso para cualquier afirmación "
+            "concreta — nunca inventa una cifra o hecho que no esté ahí."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"brief": {"type": "string"}, "reference_material": {"type": "string"}},
+            "required": ["brief"],
+        },
+    },
+    {
+        "name": "content_write_social_post",
+        "description": "Igual que content_write_blog_post, pero para un post corto de redes sociales.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"brief": {"type": "string"}, "reference_material": {"type": "string"}},
+            "required": ["brief"],
+        },
+    },
+    {
+        "name": "content_write_newsletter",
+        "description": "Igual que content_write_blog_post, pero para una newsletter en tono personal del fundador.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"brief": {"type": "string"}, "reference_material": {"type": "string"}},
+            "required": ["brief"],
         },
     },
     {
@@ -1401,6 +1435,18 @@ class Orchestrator:
             )
             for config in (DEEP_RESEARCH_CONFIG, TREND_SCAN_CONFIG, COMPETITOR_WATCH_CONFIG)
         }
+        # Fase I, rama Content — mismo patrón "una clase, N configs" que
+        # Research/Inteligencia Ejecutiva. Generación de imágenes queda
+        # fuera (ver IMAGE_GENERATION_RESEARCH.md, sin decisión de vendor).
+        self._content_specialists = {
+            config.mode: ContentSpecialist(
+                config,
+                self._document_publisher,
+                lambda role=config.llm_routing_role: llm_routing.build_resilient_llm(role),
+                user_id,
+            )
+            for config in (BLOG_POST_CONFIG, SOCIAL_POST_CONFIG, NEWSLETTER_CONFIG)
+        }
         # Mismo criterio que GmailDigestSpecialist: modelo barato para una
         # tarea acotada (sugerir 2-4 nombres de subcarpeta por proyecto).
         self._projects = ProjectManager(
@@ -1475,6 +1521,15 @@ class Orchestrator:
             ),
             "research_competitor_watch": lambda i: self._research_specialists["competitor_watch"].research(
                 i["topic"], i.get("video_urls")
+            ),
+            "content_write_blog_post": lambda i: self._content_specialists["blog_post"].draft(
+                i["brief"], i.get("reference_material", "")
+            ),
+            "content_write_social_post": lambda i: self._content_specialists["social_post"].draft(
+                i["brief"], i.get("reference_material", "")
+            ),
+            "content_write_newsletter": lambda i: self._content_specialists["newsletter"].draft(
+                i["brief"], i.get("reference_material", "")
             ),
             "drive_index_scan": lambda i: self._drive_indexer.scan(query=i.get("query")),
             "drive_index_catalog_unsupported": lambda i: self._drive_indexer.catalog_unsupported(query=i.get("query")),

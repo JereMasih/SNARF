@@ -52,6 +52,11 @@ ROLES = (
     "research_deep_research",
     "research_trend_scan",
     "research_competitor_watch",
+    # Fase I, rama Content — un rol de ruteo por modo (ContentSpecialist,
+    # una sola clase con 3 configs, ver snarf/specialists/content/mode.py).
+    "content_blog_post",
+    "content_social_post",
+    "content_newsletter",
 )
 
 # Default = EXACTAMENTE el comportamiento de siempre (ver GMAIL_DIGEST_MODEL/
@@ -75,6 +80,9 @@ DEFAULT_ROUTING = {
     "research_deep_research": {"provider": "anthropic", "model": "claude-sonnet-5"},
     "research_trend_scan": {"provider": "anthropic", "model": "claude-haiku-4-5"},
     "research_competitor_watch": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    "content_blog_post": {"provider": "anthropic", "model": "claude-sonnet-5"},
+    "content_social_post": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    "content_newsletter": {"provider": "anthropic", "model": "claude-sonnet-5"},
 }
 
 # Cada proveedor mapea a una de las 3 Capacidades reales. xai/groq_llama

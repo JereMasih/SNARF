@@ -89,6 +89,11 @@ TOOL_TO_NODE: dict[str, str] = {
     "research_deep_dive": "specialist_research",
     "research_trend_scan": "specialist_research",
     "research_competitor_watch": "specialist_research",
+    # Fase I, rama Content — una sola clase real, tres tools/modos (ver
+    # snarf/specialists/content/specialist.py).
+    "content_write_blog_post": "specialist_content",
+    "content_write_social_post": "specialist_content",
+    "content_write_newsletter": "specialist_content",
     # Proyectos tenía las 14 tools de este Especialista cayendo en un único
     # nodo — de lejos el más cargado del cerebro, y el más opaco: no se veía
     # QUÉ parte de Proyectos estaba realmente activa. Separado en 3 nodos
@@ -188,6 +193,7 @@ NODE_TIER: dict[str, str] = {
     "specialist_gmail": "specialist",
     "specialist_calendar": "specialist",
     "specialist_research": "specialist",
+    "specialist_content": "specialist",
     "specialist_projects_manage": "specialist",
     "specialist_projects_tasks": "specialist",
     "specialist_projects_conversations": "specialist",
