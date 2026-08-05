@@ -39,6 +39,7 @@ from snarf.runtime import llm_routing, personality_prefs, user_profile
 from snarf.executive.specialist import ExecutiveBoardSpecialist
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
+from snarf.specialists.productivity.calendar_brief import CalendarBriefSpecialist
 from snarf.specialists.skill_factory import SkillFactorySpecialist
 from snarf.telemetry import activity_log, context, detail, input_preprocessing, usage_tracker
 
@@ -491,6 +492,20 @@ TOOLS = [
             "para hoy?', 'resumime el correo' o similar. Por defecto devuelve la última "
             "interpretación disponible (no hace una llamada nueva cada vez); usá force_refresh=true "
             "solo si el fundador pide explícitamente una versión actualizada ahora mismo."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"force_refresh": {"type": "boolean"}},
+        },
+    },
+    {
+        "name": "calendar_brief",
+        "description": (
+            "Interpreta los próximos eventos reales del Google Calendar del fundador en un resumen "
+            "accionable — agrupa por día, señala conflictos de horario reales. Usala cuando el "
+            "fundador pregunte algo como '¿qué tengo para hoy?', 'resumime la agenda' o similar. "
+            "Por defecto devuelve la última interpretación disponible; usá force_refresh=true solo "
+            "si el fundador pide explícitamente una versión actualizada ahora mismo."
         ),
         "input_schema": {
             "type": "object",
@@ -1266,6 +1281,11 @@ class Orchestrator:
         # (bug real encontrado en esta misma ronda: antes quedaba fijo al
         # momento de construir el Orchestrator).
         self._gmail_digest = GmailDigestSpecialist(self._gmail, lambda: llm_routing.build_resilient_llm("gmail_digest"), user_id)
+        # Fase I, rama Productivity (ver plan de expansión) — mismo patrón
+        # cache-first que GmailDigestSpecialist.
+        self._calendar_brief = CalendarBriefSpecialist(
+            self._calendar, lambda: llm_routing.build_resilient_llm("calendar_brief"), user_id
+        )
 
         # Pipeline de vectorización de Drive (ver ADR 0028): mismo criterio de
         # "modelo barato para tarea acotada" que el digest de Gmail, esta vez
@@ -1378,6 +1398,7 @@ class Orchestrator:
             "gmail_delete_label": self._tool_gmail_delete_label,
             "drive_delete_file": self._tool_drive_delete_file,
             "gmail_summarize_inbox": self._tool_gmail_summarize_inbox,
+            "calendar_brief": self._tool_calendar_brief,
             "drive_index_scan": lambda i: self._drive_indexer.scan(query=i.get("query")),
             "drive_index_catalog_unsupported": lambda i: self._drive_indexer.catalog_unsupported(query=i.get("query")),
             "drive_index_start": lambda i: self._drive_indexer.start(query=i.get("query")),
@@ -1456,6 +1477,10 @@ class Orchestrator:
     @property
     def gmail_digest(self) -> GmailDigestSpecialist:
         return self._gmail_digest
+
+    @property
+    def calendar_brief(self) -> CalendarBriefSpecialist:
+        return self._calendar_brief
 
     @property
     def executive_board(self) -> ExecutiveBoardSpecialist:
@@ -1659,6 +1684,11 @@ class Orchestrator:
         if i.get("force_refresh"):
             return self._gmail_digest.refresh()
         return self._gmail_digest.cached_digest() or self._gmail_digest.refresh()
+
+    def _tool_calendar_brief(self, i: dict) -> dict:
+        if i.get("force_refresh"):
+            return self._calendar_brief.refresh()
+        return self._calendar_brief.cached_brief() or self._calendar_brief.refresh()
 
     def _tool_drive_delete_file(self, i: dict) -> dict:
         if not i.get("confirmed"):

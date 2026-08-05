@@ -656,6 +656,28 @@ def test_gmail_summarize_inbox_force_refresh_ignores_cache(orchestrator, monkeyp
     assert orchestrator._handle_tool("gmail_summarize_inbox", {"force_refresh": True}) == fresh
 
 
+def test_calendar_brief_returns_cached_brief_when_present(orchestrator, monkeypatch):
+    cached = {"generated_at": 1.0, "event_count": 2, "brief_text": "ya interpretado"}
+    monkeypatch.setattr(orchestrator.calendar_brief, "cached_brief", lambda: cached)
+    monkeypatch.setattr(orchestrator.calendar_brief, "refresh", lambda **kw: (_ for _ in ()).throw(AssertionError("no debería refrescar")))
+    assert orchestrator._handle_tool("calendar_brief", {}) == cached
+
+
+def test_calendar_brief_refreshes_when_nothing_cached(orchestrator, monkeypatch):
+    fresh = {"generated_at": 2.0, "event_count": 1, "brief_text": "recién generado"}
+    monkeypatch.setattr(orchestrator.calendar_brief, "cached_brief", lambda: None)
+    monkeypatch.setattr(orchestrator.calendar_brief, "refresh", lambda **kw: fresh)
+    assert orchestrator._handle_tool("calendar_brief", {}) == fresh
+
+
+def test_calendar_brief_force_refresh_ignores_cache(orchestrator, monkeypatch):
+    cached = {"generated_at": 1.0, "event_count": 2, "brief_text": "viejo"}
+    fresh = {"generated_at": 2.0, "event_count": 3, "brief_text": "nuevo"}
+    monkeypatch.setattr(orchestrator.calendar_brief, "cached_brief", lambda: cached)
+    monkeypatch.setattr(orchestrator.calendar_brief, "refresh", lambda **kw: fresh)
+    assert orchestrator._handle_tool("calendar_brief", {"force_refresh": True}) == fresh
+
+
 def test_drive_read_file_delegates_to_the_content_extractor_not_raw_bytes(orchestrator, monkeypatch):
     # Regresión: antes llamaba directo a GoogleDrive.read_file_text(), que
     # decodifica cualquier binario (PDF, Word, imagen) como UTF-8 a lo

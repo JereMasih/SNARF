@@ -241,6 +241,15 @@ def _gmail_summarize_inbox(i, r):
     return None
 
 
+# --- specialist_calendar ----------------------------------------------
+
+
+def _calendar_brief(i, r):
+    if isinstance(r, dict):
+        return _truncate(f"interpretando {r.get('event_count', 0)} eventos")
+    return None
+
+
 # --- specialist_executive_board --------------------------------------------
 
 
@@ -377,6 +386,8 @@ DETAIL_EXTRACTORS = {
     "gmail_send_message": _gmail_send_message,
     # specialist_gmail
     "gmail_summarize_inbox": _gmail_summarize_inbox,
+    # specialist_calendar
+    "calendar_brief": _calendar_brief,
     # specialist_projects_manage
     "project_create": _from_input("name", prefix="creando proyecto"),
     "project_list": _list_count("proyectos"),

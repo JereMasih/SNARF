@@ -716,6 +716,23 @@ def dashboard_gmail_digest_refresh(user_id: str = Depends(require_user)):
         return {"connected": True, "error": str(exc)}
 
 
+@app.get("/dashboard/widgets/calendar/brief")
+def dashboard_calendar_brief(user_id: str = Depends(require_user)):
+    if not _google_connected(user_id):
+        return {"connected": False}
+    return {"connected": True, "brief": orchestrator.calendar_brief.cached_brief()}
+
+
+@app.post("/dashboard/widgets/calendar/brief/refresh")
+def dashboard_calendar_brief_refresh(user_id: str = Depends(require_user)):
+    if not _google_connected(user_id):
+        return {"connected": False}
+    try:
+        return {"connected": True, "brief": orchestrator.calendar_brief.refresh()}
+    except Exception as exc:
+        return {"connected": True, "error": str(exc)}
+
+
 @app.get("/dashboard/widgets/executive_board")
 def dashboard_executive_board(user_id: str = Depends(require_user)):
     # Muestra la última consulta real cacheada (ver ADR 0094/0098) — nunca

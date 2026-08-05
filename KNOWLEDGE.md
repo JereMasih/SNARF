@@ -52,3 +52,20 @@ Tools del Orchestrator: `knowledge_search(query, domain, top_k)`, `knowledge_ind
 # Reportes como insumo, no solo como entregable
 
 Todo Specialist que genere un reporte (por ejemplo, los de la rama Research) lo publica con `DocumentPublisher` y lo indexa vía `KnowledgeIndexer` en el dominio correspondiente — el reporte queda buscable por `knowledge_search` para cualquier Specialist posterior, incluida la Inteligencia Ejecutiva (ver COGNITION.md). Un reporte que no se indexa es un texto que se pierde en el chat; ese no es el patrón que este documento describe.
+
+# Rama Memory (Fase I, ver plan de expansión "Inteligencia Ejecutiva") — cerrada por equivalencia real
+
+De las 9 ramas del mapa de referencia (Memory/Productivity/Research/Content/Sales/Finance/Community/
+Agency/Ops), Memory es la única que no suma código nuevo: cada pieza que pedía ya existe, con otro
+nombre, construida en rondas anteriores de este mismo repo — no es una promesa, es la equivalencia
+real, documento por documento:
+
+| Pieza pedida | Equivalente real en Snarf |
+|---|---|
+| Obsidian Vault / wiki de conocimiento | Knowledge Layer generalizada (`snarf/knowledge/`, este documento) |
+| `/projects active` (recordar en qué se está trabajando) | Proyectos (ADR 0045/0047/0054) — prompt, tareas, notas y conversaciones por proyecto |
+| `CLAUDE.md` como prompt persistente de identidad | FOUNDATION.md/CONSTITUTION.md/CHARACTER.md (identidad real de Snarf) + `project.prompt` por Proyecto puntual |
+| Memoria automática de conversaciones pasadas | `EpisodicMemory` (`data/episodic_memory.jsonl`, tools `list_conversations`/`get_conversation`/`search_memory`) |
+
+Ninguna Capacidad ni Specialist nuevo se suma por esta rama — el trabajo real ya estaba hecho antes
+de que este plan la nombrara.

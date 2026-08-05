@@ -70,6 +70,8 @@ VERB_BY_SKILL: dict[str, str] = {
     "gmail_send_message": "despachando el correo",
     # specialist_gmail
     "gmail_summarize_inbox": "curando la bandeja",
+    # specialist_calendar
+    "calendar_brief": "interpretando la agenda",
     # specialist_projects_manage
     "project_create": "fundando el proyecto",
     "project_list": "revisando proyectos",
@@ -120,6 +122,7 @@ VERB_BY_NODE: dict[str, str] = {
     "orchestrator": "orquestando",
     "llm": "pontificando",
     "specialist_gmail": "curando",
+    "specialist_calendar": "revisando la agenda",
     "specialist_projects_manage": "archivando",
     "specialist_projects_tasks": "anotando",
     "specialist_projects_conversations": "enlazando",

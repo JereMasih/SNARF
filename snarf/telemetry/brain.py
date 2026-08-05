@@ -81,6 +81,9 @@ TOOL_TO_NODE: dict[str, str] = {
     "gmail_delete_label": "gmail_manage",
     "gmail_send_message": "gmail_send",
     "gmail_summarize_inbox": "specialist_gmail",
+    # Fase I, rama Productivity — Especialista Cognitivo nuevo, mismo
+    # criterio que specialist_gmail (una sola tool, tier "specialist").
+    "calendar_brief": "specialist_calendar",
     # Proyectos tenía las 14 tools de este Especialista cayendo en un único
     # nodo — de lejos el más cargado del cerebro, y el más opaco: no se veía
     # QUÉ parte de Proyectos estaba realmente activa. Separado en 3 nodos
@@ -178,6 +181,7 @@ NODE_TIER: dict[str, str] = {
     "input_voice": "input",
     "input_file": "input",
     "specialist_gmail": "specialist",
+    "specialist_calendar": "specialist",
     "specialist_projects_manage": "specialist",
     "specialist_projects_tasks": "specialist",
     "specialist_projects_conversations": "specialist",

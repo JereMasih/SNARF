@@ -2,6 +2,13 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-05] Fase I (Memory + Productivity) de la expansión "Inteligencia Ejecutiva"
+
+- **Memory**: cerrada sin código nuevo — las cuatro piezas que el mapa de referencia pedía ya existen con otro nombre (Knowledge Layer, Proyectos, FOUNDATION/CONSTITUTION/CHARACTER, EpisodicMemory). Documentado explícito en `KNOWLEDGE.md`.
+- **Productivity**: primer skill real bajo el sub-paquete por rama (`snarf/specialists/productivity/`, que la Fase G dejó preparado sin usar todavía). `CalendarBriefSpecialist` interpreta la agenda real de Google Calendar en un resumen accionable, mismo patrón cache-first que `GmailDigestSpecialist`. Tool nuevo `calendar_brief`, widget nuevo `GET/POST /dashboard/widgets/calendar/brief`.
+- `snarf/runtime/scheduler.py::next_run_at(hour, minute, tz)` (único código de infraestructura nuevo): los 3 loops periódicos de hoy son de intervalo fijo, no de hora de reloj — bug real encontrado y corregido en el propio test: comparar contra un `now` en otra zona horaria sin convertirlo primero a `tz` construía la hora de reloj equivocada.
+- 842/842 tests (19 nuevos). Ver ADR 0103.
+
 ## [2026-08-05] Fase H de la expansión "Inteligencia Ejecutiva": Skill Factory, implementación real
 
 - Primera vía real por la que Snarf puede modificar su propio código fuente — acotada, con confirmación explícita en dos pasos (ADR 0095), auditable. `snarf/capabilities/claude_code.py::ClaudeCode` invoca el CLI real `claude -p ... --output-format json` (versión 2.1.220 instalada, verificado campo por campo antes de escribir código), con `--allowedTools` acotado a editar/leer/correr tests — nunca red, nunca `git commit`/`git push`.

@@ -44,6 +44,9 @@ ROLES = (
     "executive_cfo",
     "executive_cmo",
     "executive_creative",
+    # Fase I, rama Productivity (ver plan de expansión) — mismo criterio de
+    # gmail_digest: tarea acotada, modelo barato por default.
+    "calendar_brief",
 )
 
 # Default = EXACTAMENTE el comportamiento de siempre (ver GMAIL_DIGEST_MODEL/
@@ -63,6 +66,7 @@ DEFAULT_ROUTING = {
     "executive_cfo": {"provider": "anthropic", "model": "claude-haiku-4-5"},
     "executive_cmo": {"provider": "anthropic", "model": "claude-haiku-4-5"},
     "executive_creative": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    "calendar_brief": {"provider": "anthropic", "model": "claude-haiku-4-5"},
 }
 
 # Cada proveedor mapea a una de las 3 Capacidades reales. xai/groq_llama

@@ -877,6 +877,45 @@ def test_gmail_digest_refresh_triggers_a_fresh_generation(client, connected_goog
     assert res.json() == {"connected": True, "digest": fresh}
 
 
+def test_calendar_brief_reports_not_connected_without_token(client, no_google_token):
+    res = client.get("/dashboard/widgets/calendar/brief")
+    assert res.status_code == 200
+    assert res.json() == {"connected": False}
+
+
+def test_calendar_brief_returns_none_before_any_refresh(client, connected_google_token, monkeypatch):
+    monkeypatch.setattr(app_module.orchestrator.calendar_brief, "cached_brief", lambda: None)
+    res = client.get("/dashboard/widgets/calendar/brief")
+    assert res.status_code == 200
+    assert res.json() == {"connected": True, "brief": None}
+
+
+def test_calendar_brief_returns_cached_value(client, connected_google_token, monkeypatch):
+    cached = {"generated_at": 123.0, "event_count": 2, "brief_text": "resumen"}
+    monkeypatch.setattr(app_module.orchestrator.calendar_brief, "cached_brief", lambda: cached)
+    res = client.get("/dashboard/widgets/calendar/brief")
+    assert res.json() == {"connected": True, "brief": cached}
+
+
+def test_calendar_brief_refresh_triggers_a_fresh_generation(client, connected_google_token, monkeypatch):
+    fresh = {"generated_at": 999.0, "event_count": 3, "brief_text": "nuevo resumen"}
+    monkeypatch.setattr(app_module.orchestrator.calendar_brief, "refresh", lambda **kw: fresh)
+    res = client.post("/dashboard/widgets/calendar/brief/refresh")
+    assert res.status_code == 200
+    assert res.json() == {"connected": True, "brief": fresh}
+
+
+def test_calendar_brief_refresh_degrades_gracefully_on_error(client, connected_google_token, monkeypatch):
+    def boom(**kw):
+        raise RuntimeError("falla real de la API de Calendar")
+
+    monkeypatch.setattr(app_module.orchestrator.calendar_brief, "refresh", boom)
+    res = client.post("/dashboard/widgets/calendar/brief/refresh")
+    assert res.status_code == 200
+    assert res.json()["connected"] is True
+    assert "error" in res.json()
+
+
 def test_upload_file_without_google_connected_returns_400(client, no_google_token):
     res = client.post("/files/upload", files={"file": ("a.txt", b"contenido", "text/plain")})
     assert res.status_code == 400
