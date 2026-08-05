@@ -45,6 +45,7 @@ from snarf.specialists.productivity.calendar_brief import CalendarBriefSpecialis
 from snarf.specialists.sales.sponsor_inbox_triage import SponsorInboxTriageSpecialist
 from snarf.specialists.content.mode import BLOG_POST_CONFIG, NEWSLETTER_CONFIG, SOCIAL_POST_CONFIG
 from snarf.specialists.content.specialist import ContentSpecialist
+from snarf.specialists.agency.client_status import ClientStatusSpecialist
 from snarf.specialists.community.pulse import CommunityPulseSpecialist
 from snarf.specialists.finance.books_categorize import BooksCategorizeSpecialist
 from snarf.specialists.finance.monthly_pnl import MonthlyPnLSpecialist
@@ -678,6 +679,19 @@ TOOLS = [
             "type": "object",
             "properties": {"content": {"type": "string"}},
             "required": ["content"],
+        },
+    },
+    {
+        "name": "agency_client_status",
+        "description": (
+            "Genera un status semanal real para el cliente de un Proyecto (tareas/notas reales del "
+            "proyecto, ver project_get) y lo publica como documento real en Drive. Nunca inventa un "
+            "avance que no esté reflejado en las tareas/notas reales."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}},
+            "required": ["project_id"],
         },
     },
     {
@@ -1553,6 +1567,12 @@ class Orchestrator:
         self._projects = ProjectManager(
             self._drive, self._drive_indexer, lambda: llm_routing.build_resilient_llm("project_summary"), user_id
         )
+        # Fase I, rama Agency — único código genuinamente nuevo (el resto
+        # ya está cubierto por conversación + drive_create_document, mismo
+        # criterio que Proposal Drafts en la rama Sales).
+        self._client_status = ClientStatusSpecialist(
+            self._projects, self._document_publisher, lambda: llm_routing.build_resilient_llm("client_status"), user_id
+        )
         # Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094/0098): cada rol
         # corre en su propio proceso MCP (snarf/executive/process.py), nunca
         # in-process — es el segundo consumidor real que justificó reabrir
@@ -1637,6 +1657,7 @@ class Orchestrator:
             "finance_monthly_pnl": lambda i: self._monthly_pnl.compute(i["transactions"]),
             "community_pulse": lambda i: self._community_pulse.pulse(i.get("message_limit", 100)),
             "community_post_message": self._tool_community_post_message,
+            "agency_client_status": lambda i: self._client_status.generate(i["project_id"]),
             "drive_index_scan": lambda i: self._drive_indexer.scan(query=i.get("query")),
             "drive_index_catalog_unsupported": lambda i: self._drive_indexer.catalog_unsupported(query=i.get("query")),
             "drive_index_start": lambda i: self._drive_indexer.start(query=i.get("query")),

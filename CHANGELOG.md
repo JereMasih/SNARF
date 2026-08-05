@@ -2,6 +2,13 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-05] Fase I (Agency) de la expansión "Inteligencia Ejecutiva"
+
+- `ClientStatusSpecialist` (`snarf/specialists/agency/`), único código genuinamente nuevo de la rama: a diferencia de Sponsor Pitch Deck/Scope-of-Work/Deliverable QA/Retainer Renewal Brief (ya cubiertos sin código nuevo, mismo criterio que Proposal Drafts en Sales), parte de datos reales y estructurados de un Proyecto (`ProjectManager.get()`) — nunca inventa un avance no reflejado en tareas/notas reales. Tool nuevo `agency_client_status`.
+- Client AIOS Builder sigue diferido, mismo motivo que el plan original (tamaño real, no bloqueo de vendor).
+- Bug real encontrado y corregido: el wiring inicial instanciaba el specialist antes de que `self._projects` existiera en el constructor — detectado corriendo la suite completa.
+- 911/911 tests (6 nuevos). Ver ADR 0109.
+
 ## [2026-08-05] Fase I (Community) de la expansión "Inteligencia Ejecutiva"
 
 - `snarf/capabilities/discord.py::Discord` (vendor decidido en el plan, sin credencial real todavía): bot token + servidor/canal reales vía env vars, mismo patrón lazy-client que Notion/Tavily. `CommunityPulseSpecialist`: métricas reales (miembros, mensajes recientes, autores activos), determinístico, sin LLM.

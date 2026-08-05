@@ -102,6 +102,8 @@ TOOL_TO_NODE: dict[str, str] = {
     # Fase I, rama Community.
     "community_pulse": "specialist_community",
     "community_post_message": "specialist_community",
+    # Fase I, rama Agency.
+    "agency_client_status": "specialist_agency",
     # Proyectos tenía las 14 tools de este Especialista cayendo en un único
     # nodo — de lejos el más cargado del cerebro, y el más opaco: no se veía
     # QUÉ parte de Proyectos estaba realmente activa. Separado en 3 nodos
@@ -205,6 +207,7 @@ NODE_TIER: dict[str, str] = {
     "specialist_sales": "specialist",
     "specialist_finance": "specialist",
     "specialist_community": "specialist",
+    "specialist_agency": "specialist",
     "specialist_projects_manage": "specialist",
     "specialist_projects_tasks": "specialist",
     "specialist_projects_conversations": "specialist",

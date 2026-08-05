@@ -301,6 +301,13 @@ def _community_post_message(i, r):
     return _quoted("posteando", _input_get(i, "content"))
 
 
+# --- specialist_agency -----------------------------------------------
+
+
+def _agency_client_status(i, r):
+    return _quoted("status para proyecto", _short_id(_input_get(i, "project_id")))
+
+
 # --- specialist_executive_board --------------------------------------------
 
 
@@ -455,6 +462,8 @@ DETAIL_EXTRACTORS = {
     # specialist_community
     "community_pulse": _community_pulse,
     "community_post_message": _community_post_message,
+    # specialist_agency
+    "agency_client_status": _agency_client_status,
     # specialist_projects_manage
     "project_create": _from_input("name", prefix="creando proyecto"),
     "project_list": _list_count("proyectos"),
