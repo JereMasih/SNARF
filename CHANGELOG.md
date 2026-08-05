@@ -2,6 +2,16 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-04] Fase E de la expansión "Inteligencia Ejecutiva": los 7 roles, implementación real (`snarf/executive/`)
+
+- Los 7 roles asesores (cto/coo/research/ceo/cfo/cmo/creative) corren de verdad, cada uno como un proceso separado: `snarf/executive/process.py::consult_role()` levanta `mcp_server.py` como subproceso stdio por consulta — el primer consumidor real del transporte MCP construido en la Fase D (ADR 0093/0097), no solo verificado con un smoke test aislado.
+- `_MCPToolBridge` resuelve el cruce sync/async real: `AnthropicLLM.generate()` llama a `tool_handler()` síncronamente desde su propio loop de rondas, pero una sesión de cliente MCP es asincrónica de punta a punta — se corre en un hilo con su loop de asyncio activo y se expone un `call_tool()` síncrono que bloquea vía `run_coroutine_threadsafe`.
+- `snarf/executive/roles.py` (`ExecutiveRoleConfig`, 7 configs, reusan sin duplicar `ROLE_TOOL_SUBSETS` de la Fase D), `snarf/executive/opinion.py` (`parse_opinions`: disciplina de honestidad verificada en código — una afirmación `BASIS='hecho'` sin el nombre EXACTO de un tool realmente invocado ese turno se degrada mecánicamente a `inferencia`, nunca se confía en el self-report del modelo), `snarf/executive/specialist.py` (`ExecutiveBoardSpecialist`, 7 roles en paralelo vía `ThreadPoolExecutor`, un rol fallando nunca tira abajo a los demás).
+- Tool nuevo `executive_board_consult(question, roles=None)` en el Orchestrator (sin protocolo de confirmación — solo lectura/asesoría, ningún rol puede mutar nada); nodo nuevo `specialist_executive_board` en el cerebro; widget nuevo `GET/POST /dashboard/widgets/executive_board` (cache-first, mismo patrón que Gmail/Dashboard Curator).
+- `llm_factory_for_role` usa `llm_routing.build_resilient_llm` (fallback automático entre proveedores, integrado en esta misma ronda al resto del wiring real de Snarf) en vez de `build_llm` a secas.
+- Verificado con un smoke test real de punta a punta, fuera de la suite automatizada (gasta tokens reales): consulta real al rol `cto` — subproceso, sesión MCP y llamada a `knowledge_index_status` reales. El rol respondió honestamente que el dominio `code` todavía no tiene nada indexado en producción, en vez de fabricar una evaluación — la disciplina de honestidad funcionó con datos reales, no solo con fixtures.
+- 790/790 tests (33 nuevos). Ver ADR 0098.
+
 ## [2026-08-04] Fase D de la expansión "Inteligencia Ejecutiva": servidor MCP real, cuarto punto de entrada
 
 - Primer y único segundo consumidor real de las herramientas de Snarf (ver ADR 0093). El SDK `mcp` (oficial, `modelcontextprotocol.io`) no estaba instalado — se instaló y se inspeccionó campo por campo antes de escribir código: la versión real (2.0.0) resultó tener una API bastante distinta de lo asumido en el diseño original, con `MCPServer.add_tool()` construyendo el schema por introspección de función Python en vez de aceptar JSON Schema crudo.

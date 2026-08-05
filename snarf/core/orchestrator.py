@@ -35,6 +35,7 @@ from snarf.knowledge.local_repo_source import LocalRepoKnowledgeSource
 from snarf.knowledge.vector_store import VectorStore
 from snarf.memory.episodic import EpisodicMemory
 from snarf.runtime import llm_routing, personality_prefs, user_profile
+from snarf.executive.specialist import ExecutiveBoardSpecialist
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
 from snarf.telemetry import activity_log, context, detail, input_preprocessing, usage_tracker
@@ -283,6 +284,13 @@ SYSTEM_PREFIX = (
     "texto de una página), notion_create_page (crear una subpágina nueva con título y "
     "contenido) y notion_append_to_page (agregar contenido al final de una ya existente). "
     "Reversibles desde el propio Notion — no llevan protocolo de confirmed.\n\n"
+    "executive_board_consult convoca al board asesor de Inteligencia Ejecutiva (7 roles: cto, "
+    "coo, research, ceo, cfo, cmo, creative) — nunca la llames por tu cuenta, solo cuando el "
+    "fundador pida explícitamente una consulta al board. Elegí solo los roles relevantes a la "
+    "pregunta (roles=None consulta a los 7, más lento y más caro que acotar). Cada afirmación "
+    "de cada rol trae su propia basis (hecho/inferencia/hipótesis/estimación/opinión) — nunca "
+    "muestres ese detalle crudo salvo pedido explícito, sintetizá vos las posturas en una "
+    "respuesta coherente, marcando con claridad si hay desacuerdo real entre roles.\n\n"
 )
 
 TOOLS = [
@@ -712,6 +720,36 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {"recent_days": {"type": "integer", "description": "Default 7."}},
+        },
+    },
+    {
+        "name": "executive_board_consult",
+        "description": (
+            "Convoca al board asesor de Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094/0098) — "
+            "hasta 7 roles (cto/coo/research/ceo/cfo/cmo/creative) opinan en paralelo, cada uno desde "
+            "un proceso separado con acceso de solo lectura a un subconjunto real y acotado de tus "
+            "herramientas (nunca pueden ejecutar ni mutar nada). Cada afirmación de cada rol viene "
+            "etiquetada con su basis real (hecho/inferencia/hipótesis/estimación/opinión) — nunca "
+            "muestres ese detalle crudo al fundador salvo que lo pida explícitamente, en cambio "
+            "sintetizá las posturas en tu propia voz. Nunca la llames por tu cuenta: solo cuando el "
+            "fundador pida explícitamente una consulta al board (ej. 'preguntale al board', 'qué "
+            "opinan mis asesores sobre X'). roles=None consulta a los 7; pasá una lista acotada "
+            "cuando la pregunta claramente solo concierne a algunos (ej. una pregunta puramente "
+            "técnica solo necesita cto)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "roles": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["cto", "coo", "research", "ceo", "cfo", "cmo", "creative"],
+                    },
+                },
+            },
+            "required": ["question"],
         },
     },
     {
@@ -1208,6 +1246,15 @@ class Orchestrator:
             self._drive, self._drive_indexer, lambda: llm_routing.build_llm("project_summary"), user_id
         )
 
+        # Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094/0098): cada rol
+        # corre en su propio proceso MCP (snarf/executive/process.py), nunca
+        # in-process — es el segundo consumidor real que justificó reabrir
+        # MCP (ADR 0093). llm_factory_for_role reusa el mismo ruteo con
+        # fallback automático entre proveedores que el resto del wiring real.
+        self._executive_board = ExecutiveBoardSpecialist(
+            llm_factory_for_role=lambda role: llm_routing.build_resilient_llm(f"executive_{role}"), user_id=user_id
+        )
+
         self._tool_handlers = {
             "get_current_datetime": lambda i: self._tool_get_current_datetime(),
             "measure_text_length": lambda i: self._tool_measure_text_length(i.get("text", "")),
@@ -1264,6 +1311,7 @@ class Orchestrator:
             "knowledge_index_start": lambda i: self._knowledge_index_start(i["domain"]),
             "knowledge_index_status": lambda i: self._knowledge_index_status(i["domain"]),
             "telemetry_cost_summary": lambda i: usage_tracker.summarize(recent_days=i.get("recent_days", 7)),
+            "executive_board_consult": lambda i: self._executive_board.consult(i["question"], i.get("roles")),
             "drive_create_document": lambda i: self._document_publisher.create_document(
                 i["title"], i["content"], format=i.get("format", "markdown"), destination=i.get("destination", "drive")
             ),
@@ -1327,6 +1375,10 @@ class Orchestrator:
     @property
     def gmail_digest(self) -> GmailDigestSpecialist:
         return self._gmail_digest
+
+    @property
+    def executive_board(self) -> ExecutiveBoardSpecialist:
+        return self._executive_board
 
     @property
     def drive_indexer(self) -> DriveIndexer:

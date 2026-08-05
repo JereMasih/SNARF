@@ -16,7 +16,25 @@ ROUTING_PATH = Path("data/llm_routing.json")
 # del fundador tras encontrar, con precios reales, que ningún proveedor
 # ofrece hoy "tan inteligente como Sonnet" y "notablemente más barato" a la
 # vez — ver ADR de esta ronda).
-ROLES = ("orchestrator", "gmail_digest", "drive_vision", "project_summary", "conversation_title", "dashboard_curator")
+ROLES = (
+    "orchestrator",
+    "gmail_digest",
+    "drive_vision",
+    "project_summary",
+    "conversation_title",
+    "dashboard_curator",
+    # Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094/0098) — 7 roles
+    # asesores, cada uno con su propio rol de ruteo (igual criterio que
+    # gmail_digest/dashboard_curator: tarea acotada, modelo barato por
+    # default, elegible aparte desde la interfaz sin tocar código).
+    "executive_cto",
+    "executive_coo",
+    "executive_research",
+    "executive_ceo",
+    "executive_cfo",
+    "executive_cmo",
+    "executive_creative",
+)
 
 # Default = EXACTAMENTE el comportamiento de siempre (ver GMAIL_DIGEST_MODEL/
 # DRIVE_VISION_MODEL en orchestrator.py) — cero cambio hasta que el fundador
@@ -28,6 +46,13 @@ DEFAULT_ROUTING = {
     "project_summary": {"provider": "anthropic", "model": "claude-haiku-4-5"},
     "conversation_title": {"provider": "anthropic", "model": "claude-haiku-4-5"},
     "dashboard_curator": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    "executive_cto": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    "executive_coo": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    "executive_research": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    "executive_ceo": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    "executive_cfo": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    "executive_cmo": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    "executive_creative": {"provider": "anthropic", "model": "claude-haiku-4-5"},
 }
 
 # Cada proveedor mapea a una de las 3 Capacidades reales. xai/groq_llama

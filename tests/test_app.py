@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 import app as app_module
 from snarf.memory.audio_store import AudioStore
 from snarf.memory.episodic import EpisodicMemory
+from snarf.executive import specialist as executive_board_module
 from snarf.specialists import dashboard_curator as dashboard_curator_module
 from snarf.telemetry import activity_log, events, input_log, input_preprocessing, usage_tracker
 from snarf.voice.providers.kokoro_tts import KokoroTTS
@@ -55,6 +56,10 @@ def client(tmp_path, monkeypatch):
     # cache vacío (mismo tipo de fuga que ADR 0085).
     monkeypatch.setattr(dashboard_curator_module, "CACHE_DIR", tmp_path / "dashboard_curation")
     monkeypatch.setattr(dashboard_curator_module, "TEMPLATE_PROPOSALS_PATH", tmp_path / "dashboard_template_proposals.json")
+    # Inteligencia Ejecutiva (ver ADR 0094/0098): mismo motivo que
+    # dashboard_curator arriba — estado en disco propio, nunca el cache real
+    # de producción.
+    monkeypatch.setattr(executive_board_module, "CACHE_DIR", tmp_path / "executive_board")
     monkeypatch.setenv("SNARF_ACCESS_PASSWORD", TEST_PASSWORD)
     monkeypatch.setenv("SESSION_SECRET", "test-session-secret")
     with TestClient(app_module.app, base_url="https://testserver") as c:
@@ -1137,5 +1142,39 @@ def test_upload_with_project_id_uploads_to_the_project_folder_and_tags_the_index
     project = client.get(f"/projects/{project_id}").json()
     assert upload_calls[0]["parent_id"] == project["drive_folder_id"]
     assert index_calls[0] == {"project_id": project_id}
+
+
+def test_dashboard_executive_board_widget_is_none_before_any_consult(client):
+    res = client.get("/dashboard/widgets/executive_board")
+    assert res.status_code == 200
+    assert res.json() == {"consult": None}
+
+
+def test_dashboard_executive_board_consult_persists_and_the_widget_reflects_it(client, monkeypatch):
+    monkeypatch.setattr(
+        app_module.orchestrator.executive_board,
+        "_llm_factory_for_role",
+        lambda role: object(),
+    )
+
+    def fake_consult_role(role_config, question, llm, repo_root):
+        return {"headline": f"{role_config.role}: {question}", "opinions": [], "raw": ""}
+
+    import snarf.executive.specialist as specialist_module
+
+    monkeypatch.setattr(specialist_module, "consult_role", fake_consult_role)
+
+    res = client.post("/dashboard/widgets/executive_board/consult", json={"question": "¿abrimos YouTube?", "roles": ["cto"]})
+    assert res.status_code == 200
+    assert res.json()["roles"]["cto"]["headline"] == "cto: ¿abrimos YouTube?"
+
+    widget = client.get("/dashboard/widgets/executive_board").json()
+    assert widget["consult"]["question"] == "¿abrimos YouTube?"
+
+
+def test_dashboard_executive_board_consult_requires_a_question(client):
+    res = client.post("/dashboard/widgets/executive_board/consult", json={})
+    assert res.status_code == 200
+    assert "error" in res.json()
 
 

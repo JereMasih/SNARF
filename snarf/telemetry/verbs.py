@@ -108,6 +108,8 @@ VERB_BY_SKILL: dict[str, str] = {
     "notion_read_page": "leyendo la página",
     "notion_create_page": "creando la página",
     "notion_append_to_page": "sumando a la página",
+    # specialist_executive_board
+    "executive_board_consult": "convocando al board",
 }
 
 VERB_BY_NODE: dict[str, str] = {
@@ -117,6 +119,7 @@ VERB_BY_NODE: dict[str, str] = {
     "specialist_projects_manage": "archivando",
     "specialist_projects_tasks": "anotando",
     "specialist_projects_conversations": "enlazando",
+    "specialist_executive_board": "consultando al board",
     "memory": "rebobinando",
     "drive": "hojeando",
     "knowledge": "rastreando",

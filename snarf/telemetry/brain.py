@@ -120,6 +120,11 @@ TOOL_TO_NODE: dict[str, str] = {
     "notion_read_page": "notion",
     "notion_create_page": "notion",
     "notion_append_to_page": "notion",
+    # Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094/0098): Especialista
+    # Cognitivo nuevo (capa distinta de una Capacidad cruda, ver ADR 0003) —
+    # va al tier "specialist" aunque tenga una sola tool, mismo criterio ya
+    # usado para specialist_gmail.
+    "executive_board_consult": "specialist_executive_board",
 }
 
 # gemini/openai/xai/groq_llama son los 4 proveedores de LLM alternativos a
@@ -171,6 +176,7 @@ NODE_TIER: dict[str, str] = {
     "specialist_projects_manage": "specialist",
     "specialist_projects_tasks": "specialist",
     "specialist_projects_conversations": "specialist",
+    "specialist_executive_board": "specialist",
     "memory": "capability",
     "drive": "capability",
     "knowledge": "capability",

@@ -241,6 +241,15 @@ def _gmail_summarize_inbox(i, r):
     return None
 
 
+# --- specialist_executive_board --------------------------------------------
+
+
+def _executive_board_consult(i, r):
+    if isinstance(r, dict) and "roles" in r:
+        return _truncate(f"convocando a: {', '.join(r['roles'].keys())}")
+    return None
+
+
 # --- specialist_projects_manage ---------------------------------------
 
 
@@ -393,6 +402,8 @@ DETAIL_EXTRACTORS = {
     "notion_read_page": _from_result_text("leyendo:"),
     "notion_create_page": _from_input("title", prefix="creando página:"),
     "notion_append_to_page": _notion_append_to_page,
+    # specialist_executive_board
+    "executive_board_consult": _executive_board_consult,
 }
 
 

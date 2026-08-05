@@ -691,6 +691,25 @@ def dashboard_gmail_digest_refresh(user_id: str = Depends(require_user)):
         return {"connected": True, "error": str(exc)}
 
 
+@app.get("/dashboard/widgets/executive_board")
+def dashboard_executive_board(user_id: str = Depends(require_user)):
+    # Muestra la última consulta real cacheada (ver ADR 0094/0098) — nunca
+    # dispara una consulta nueva desde un GET de poll del navegador, mismo
+    # criterio que el resto de los widgets cache-first.
+    return {"consult": orchestrator.executive_board.cached_consult()}
+
+
+@app.post("/dashboard/widgets/executive_board/consult")
+def dashboard_executive_board_consult(payload: dict, user_id: str = Depends(require_user)):
+    question = payload.get("question", "")
+    if not question:
+        return {"error": "Falta 'question'."}
+    try:
+        return orchestrator.executive_board.consult(question, roles=payload.get("roles"))
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 @app.get("/dashboard/widgets/calendar")
 def dashboard_widget_calendar(user_id: str = Depends(require_user)):
     if not _google_connected(user_id):
