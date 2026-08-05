@@ -2,6 +2,14 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-04] Fase F de la expansión "Inteligencia Ejecutiva": Harness — nombrar el ciclo de vida real, más `compare()`
+
+- El plan pedía un Harness con inyección de contexto por skill, validación/tests automáticos, comparación entre modelos y reintento ante falla de calidad. Revisando el código real antes de construir nada, casi todo ya existía repartido sin nombre común: prompt caching (ADR 0026/0036), confirmación en dos pasos (ADR 0015), `_bulk_read_gate` (ADR 0067), logs unificados, alerta de costo (ADR 0081), ruteo multi-proveedor (ADR 0068) y el reintento ya existente de `AnthropicLLM.generate()` al agotar rondas.
+- `HARNESS.md` (nuevo): documenta ese ciclo de vida real, mapeando cada función pedida a su mecanismo real ya existente — sobre todo un ejercicio de nombrar, no de construir.
+- Pushback deliberado, mismo criterio que otras ADRs de este repo: no se construye validación/tests automáticos por skill ni selección automática de "ganador" entre proveedores — no hay todavía un caso de falla real y concreto contra el cual diseñar eso (los consumidores serían las Skills de la Fase I, que todavía no existen).
+- `snarf/runtime/harness.py::compare(system, messages, providers)` (único código nuevo): corre el mismo prompt contra N proveedores reales (`providers: {provider: model}`, elegido a propósito, nunca adivinado) y devuelve las N respuestas reales para inspección manual — sin juez-LLM automático. Deliberadamente independiente del trabajo de fallback automático que otra sesión está construyendo en paralelo sobre `llm_routing.py` (real mientras tanto en el working tree, pero todavía sin comitear) — usa solo primitivas ya comiteadas, para que este commit quede autocontenido.
+- 794/794 tests (4 nuevos). Ver ADR 0100.
+
 ## [2026-08-04] Fase E de la expansión "Inteligencia Ejecutiva": los 7 roles, implementación real (`snarf/executive/`)
 
 - Los 7 roles asesores (cto/coo/research/ceo/cfo/cmo/creative) corren de verdad, cada uno como un proceso separado: `snarf/executive/process.py::consult_role()` levanta `mcp_server.py` como subproceso stdio por consulta — el primer consumidor real del transporte MCP construido en la Fase D (ADR 0093/0097), no solo verificado con un smoke test aislado.
