@@ -1,4 +1,5 @@
 import io
+import re
 import threading
 
 from googleapiclient.discovery import build
@@ -13,6 +14,32 @@ GOOGLE_DOCS_EXPORT_MIME = {
     "application/vnd.google-apps.spreadsheet": "text/csv",
     "application/vnd.google-apps.presentation": "text/plain",
 }
+
+# Bug real encontrado en producción (ver activity_log.jsonl): el fundador/el
+# propio Snarf pasan casi siempre texto libre como query ("vida es sueño",
+# "Tommy") en vez de la sintaxis real de la API de Drive
+# (`fullText contains 'vida es sueño'`) — la API devuelve un 400 real
+# ("Invalid Value") cada vez, sin excepción. En vez de confiar en que quien
+# llama siempre escriba sintaxis válida, se detecta si la query YA parece
+# sintaxis real de Drive (tiene un operador reconocible) y, si no, se
+# envuelve como búsqueda de texto completo real — degrada al caso común en
+# vez de fallar. Una query construida internamente en este mismo archivo
+# (ver get_or_create_folder, con `=`/`in`) sigue pasando intacta.
+_DRIVE_QUERY_OPERATOR_RE = re.compile(r"\b(?:contains|in)\b|[=<>]")
+
+
+def _looks_like_drive_query_syntax(query: str) -> bool:
+    return bool(_DRIVE_QUERY_OPERATOR_RE.search(query))
+
+
+def _escape_query_literal(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def normalize_drive_query(query: str) -> str:
+    if _looks_like_drive_query_syntax(query):
+        return query
+    return f"fullText contains '{_escape_query_literal(query)}'"
 
 
 class GoogleDrive(Capability):
@@ -66,7 +93,7 @@ class GoogleDrive(Capability):
             "fields": "files(id, name, mimeType, modifiedTime, size, webViewLink)",
         }
         if query:
-            params["q"] = query
+            params["q"] = normalize_drive_query(query)
         result = self._client().files().list(**params).execute()
         return result.get("files", [])
 
@@ -77,7 +104,7 @@ class GoogleDrive(Capability):
             "fields": "nextPageToken, files(id, name, mimeType, modifiedTime, size, webViewLink)",
         }
         if query:
-            params["q"] = query
+            params["q"] = normalize_drive_query(query)
         if page_token:
             params["pageToken"] = page_token
         result = self._client().files().list(**params).execute()

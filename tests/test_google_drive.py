@@ -9,8 +9,10 @@ class FakeFilesResource:
         self._update_response = update_response
         self.create_calls = []
         self.update_calls = []
+        self.list_calls = []
 
     def list(self, **params):
+        self.list_calls.append(params)
         page_token = params.get("pageToken")
         page = self._pages[page_token or "first"]
         return SimpleExecutable(page)
@@ -83,6 +85,23 @@ def test_iter_all_files_stops_when_there_is_a_single_page():
 def test_read_file_bytes_returns_raw_bytes_without_decoding():
     drive = make_drive(media_bytes={"f1": b"\xff\xd8binary-image-bytes"})
     assert drive.read_file_bytes("f1") == b"\xff\xd8binary-image-bytes"
+
+
+def test_list_files_sends_free_text_query_normalized_to_real_drive_syntax():
+    # Regresión real de producción: pasar texto libre tal cual como `q`
+    # rompía la API de Drive con un 400 ("Invalid Value") — ver ADR de esta
+    # ronda / snarf/capabilities/google_drive.py::normalize_drive_query.
+    pages = {"first": {"files": []}}
+    drive = make_drive(pages)
+    drive.list_files(query="vida es sueño")
+    assert drive._service._files.list_calls[0]["q"] == "fullText contains 'vida es sueño'"
+
+
+def test_list_files_sends_real_drive_syntax_unchanged():
+    pages = {"first": {"files": []}}
+    drive = make_drive(pages)
+    drive.list_files(query="name contains 'informe'")
+    assert drive._service._files.list_calls[0]["q"] == "name contains 'informe'"
 
 
 def test_get_or_create_folder_returns_existing_id_when_found():

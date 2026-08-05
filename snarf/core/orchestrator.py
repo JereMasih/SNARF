@@ -379,7 +379,15 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Query opcional de búsqueda de Drive (sintaxis de la API de Drive)."},
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "Query opcional. Aceptás sintaxis real de la API de Drive (ej. \"name contains "
+                        "'informe'\") si la conocés, o directamente texto libre (ej. 'informe de ventas') "
+                        "— si no parece sintaxis real de Drive, se busca automáticamente como texto "
+                        "completo real."
+                    ),
+                },
                 "page_size": {"type": "integer"},
                 "confirmed": {"type": "boolean"},
             },

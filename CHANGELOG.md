@@ -2,6 +2,13 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-05] Fix real: `drive_list_files` fallaba con texto libre como query
+
+- Revisando `activity_log.jsonl` a pedido del fundador se encontró un 400 real recurrente (`HttpError ... "Invalid Value"`) cada vez que se pasaba texto libre ("vida es sueño", "Tommy") como query en vez de la sintaxis real de Drive — el fundador lo sufrió en vivo buscando contenido real, 3 intentos fallidos seguidos.
+- `snarf/capabilities/google_drive.py::normalize_drive_query()`: si la query no parece sintaxis real de Drive, se envuelve automáticamente como `fullText contains '...'` — cubre todos los callers reales (`drive_list_files`, `drive_index_scan/start/catalog_unsupported`) desde un solo punto, sin tocarlos uno por uno. `get_or_create_folder()` (sintaxis real interna) sigue intacto.
+- Verificado contra Drive real (no solo mocks): la búsqueda exacta que fallaba en producción ahora trae los 5 documentos reales correctos.
+- 928/928 tests (11 nuevos). Ver ADR 0111.
+
 ## [2026-08-05] Fase I (Ops/Custom) de la expansión "Inteligencia Ejecutiva" — cierra la Fase I completa
 
 - Vault Cleanup confirmado sin código nuevo (`data_backup.py` + purga de audio, ya existentes). Rama que el plan original marcaba con la captura de referencia parcialmente tapada — consultado al fundador, pidió que se generen las skills operativas reales que hacen falta hoy, con criterio propio.
