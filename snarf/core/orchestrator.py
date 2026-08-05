@@ -12,6 +12,7 @@ from snarf.capabilities.anthropic_llm import (
     fallback_speech,
 )
 from snarf.capabilities.claude_code import ClaudeCode
+from snarf.capabilities.discord import Discord
 from snarf.capabilities.docx_extractor import DocxExtractor
 from snarf.capabilities.document_builder import DocumentBuilder
 from snarf.capabilities.ffmpeg_audio import FfmpegAudioExtractor
@@ -44,6 +45,7 @@ from snarf.specialists.productivity.calendar_brief import CalendarBriefSpecialis
 from snarf.specialists.sales.sponsor_inbox_triage import SponsorInboxTriageSpecialist
 from snarf.specialists.content.mode import BLOG_POST_CONFIG, NEWSLETTER_CONFIG, SOCIAL_POST_CONFIG
 from snarf.specialists.content.specialist import ContentSpecialist
+from snarf.specialists.community.pulse import CommunityPulseSpecialist
 from snarf.specialists.finance.books_categorize import BooksCategorizeSpecialist
 from snarf.specialists.finance.monthly_pnl import MonthlyPnLSpecialist
 from snarf.specialists.research.mode import COMPETITOR_WATCH_CONFIG, DEEP_RESEARCH_CONFIG, TREND_SCAN_CONFIG
@@ -97,6 +99,8 @@ HIGH_IMPACT_TOOLS = frozenset({
     # Skill Factory (Fase H, ver ADR 0095/0102): construir/activar una skill
     "skill_factory_build",
     "skill_factory_activate",
+    # Fase I, rama Community: postear en Discord como el fundador/marca.
+    "community_post_message",
 })
 BULK_READ_GATED_TOOLS = frozenset({
     "drive_list_files",
@@ -649,6 +653,31 @@ TOOLS = [
                 }
             },
             "required": ["transactions"],
+        },
+    },
+    {
+        "name": "community_pulse",
+        "description": (
+            "Métricas reales de la comunidad de Discord del fundador (miembros, mensajes recientes, "
+            "autores activos) — determinístico, nunca inventa una cifra. Si Discord todavía no está "
+            "configurado, lo dice explícito."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"message_limit": {"type": "integer", "description": "Default 100."}},
+        },
+    },
+    {
+        "name": "community_post_message",
+        "description": (
+            "ALTO IMPACTO. Postea un mensaje real en el canal de Discord de la comunidad, en nombre "
+            "del fundador/marca. Protocolo de confirmed obligatorio, mismo criterio que "
+            "gmail_send_message."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"content": {"type": "string"}},
+            "required": ["content"],
         },
     },
     {
@@ -1438,6 +1467,12 @@ class Orchestrator:
             self._drive, lambda: llm_routing.build_resilient_llm("books_categorize"), user_id
         )
         self._monthly_pnl = MonthlyPnLSpecialist()
+        # Fase I, rama Community — vendor decidido (Discord), lazy-client
+        # desde env vars (DISCORD_BOT_TOKEN/DISCORD_GUILD_ID/
+        # DISCORD_CHANNEL_ID). Sin credencial real, available es False y
+        # ningún método real se llama.
+        self._discord = Discord()
+        self._community_pulse = CommunityPulseSpecialist(self._discord)
 
         # Pipeline de vectorización de Drive (ver ADR 0028): mismo criterio de
         # "modelo barato para tarea acotada" que el digest de Gmail, esta vez
@@ -1600,6 +1635,8 @@ class Orchestrator:
             "sales_sponsor_inbox_triage": self._tool_sales_sponsor_inbox_triage,
             "finance_books_categorize": lambda i: self._books_categorize.categorize(i["file_id"]),
             "finance_monthly_pnl": lambda i: self._monthly_pnl.compute(i["transactions"]),
+            "community_pulse": lambda i: self._community_pulse.pulse(i.get("message_limit", 100)),
+            "community_post_message": self._tool_community_post_message,
             "drive_index_scan": lambda i: self._drive_indexer.scan(query=i.get("query")),
             "drive_index_catalog_unsupported": lambda i: self._drive_indexer.catalog_unsupported(query=i.get("query")),
             "drive_index_start": lambda i: self._drive_indexer.start(query=i.get("query")),
@@ -1815,6 +1852,11 @@ class Orchestrator:
         if not i.get("confirmed"):
             return self._pending({"proposal_id": i["proposal_id"]})
         return self._skill_factory.activate(i["proposal_id"])
+
+    def _tool_community_post_message(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending({"content": i.get("content")})
+        return self._discord.send_message(i["content"])
 
     def _tool_gmail_send_message(self, i: dict) -> dict:
         if not i.get("confirmed"):

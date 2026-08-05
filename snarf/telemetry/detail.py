@@ -288,6 +288,19 @@ def _finance_monthly_pnl(i, r):
     return None
 
 
+# --- specialist_community -------------------------------------------------
+
+
+def _community_pulse(i, r):
+    if isinstance(r, dict) and "member_count" in r:
+        return _truncate(f"{r['member_count']} miembros, {r.get('recent_message_count', 0)} mensajes")
+    return None
+
+
+def _community_post_message(i, r):
+    return _quoted("posteando", _input_get(i, "content"))
+
+
 # --- specialist_executive_board --------------------------------------------
 
 
@@ -439,6 +452,9 @@ DETAIL_EXTRACTORS = {
     # specialist_finance
     "finance_books_categorize": _finance_books_categorize,
     "finance_monthly_pnl": _finance_monthly_pnl,
+    # specialist_community
+    "community_pulse": _community_pulse,
+    "community_post_message": _community_post_message,
     # specialist_projects_manage
     "project_create": _from_input("name", prefix="creando proyecto"),
     "project_list": _list_count("proyectos"),

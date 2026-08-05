@@ -2,6 +2,13 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-05] Fase I (Community) de la expansión "Inteligencia Ejecutiva"
+
+- `snarf/capabilities/discord.py::Discord` (vendor decidido en el plan, sin credencial real todavía): bot token + servidor/canal reales vía env vars, mismo patrón lazy-client que Notion/Tavily. `CommunityPulseSpecialist`: métricas reales (miembros, mensajes recientes, autores activos), determinístico, sin LLM.
+- Tool nuevo de alto impacto `community_post_message` (postear como el fundador/marca, única acción de alto impacto real de la rama) — mismo protocolo `_pending()`/`confirmed` que `gmail_send_message`, excluido del allowlist MCP.
+- `MemberOnboardingSpecialist`/`WeeklyQADigestSpecialist`/`CommentTriageSpecialist` diferidos explícitamente: necesitan un servidor real con actividad real para diseñarse honesto, no están bloqueados por falta de vendor — Discord ya está listo para que los use en cuanto el fundador conecte el bot.
+- 905/905 tests (15 nuevos). Ver ADR 0108.
+
 ## [2026-08-05] Fase I (Finance v1) de la expansión "Inteligencia Ejecutiva"
 
 - Confirmado sin código nuevo: `GoogleDrive.read_file_text()` ya exporta un Google Sheet real como CSV — la premisa del plan ("reusa GoogleDrive/Sheets, sin OAuth nuevo") se verificó real antes de escribir nada.

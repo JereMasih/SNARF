@@ -85,6 +85,9 @@ VERB_BY_SKILL: dict[str, str] = {
     # specialist_finance
     "finance_books_categorize": "categorizando transacciones",
     "finance_monthly_pnl": "calculando el P&L",
+    # specialist_community
+    "community_pulse": "tomando el pulso de la comunidad",
+    "community_post_message": "posteando en Discord",
     # specialist_projects_manage
     "project_create": "fundando el proyecto",
     "project_list": "revisando proyectos",
@@ -140,6 +143,7 @@ VERB_BY_NODE: dict[str, str] = {
     "specialist_content": "redactando",
     "specialist_sales": "cazando oportunidades",
     "specialist_finance": "haciendo números",
+    "specialist_community": "escuchando a la comunidad",
     "specialist_projects_manage": "archivando",
     "specialist_projects_tasks": "anotando",
     "specialist_projects_conversations": "enlazando",

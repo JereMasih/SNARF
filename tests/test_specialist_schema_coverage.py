@@ -9,6 +9,7 @@ import snarf.specialists.dashboard_curator  # noqa: F401
 import snarf.specialists.gmail_digest  # noqa: F401
 import snarf.specialists.productivity.calendar_brief  # noqa: F401
 import snarf.specialists.content.specialist  # noqa: F401
+import snarf.specialists.community.pulse  # noqa: F401
 import snarf.specialists.finance.books_categorize  # noqa: F401
 import snarf.specialists.finance.monthly_pnl  # noqa: F401
 import snarf.specialists.research.specialist  # noqa: F401

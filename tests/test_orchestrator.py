@@ -734,6 +734,23 @@ def test_finance_monthly_pnl_delegates_to_the_deterministic_computation(orchestr
     assert orchestrator._handle_tool("finance_monthly_pnl", {"transactions": transactions}) == {"received": transactions}
 
 
+def test_community_pulse_delegates_with_the_real_message_limit(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._community_pulse, "pulse", lambda message_limit: {"limit": message_limit})
+    assert orchestrator._handle_tool("community_pulse", {"message_limit": 5}) == {"limit": 5}
+
+
+def test_community_post_message_requires_confirmation_first(orchestrator):
+    result = orchestrator._handle_tool("community_post_message", {"content": "hola"})
+    assert result["status"] == "pending_confirmation"
+    assert result["preview"]["content"] == "hola"
+
+
+def test_community_post_message_with_confirmed_calls_discord(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._discord, "send_message", lambda content: {"id": "m1", "content": content})
+    result = orchestrator._handle_tool("community_post_message", {"content": "hola", "confirmed": True})
+    assert result == {"id": "m1", "content": "hola"}
+
+
 def test_drive_read_file_delegates_to_the_content_extractor_not_raw_bytes(orchestrator, monkeypatch):
     # Regresión: antes llamaba directo a GoogleDrive.read_file_text(), que
     # decodifica cualquier binario (PDF, Word, imagen) como UTF-8 a lo
