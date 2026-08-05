@@ -2,6 +2,13 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-05] Cerebro de Snarf: visualiza los 9 Especialistas nuevos de la Fase I
+
+- El backend (`brain.py::NODE_TIER`) ya conocía los 9 nodos `specialist_*` de la Fase I desde que se construyó cada rama, pero `web/index.html` mantiene sus propias seis tablas JS (posición en el anillo, label, ícono SVG, color, feed mini del HUD, familia visual) que nunca se habían actualizado — esos nodos existían en el backend pero jamás se dibujaban.
+- Completadas las seis tablas con los 9 IDs reales, íconos nuevos dibujados a mano en el mismo lenguaje monolínea del resto (lupa para Research, lápiz para Content, mesa de directorio para Executive Board, llave inglesa para Skill Factory, etc.).
+- Verificado en un navegador real (Playwright, no solo que compile) contra el server real de producción: los 32 nodos confirmados en el DOM real, los 9 tooltips y íconos nuevos confirmados con contenido real, cero errores de consola. Capturas reales confirmaron el feed en vivo mostrando actividad real con su ícono nuevo.
+- 928/928 tests de Python (sin cambios de backend). Ver ADR 0112.
+
 ## [2026-08-05] Fix real: `drive_list_files` fallaba con texto libre como query
 
 - Revisando `activity_log.jsonl` a pedido del fundador se encontró un 400 real recurrente (`HttpError ... "Invalid Value"`) cada vez que se pasaba texto libre ("vida es sueño", "Tommy") como query en vez de la sintaxis real de Drive — el fundador lo sufrió en vivo buscando contenido real, 3 intentos fallidos seguidos.
