@@ -1,9 +1,16 @@
-# Stack de voz de Snarf — corre en Docker desde el día uno, también acá en
-# la Mac, para que la Parte 4 (portabilidad a VPS) sea real desde ahora: si
-# funciona en este contenedor, funciona igual en el VPS (CPU-only, sin
-# asumir nada de macOS ni de GPU). Ver ADR de la capa de voz.
+# Stack de voz de Snarf — pensado desde el día uno para que Docker sea la
+# especificación real del VPS (Parte 4, pendiente): si funciona en este
+# contenedor, funciona igual ahí (CPU-only, sin asumir nada de macOS ni de
+# GPU). Ver ADR 0056.
 #
-# Arrancar:   docker compose -f docker-compose.voice.yml up -d
+# Desde 2026-08-05 (ADR 0120) esta Mac YA NO corre esto localmente — Kokoro
+# corre nativo con aceleración MPS real vía LaunchAgent (com.snarf.kokoro-tts,
+# repo separado en ~/Documents/PROGRAMACION/PROYECTOS/kokoro-fastapi). Este
+# archivo queda intacto a propósito: es la spec real a usar el día que se
+# despliegue al VPS, no código muerto para borrar.
+#
+# Arrancar (VPS, o para volver a probar el modo Docker en esta Mac):
+#   docker compose -f docker-compose.voice.yml up -d
 # Ver logs:   docker compose -f docker-compose.voice.yml logs -f kokoro
 # Apagar:     docker compose -f docker-compose.voice.yml down
 

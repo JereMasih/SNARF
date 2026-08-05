@@ -2,6 +2,192 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-05] Causa real de los crashes de memoria (cache sin límite de mlx_lm.server), Kokoro TTS nativo con GPU (ADR 0120)
+
+- **Hallazgo real, con `footprint` (la misma herramienta que Activity Monitor):** el problema nunca fue
+  el tamaño del modelo — `mlx_lm.server` cachea el contexto de cada conversación sin ningún límite por
+  default, y corriendo 24/7 llegó a 18GB de footprint real (el modelo, 4-bit, pesa ~2.5GB). Confirmado:
+  tras un reinicio limpio el footprint bajó a 2437MB, calzando con el tamaño real del modelo.
+- Fix: `--prompt-cache-bytes 4294967296` (4GB) agregado a los 3 LaunchAgents de MLX
+  (fast/mid/heavy) — el cache sigue funcionando (beneficio real de latencia), pero ya no puede crecer
+  sin límite. El fallback a `xai` que el fundador vio "sin avisar" fue exactamente el crash de Metal ya
+  documentado, con este fix aplicado no debería repetirse por esta causa.
+- **Kokoro TTS migrado de Docker/Colima a proceso nativo en la Mac**, con aceleración real de GPU
+  (MPS) — Colima reservaba 8GiB de VM para correr Kokoro 100% CPU (sin acceso a Metal); el modo nativo
+  del propio proyecto (`Kokoro-FastAPI`, clonado fuera del repo) corre con el mismo `base_url` de
+  siempre (`localhost:8880`), cero cambios de código. LaunchAgent nuevo (`com.snarf.kokoro-tts`),
+  verificado con audio real (`ffprobe`) y flujo end-to-end real vía `/tts` de producción. Colima
+  detenido por completo.
+- **Docker/Colima no se descarta** — `docker-compose.voice.yml` queda intacto, documentado ahora como
+  la especificación real para cuando se despliegue al VPS (Parte 4, sigue pendiente): un VPS típico no
+  tiene GPU de Apple, así que Docker CPU-only sigue siendo la elección correcta ahí. Local = nativo con
+  MPS; VPS = Docker — dos entornos reales, no una elección de "cuál es mejor".
+
+## [2026-08-05] Desplegable de "pensamiento" del modelo, overlay de reconexión honesto, y otro crash real del modelo rápido
+
+- `LLMResponse` suma un campo `thinking: str | None` — capturado desde el campo `reasoning` que
+  devuelven algunos modelos locales "thinking" (ej. Qwen3.5) vía `mlx_lm.server`, fuera del schema
+  estándar de OpenAI (`OpenAICompatibleLLM.generate()`, con `getattr` porque la mayoría de
+  proveedores/modelos no lo exponen). `split_speech()` lo adjunta tal cual, sin parsearlo (no viaja
+  mezclado en el texto). Nunca se persiste a memoria episódica — es transparencia de esa respuesta
+  puntual, no parte del historial.
+- UI: desplegable "▾ pensamiento" en la burbuja de chat, oculto por default — mismo patrón visual que
+  la transcripción de una nota de voz. Verificado con Playwright (server real, `/send` interceptado
+  para simular un `thinking` de prueba): oculto por default, visible al click, sin errores de consola.
+- **Otro crash real, mismo patrón que el del modelo intermedio (ver entrada anterior):** el modelo
+  rápido (`Qwen3-4B`, hasta ahora "estable") también crasheó con un error real de Metal
+  (`ValueError: Slice indices must be 32-bit integers` seguido de
+  `kIOGPUCommandBufferCallbackErrorOutOfMemory`) bajo uso normal prolongado de la Mac (Chrome + VS Code
+  + el resto). El server principal quedó colgado esperando esa respuesta muerta — mismo bloqueo
+  sincrónico documentado antes. Recuperado con un `bootout`/`pkill`/`bootstrap` limpio del proceso
+  huérfano que había quedado reteniendo el puerto 8002 tras varios reinicios encadenados.
+- UI: el flujo de `/send` que antes decía "no se pudo enviar" ante cualquier fallo de red ahora es
+  honesto sobre la ambigüedad real — un fallo de conexión no prueba que el mensaje nunca llegó al
+  server, solo que se perdió la respuesta de vuelta. Ahora muestra el overlay de reconexión
+  ("se perdió la conexión... revisando si tu mensaje llegó a procesarse") y, apenas el server vuelve a
+  responder, recarga la conversación real (`GET /conversations/:id`) en vez de asumir que hay que
+  reenviar — si el mensaje sí se había procesado, la respuesta aparece sola; si no, el botón
+  "reintentar" sigue disponible.
+- Investigado y decidido no migrar: Kokoro TTS corre en Docker/Colima (8GiB de VM reservados, 1.7GiB
+  reales del contenedor) en vez de nativo en la Mac (como el LLM local) — confirmado que es una
+  decisión deliberada y documentada (`docker-compose.voice.yml`) para garantizar portabilidad futura a
+  un VPS, no un descuido. No se revierte hoy: la crisis de memoria que la motivó ya se resolvió con el
+  fix del LLM, y cambiar esto ahora cambiaría una garantía de arquitectura real a mitad de una sesión
+  ya larga.
+
+## [2026-08-05] Modelo rápido local como default en todos los roles, modelo intermedio instalado, indicador de conexión (ADR 0119)
+
+- Pedido explícito del fundador tras probar el rol rápido a mano en el orquestador ("está funcionando
+  muy bien en la práctica"): `mlx_local_fast` (Qwen3-4B) pasa a ser el default de **23 de 24 roles**
+  reales, incluido `orchestrator` — revierte la decisión de ADR 0118 de dejarlo en `xai`. Única
+  excepción real: `drive_vision` se queda en `claude-haiku-4-5` porque necesita soporte real de
+  imágenes y el modelo rápido es texto-solo.
+- Nuevo modelo intermedio instalado para comparar: `Qwen3.5-9B-MLX-4bit` (preset `mlx_local_mid`,
+  puerto 8992) — generación más nueva que el Qwen3-8B ya instalado, tamaño en disco casi idéntico.
+  FODA completo de candidatos en el ADR. Tool-calling confirmado funcionando.
+- **Hallazgo real durante la comparación:** correr dos servers MLX generando al mismo tiempo (rápido +
+  intermedio) crasheó el server rápido con un error real de Metal
+  (`Insufficient Memory kIOGPUCommandBufferCallbackErrorOutOfMemory`) — memoria libre medida en el
+  momento del crash: 0.06GB. El modelo intermedio queda instalado pero **apagado** (no arranca solo)
+  hasta que se decida usarlo, para no competir por memoria con el rápido en uso normal.
+- Bug real encontrado y arreglado: 4 tests de `test_orchestrator.py` asumían "sin credencial de pago
+  configurada → LLM no disponible" — dejó de ser cierto con el nuevo default (`mlx_local_fast` no
+  exige credencial), así que esos tests terminaban pegándole de verdad al server local real en vez de
+  ejercitar el modo eco/corte duro que decían probar. Arreglados ruteando esos 4 casos a mano a un
+  proveedor con credencial (borrada en tests). Suite completa: 952/952 tests.
+- UI: overlay "Snarf se está conectando..." — pantalla completa, bloquea toda interacción mientras
+  `/status` no responde; cubre arranque en frío y reconexión si el server se reinicia solo con la
+  pestaña ya abierta. Verificado con Playwright contra el server real.
+- Riesgo señalado, no resuelto hoy: la comparación cuantitativa rápido/intermedio/pesado sigue
+  pendiente (no se completó por el tiempo que tomó diagnosticar el crash real); y el mismo patrón de
+  tests no-herméticos del punto anterior puede seguir latente en otros tests que no fueron auditados.
+
+## [2026-08-05] Epílogo: modelo intermedio probado en real y descartado, `mlx_local_fast` queda como decisión final
+
+- Prueba real en producción, pedida explícitamente: server reiniciado con `orchestrator` + los 7
+  Especialistas del board ejecutivo ruteados al modelo intermedio (`Qwen3.5-9B`), rápido apagado para
+  evitar el crash de concurrencia ya documentado.
+- Bug real encontrado y arreglado: `PUT /llm-routing` no mergeaba con el archivo ya guardado —
+  cambiar UN rol desde Configuración reseteaba en silencio TODOS los demás a los defaults del código.
+  `attempt_fallback` ya hacía el merge correcto; el endpoint era la única ruta rota. Test de regresión
+  agregado.
+- Hallazgo real: con el intermedio activo, una respuesta larga dejaba **todo el servidor sordo**
+  (dashboard, `/status`, otra pestaña) hasta terminar de generar — explica el reporte de "el enlace no
+  funciona" en medio de la prueba. Se agregó timestamp por línea al log real del server
+  (`snarf/runtime/timestamp_lines.py`, pipeado desde el LaunchAgent) para poder medir esto con
+  evidencia exacta.
+- **Decisión final, con Activity Monitor real mostrando 31GB de RAM usada / 24.8GB de Python:** el
+  fundador descartó el modelo intermedio ("todo el sistema crashea y se pone lento") — ni llegó a
+  evaluarse su calidad real porque el fallback automático redirigió a `xai` antes. El rápido, en
+  cambio, "funcionó bien" en el uso real de toda la sesión. `com.snarf.mlx-mid` queda instalado pero
+  apagado; `mlx_local_fast` queda como default final en 23 de 24 roles, verificado en vivo (server
+  reiniciado limpio, 17.96GB libres).
+- Candidato de reemplazo del propio rápido mencionado pero NO perseguido: `Qwen3.5-4B-MLX-4bit` —
+  riesgo real sin verificar de heredar el modo *thinking* por default de su hermano 9B.
+
+## [2026-08-05] Cerebro local MLX: rol rápido en producción real, `orchestrator` se queda en el fallback automático
+
+- Hallazgo real: la lentitud del modelo local no era solo presión de memoria/swap sino, en el caso
+  típico, costo de **prefill en frío** — `mlx_lm.server` cachea el prefijo de tokens (system prompt +
+  88 tools, ~15.630 tokens, casi idéntico en cada request), así que ese costo (~90-105s) se paga una
+  vez por arranque del server. Con el prefijo caliente, la mayoría de las respuestas bajan a 5.5-33.6s
+  — pero verificado en vivo contra producción real, la presión de memoria real de esta Mac (swap subió
+  de 6.57GB a 10.7GB durante la sesión) todavía produce picos ocasionales (163.6s medido).
+- `Qwen3-8B-4bit` reemplaza a `Qwen3-14B-4bit` como modelo pesado default — rinde igual en caliente
+  pero usa ~la mitad de memoria residente.
+- Nuevo preset `mlx_local_fast` (`Qwen3-4B-Instruct-2507-4bit`, otro puerto) — ganancia real y estable:
+  3 roles chicos (`history_compaction`, `conversation_title`, `dashboard_curator`) corriendo en local
+  sin costo de tokens, sin la misma variabilidad del modelo pesado.
+- Dos LaunchAgents nuevos (`com.snarf.mlx-heavy`, `com.snarf.mlx-fast`), mismo patrón que
+  `com.snarf.server`. Comandos de pausa/reanudación documentados en el ADR.
+- `orchestrator` se probó en `mlx_local`/Qwen3-8B pero terminó revertido solo, dos veces, por el
+  propio mecanismo de fallback automático ante picos que superaron incluso un timeout generoso
+  (150s) — se deja en el estado real al que el fallback lo llevó (`xai`) en vez de forzarlo a local
+  por tercera vez. El modelo pesado queda construido, probado y seleccionable a mano cuando el
+  fundador quiera experimentar.
+- Fix real: `openai.OpenAI()` reintentaba 2 veces en silencio ante un timeout — con proveedor local
+  eso multiplicaba el timeout real. Ahora `local=True` fuerza `max_retries=0`.
+- `LOCAL_TIMEOUT_SECONDS` subido de 90s a 150s — el valor anterior era más corto que el peor caso real
+  de prefill en frío medido, y disparaba fallbacks falsos apenas arrancaba el server MLX.
+- Modelos sin uso (`Qwen3-14B-4bit`, `Qwen3-30B-A3B-Instruct-2507-4bit`) borrados del cache de
+  Hugging Face — libera 25.52GB de disco. 949/949 tests. Ver ADR 0118.
+
+## [2026-08-05] Cerebro local vía MLX: infraestructura lista, `orchestrator` se queda en Anthropic
+
+- Instalado `mlx-lm` nativo (nunca Docker/Colima — sin Metal ahí) y probados dos modelos vía
+  `mlx_lm.server`: `Qwen3-30B-A3B-Instruct-2507-4bit` (MoE) crasheó por falta de memoria de GPU contra
+  el contexto real de Snarf (88 tools, ~16.000 chars de system prompt); `Qwen3-14B-4bit` (denso) no
+  crasheó pero pasó de 38.6s a 991s según la memoria libre real del momento, y 289.8s en una
+  verificación end-to-end real contra producción.
+- `snarf/runtime/llm_routing.py`: preset `mlx_local` (reusa `OpenAICompatibleLLM`, sin clase nueva) +
+  fallback automático ahora también ante errores de **conexión** (no solo status HTTP) — necesario
+  porque un proveedor local caído no devuelve ningún status HTTP. `openai_compatible_llm.py`: soporte
+  de proveedor sin API key real, y timeout corto (90s, no los 10 minutos default de la SDK) para que
+  un modelo local lento dispare el fallback rápido en vez de dejar el chat colgado.
+- **`orchestrator` se revierte a `anthropic`/`claude-sonnet-5`** — la memoria real disponible en esta
+  Mac durante uso normal no alcanza para sostener el cerebro local a velocidad usable, ni con el
+  modelo más chico probado. Infraestructura queda lista y verificada para retomar sin trabajo de cero
+  cuando haya más memoria libre disponible de forma sostenida.
+- 946/946 tests (varios nuevos). Ver ADR 0117.
+
+## [2026-08-05] Resumen real de historial reemplaza el truncamiento duro por caracteres
+
+- `Orchestrator._capped_for_replay()`: una entrada de historial demasiado larga ahora se condensa con
+  un resumen real (rol nuevo `history_compaction`, modelo barato) en vez de cortarse a lo bruto y
+  perder contenido en silencio — cacheado en memoria para no re-resumir la misma entrada en cada
+  turno. Si el resumen falla, cae al corte duro de siempre (nunca rompe el turno).
+- 946/946 tests (3 nuevos). Ver ADR 0116.
+
+## [2026-08-05] Notion: soporte de databases (query, crear registro, actualizar properties)
+
+- Cuatro métodos/tools nuevos (`notion_get_database`/`notion_query_database`/
+  `notion_create_database_item`/`notion_update_page_properties`) — hasta ahora la integración de
+  Notion (ADR 0075) solo cubría páginas sueltas, sin ningún soporte de databases ni properties
+  tipadas. `NOTION_API_KEY` confirmada configurada, a diferencia de ADR 0075.
+- 946/946 tests (6 nuevos). Ver ADR 0115.
+
+## [2026-08-05] Fix real: dos bugs de indexado de Drive (el pipeline en sí no estaba roto)
+
+- Investigado a fondo un reporte de "el indexado se perdió": el pipeline real seguía funcionando
+  (4658 archivos indexados, corrida real de esta misma madrugada) — dos bugs concretos explicaban por
+  qué parecía roto. `drive_index_status` reportaba estado efímero en memoria (0 tras cada reinicio del
+  server) en vez del progreso real persistido; `VectorStore.add()` no troceaba al límite de batch de
+  chromadb, así que archivos con muchos chunks fallaban siempre.
+- 946/946 tests (2 nuevos). Ver ADR 0114.
+
+## [2026-08-05] Fix real: respuestas truncadas y audio incompleto (causa raíz común)
+
+- `MAX_OUTPUT_TOKENS` de Anthropic (y proveedores compatibles) subido de 4096 a 16000, con streaming
+  obligatorio arriba de ese tope y hasta 2 continuaciones automáticas si la respuesta se sigue
+  cortando — antes solo se anotaba el corte, nunca se reintentaba. La misma causa explicaba el audio
+  corto: el marcador de narración hablada va al final del texto, así que un corte por longitud nunca
+  llegaba a escribirlo.
+- Restaurado el botón "escuchar completo" (retirado en ADR 0063), que lee la respuesta íntegra en
+  pantalla a pedido, sin depender de que el modelo haya marcado un entregable.
+- Verificado en vivo contra producción: un plan de 18 pasos devolvió 4678 caracteres completos, sin
+  ninguna nota de truncado.
+- 946/946 tests. Ver ADR 0113.
+
 ## [2026-08-05] Cerebro de Snarf: visualiza los 9 Especialistas nuevos de la Fase I
 
 - El backend (`brain.py::NODE_TIER`) ya conocía los 9 nodos `specialist_*` de la Fase I desde que se construyó cada rama, pero `web/index.html` mantiene sus propias seis tablas JS (posición en el anillo, label, ícono SVG, color, feed mini del HUD, familia visual) que nunca se habían actualizado — esos nodos existían en el backend pero jamás se dibujaban.

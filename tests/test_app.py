@@ -634,6 +634,26 @@ def test_llm_routing_put_then_get_roundtrip(client, tmp_path, monkeypatch):
     assert get_res.json()["routing"] == put_res.json()["routing"]
 
 
+def test_llm_routing_put_of_one_role_does_not_reset_the_others(client, tmp_path, monkeypatch):
+    """Bug real encontrado en vivo (2026-08-05): el PUT solo manda el rol que
+    cambió (ver persistLlmRouting en web/index.html), y save_routing()
+    completa cualquier rol ausente del payload con DEFAULT_ROUTING — sin
+    mergear primero con lo ya guardado, elegir un proveedor nuevo para UN rol
+    desde Configuración reseteaba en silencio TODOS los demás roles."""
+    from snarf.runtime import llm_routing
+
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.setattr(app_module.orchestrator, "_llm", app_module.orchestrator._llm)
+    monkeypatch.setattr(app_module.orchestrator, "_title_llm", app_module.orchestrator._title_llm)
+
+    client.put("/llm-routing", json={"gmail_digest": {"provider": "gemini", "model": "gemini-3-pro-preview"}})
+    put_res = client.put("/llm-routing", json={"orchestrator": {"provider": "openai", "model": "gpt-5"}})
+
+    routing = put_res.json()["routing"]
+    assert routing["orchestrator"] == {"provider": "openai", "model": "gpt-5"}
+    assert routing["gmail_digest"] == {"provider": "gemini", "model": "gemini-3-pro-preview"}
+
+
 def test_llm_routing_reports_available_providers_from_real_env_vars(client, tmp_path, monkeypatch):
     from snarf.runtime import llm_routing
 

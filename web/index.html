@@ -1024,6 +1024,23 @@
   }
 
   /* --- modo enfoque: chat a pantalla completa + barra lateral --- */
+  .connecting-overlay {
+    position: fixed; inset: 0; z-index: 999;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+    background: radial-gradient(ellipse 65% 55% at 50% 40%, #0c1c22 0%, #050a0c 45%, #000000 82%);
+    opacity: 1; transition: opacity 0.4s ease;
+  }
+  .connecting-overlay.hidden { opacity: 0; pointer-events: none; }
+  .connecting-spinner {
+    width: 40px; height: 40px; border-radius: 50%;
+    border: 2px solid rgba(79,216,232,0.2); border-top-color: var(--glow);
+    animation: connecting-spin 0.9s linear infinite;
+  }
+  @keyframes connecting-spin { to { transform: rotate(360deg); } }
+  .connecting-text {
+    color: var(--text-dim); font-size: 13px; letter-spacing: 0.02em;
+    text-align: center; max-width: 80vw;
+  }
   .chat-focus-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 14;
     opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
@@ -1274,6 +1291,18 @@
   .voice-note-transcript {
     margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid rgba(79,216,232,0.15);
     color: var(--text-dim); font-size: 0.8rem;
+  }
+  .msg-thinking-toggle {
+    display: block; margin-top: 0.35rem;
+    background: none; border: none; color: var(--text-dim);
+    font-family: inherit; font-size: 0.68rem; cursor: pointer; padding: 0.2rem 0.3rem;
+  }
+  .msg-thinking-toggle:hover { color: var(--text); }
+  .msg-thinking {
+    margin-top: 0.4rem; padding: 0.5rem 0.6rem;
+    border-left: 2px solid rgba(79,216,232,0.25);
+    color: var(--text-dim); font-size: 0.78rem; font-style: italic;
+    white-space: pre-wrap; max-height: 260px; overflow-y: auto;
   }
   .msg.snarf {
     align-self: flex-start;
@@ -1660,6 +1689,10 @@
 </style>
 </head>
 <body>
+  <div class="connecting-overlay" id="connectingOverlay">
+    <div class="connecting-spinner"></div>
+    <div class="connecting-text" id="connectingText">Snarf se está conectando, un momento por favor...</div>
+  </div>
   <div class="bg-glow"></div>
   <div class="nebula a"></div>
   <div class="nebula b"></div>
@@ -1892,6 +1925,72 @@
   </div>
 
 <script>
+// --- Overlay "Snarf se está conectando..." (pedido explícito del fundador,
+// 2026-08-05) ------------------------------------------------------------
+// Cubre dos casos reales: (a) la pestaña ya estaba abierta y el server se
+// reinicia solo (LaunchAgent KeepAlive tras un crash, o al levantar un
+// modelo local nuevo) — sin esto, el usuario ve la interfaz "rota" en
+// silencio hasta recargar a mano; (b) el arranque en frío del server real,
+// por si en algún punto sirve la página antes de que /status responda. No
+// hace falta chequear "modelo caliente" por separado: warmup() del
+// orchestrator corre en el evento startup de FastAPI/uvicorn, que bloquea
+// el bind del socket — si /status responde, el modelo del rol activo ya
+// terminó de calentar.
+const connectingOverlayEl = document.getElementById("connectingOverlay");
+const connectingTextEl = document.getElementById("connectingText");
+let _watchingForDisconnect = false;
+
+async function isServerUp() {
+  try {
+    const res = await fetch("/status", { credentials: "same-origin", cache: "no-store" });
+    if (!res.ok) return false;
+    await res.json();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function pollUntilUp(intervalMs, onUp) {
+  (async function tick() {
+    if (await isServerUp()) {
+      onUp();
+      return;
+    }
+    setTimeout(tick, intervalMs);
+  })();
+}
+
+// Expuesta para que postAndHandleSend() la dispare directo apenas un
+// /send falla por red (no hace falta esperar el próximo ciclo de
+// watchForDisconnect, que corre cada 15s) — mismo overlay, mensaje
+// distinto según de dónde vino. `onReconnected` corre una sola vez, apenas
+// /status vuelve a responder.
+function showReconnectingOverlay(message, onReconnected) {
+  connectingTextEl.textContent = message;
+  connectingOverlayEl.classList.remove("hidden");
+  pollUntilUp(1500, () => {
+    connectingTextEl.textContent = "Snarf se está conectando, un momento por favor...";
+    connectingOverlayEl.classList.add("hidden");
+    if (onReconnected) onReconnected();
+  });
+}
+
+function watchForDisconnect() {
+  if (_watchingForDisconnect) return;
+  _watchingForDisconnect = true;
+  setInterval(async () => {
+    if (connectingOverlayEl.classList.contains("hidden") && !(await isServerUp())) {
+      showReconnectingOverlay("Snarf se desconectó, reconectando...");
+    }
+  }, 15000);
+}
+
+pollUntilUp(1000, () => {
+  connectingOverlayEl.classList.add("hidden");
+  watchForDisconnect();
+});
+
 const ICONS = {
   menu: '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>',
   dashboard: '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg>',
@@ -2194,7 +2293,7 @@ function reindexChatDepth() {
   msgs.forEach((el, i) => el.style.setProperty("--depth", Math.min(total - 1 - i, CHAT_DEPTH_MAX)));
 }
 
-function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliverable) {
+function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliverable, thinking) {
   const div = document.createElement("div");
   div.className = "msg " + who;
   if (who === "snarf") {
@@ -2211,6 +2310,28 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliv
     textEl.innerHTML = renderMarkdown(text);
     div.appendChild(textEl);
     addCodeBlockCopyButtons(textEl);
+
+    // Desplegable de "pensamiento" del modelo — pedido explícito del
+    // fundador: nunca mostrar el razonamiento crudo por default (formatearlo
+    // es trabajo de la interfaz, no algo para exponer sin filtro), solo
+    // presente si se hace click. Ausente en la mayoría de las respuestas
+    // (el modelo default no emite razonamiento aparte) — mismo patrón visual
+    // que la transcripción de una nota de voz, más abajo en esta función.
+    if (thinking) {
+      const thinkingToggle = document.createElement("button");
+      thinkingToggle.className = "msg-thinking-toggle";
+      thinkingToggle.textContent = "▾ pensamiento";
+      const thinkingEl = document.createElement("div");
+      thinkingEl.className = "msg-thinking";
+      thinkingEl.textContent = thinking;
+      thinkingEl.hidden = true;
+      thinkingToggle.addEventListener("click", () => {
+        thinkingEl.hidden = !thinkingEl.hidden;
+        thinkingToggle.textContent = (thinkingEl.hidden ? "▾" : "▴") + " pensamiento";
+      });
+      div.appendChild(thinkingToggle);
+      div.appendChild(thinkingEl);
+    }
 
     const actions = document.createElement("div");
     actions.className = "msg-actions";
@@ -2239,6 +2360,21 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliv
         listenBtn.addEventListener("click", () => generateVoiceNoteAndPlay(speech || text, listenBtn, "respuesta-de-snarf", playersContainer));
         actions.appendChild(listenBtn);
       }
+
+      // "Escuchar completo": lee la respuesta ENTERA tal cual está en
+      // pantalla (text) — a pedido, siempre disponible, sin depender de la
+      // narración hablada (speech, que puede degradarse a un resumen
+      // mecánico corto si el modelo no cerró el marcador ---HABLA---) ni del
+      // criterio del modelo sobre si hay o no un "entregable" puntual que
+      // aislar. El botón "escuchar completa" original (ADR 0056) se había
+      // retirado en ADR 0063 en favor de "escuchar"/"escuchar entregable" —
+      // se restaura acá porque ninguno de esos dos garantiza el audio
+      // completo en todos los casos.
+      const fullBtn = document.createElement("button");
+      fullBtn.className = "play-audio-btn play-audio-btn-full";
+      fullBtn.innerHTML = `${ICONS.speaker} escuchar completo`;
+      fullBtn.addEventListener("click", () => generateVoiceNoteAndPlay(text, fullBtn, "respuesta-completa", playersContainer));
+      actions.appendChild(fullBtn);
 
       // "Escuchar entregable": solo aparece cuando ESTA respuesta trae un
       // entregable puntual (un plan, un documento, una copia pedida)
@@ -5006,6 +5142,9 @@ const LLM_PRESETS = [
   { provider: "openai", model: "gpt-5", label: "OpenAI — GPT-5" },
   { provider: "xai", model: "grok-4-1-fast", label: "xAI — Grok 4.1 Fast (barato)" },
   { provider: "groq_llama", model: "llama-4-scout", label: "Llama vía Groq — Scout (barato)" },
+  { provider: "mlx_local", model: "mlx-community/Qwen3-8B-4bit", label: "Local (MLX, esta Mac) — Qwen3 8B (pesado)" },
+  { provider: "mlx_local_mid", model: "mlx-community/Qwen3.5-9B-MLX-4bit", label: "Local (MLX, esta Mac) — Qwen3.5 9B (intermedio)" },
+  { provider: "mlx_local_fast", model: "mlx-community/Qwen3-4B-Instruct-2507-4bit", label: "Local (MLX, esta Mac) — Qwen3 4B (rápido, default)" },
 ];
 
 let llmRoutingState = null;
@@ -6018,7 +6157,7 @@ async function postAndHandleSend(text, inputAudioId) {
     if (!res.ok) throw new Error("send HTTP " + res.status);
     const data = await res.json();
     hideTyping();
-    addMessage(data.response, "snarf", ttsAvailable, null, data.speech, Boolean(inputAudioId), data.deliverable);
+    addMessage(data.response, "snarf", ttsAvailable, null, data.speech, Boolean(inputAudioId), data.deliverable, data.thinking);
     setState("idle", idleLabel());
     // Sin esto, una conversación nueva se queda mostrando el placeholder
     // "(nueva conversación)" en las listas hasta que el usuario navega fuera
@@ -6029,7 +6168,25 @@ async function postAndHandleSend(text, inputAudioId) {
     updateProjectHomeBtnVisibility();
   } catch (e) {
     hideTyping();
-    setState("error", "no se pudo enviar: " + (e.message || e));
+    // Bug real visto en producción (2026-08-05): un fallo de red acá no
+    // significa necesariamente "no se envió" — el server puede haber
+    // recibido y procesado el mensaje antes de caerse, y solo se perdió la
+    // RESPUESTA en el camino de vuelta. Decir "no se pudo enviar" en ese
+    // caso es directamente falso, y reintentar a ciegas arriesga duplicar el
+    // turno. En vez de asumir, se muestra el overlay de reconexión (mismo
+    // que ya cubre un reinicio real del server) y, apenas Snarf vuelve a
+    // responder, se recarga la conversación desde la fuente de verdad real
+    // (GET /conversations/:id) — si el mensaje sí llegó a procesarse, la
+    // respuesta aparece sola sin que el fundador tenga que hacer nada; si
+    // no, el botón "reintentar" sigue disponible como antes.
+    const thisConversationId = conversationId;
+    showReconnectingOverlay(
+      "Se perdió la conexión mientras esperaba la respuesta — revisando si tu mensaje llegó a procesarse...",
+      () => {
+        if (conversationId === thisConversationId) loadConversation(thisConversationId);
+      }
+    );
+    setState("error", "se perdió la conexión — reconectando");
     setRetry(() => postAndHandleSend(text, inputAudioId));
   }
 }

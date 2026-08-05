@@ -14,12 +14,16 @@ MODEL_ID = "kokoro"
 
 
 class KokoroTTS(TTSProvider):
-    """Cliente HTTP contra el contenedor Docker de Kokoro-FastAPI (tier 'local').
+    """Cliente HTTP contra un server real de Kokoro-FastAPI (tier 'local').
 
     Deliberadamente NO embebe el modelo en el proceso de Snarf — corre siempre
     detrás de un endpoint HTTP compatible con la API de OpenAI
-    (POST /v1/audio/speech). Mover este tier de la Mac a un VPS es cambiar
-    `base_url` en voice/config.yaml, nunca tocar este código (ver Parte 4).
+    (POST /v1/audio/speech). Este código no sabe ni le importa si ese server
+    es el proceso nativo con MPS que corre en esta Mac (LaunchAgent
+    com.snarf.kokoro-tts, ver ADR 0120) o el contenedor Docker CPU-only
+    pensado para el VPS (docker-compose.voice.yml, ver ADR 0056/Parte 4) —
+    mover de uno a otro es cambiar `base_url` en voice/config.yaml, nunca
+    tocar este código.
     """
 
     name = "kokoro_tts"

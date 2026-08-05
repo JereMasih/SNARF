@@ -1,6 +1,7 @@
 import json
 from types import SimpleNamespace
 
+from snarf.capabilities.anthropic_llm import MAX_CONTINUATIONS
 from snarf.capabilities.openai_compatible_llm import MAX_TOOL_ROUNDS, OpenAICompatibleLLM
 
 
@@ -13,8 +14,8 @@ class FakeToolCall:
         return {"id": self.id, "type": "function", "function": {"name": self.function.name, "arguments": self.function.arguments}}
 
 
-def fake_response(finish_reason, content, tool_calls=None, usage=None):
-    message = SimpleNamespace(content=content, tool_calls=tool_calls)
+def fake_response(finish_reason, content, tool_calls=None, usage=None, reasoning=None):
+    message = SimpleNamespace(content=content, tool_calls=tool_calls, reasoning=reasoning)
     return SimpleNamespace(choices=[SimpleNamespace(finish_reason=finish_reason, message=message)], usage=usage)
 
 
@@ -49,11 +50,87 @@ def test_generate_returns_text_unchanged_when_response_completes_normally():
     assert result.text == "respuesta completa"
 
 
+def test_generate_captures_the_reasoning_field_when_the_provider_exposes_it():
+    """Modelos locales 'thinking' (ej. Qwen3.5 vía mlx_lm.server) devuelven el
+    razonamiento en un campo `reasoning` aparte de `content`, fuera del
+    schema estándar de OpenAI — no debe perderse, es la fuente real del
+    desplegable de 'pensamiento' en la interfaz."""
+    llm = make_llm([fake_response("stop", "OK", reasoning="pensando paso a paso...")])
+    result = llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+    assert result.thinking == "pensando paso a paso..."
+
+
+def test_generate_thinking_is_none_when_the_provider_does_not_expose_it():
+    llm = make_llm([fake_response("stop", "OK")])
+    result = llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+    assert result.thinking is None
+
+
 def test_generate_appends_visible_note_when_truncated_by_length():
-    llm = make_llm([fake_response("length", "esto se corta a la mit")])
+    """Igual que en AnthropicLLM: primero se reintenta continuar
+    (MAX_CONTINUATIONS veces) — la nota solo aparece si el corte persiste."""
+    llm = make_llm([fake_response("length", "esto se corta a la mit") for _ in range(MAX_CONTINUATIONS + 1)])
     result = llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
     assert result.text.startswith("esto se corta a la mit")
     assert "truncada" in result.text
+
+
+def test_generate_continues_automatically_when_still_truncated_by_length():
+    llm = make_llm(
+        [
+            fake_response("length", "primera parte, se corta"),
+            fake_response("stop", " segunda parte, ahora sí termina"),
+        ]
+    )
+    result = llm.generate(system="sys", messages=[{"role": "user", "content": "escribime algo largo"}])
+    assert result.text == "primera parte, se corta segunda parte, ahora sí termina"
+    assert "truncada" not in result.text
+    assert len(llm._client.chat.completions.calls) == 2
+
+
+def test_local_provider_builds_a_client_without_a_real_api_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    llm = OpenAICompatibleLLM(model="local-model", base_url="http://localhost:8080/v1", local=True)
+    assert llm.available is True
+
+
+def test_local_provider_uses_a_short_timeout_instead_of_the_sdk_default_of_ten_minutes():
+    """Bug real evitado: un modelo local puede tardar bastante en frío (el
+    prefill de un prompt grande puede llevar minutos, ver ADR de esta ronda)
+    — con el timeout default de la SDK (10 min) el chat quedaría colgado
+    mucho tiempo antes de caer al fallback. LOCAL_TIMEOUT_SECONDS lo corta
+    mucho antes, pero con margen real por encima del peor caso en frío
+    medido (no tan corto como para disparar un fallback falso apenas el
+    prefijo todavía no está cacheado)."""
+    from snarf.capabilities.openai_compatible_llm import LOCAL_TIMEOUT_SECONDS
+
+    llm = OpenAICompatibleLLM(model="local-model", base_url="http://localhost:8080/v1", local=True)
+    assert llm._client.timeout == LOCAL_TIMEOUT_SECONDS
+
+
+def test_non_local_provider_keeps_the_sdk_default_timeout(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+    llm = OpenAICompatibleLLM(model="gpt-5")
+    # Default real de la SDK cuando no se pasa `timeout` explícito — no se
+    # toca para proveedores cloud reales, solo se acota para el local.
+    assert llm._client.timeout.read == 600.0
+
+
+def test_local_provider_disables_the_sdks_silent_retries():
+    """Bug real medido en vivo esta ronda: con el default de la SDK
+    (max_retries=2), un timeout de LOCAL_TIMEOUT_SECONDS no corta ahí —
+    la SDK reintenta la misma request 2 veces más antes de rendirse,
+    convirtiendo el timeout "corto" en hasta 270s reales (confirmado viendo
+    un segundo request idéntico en el log de mlx_lm.server). El fallback a
+    Anthropic ya cumple el rol de reintento real; la SDK no debe duplicarlo."""
+    llm = OpenAICompatibleLLM(model="local-model", base_url="http://localhost:8080/v1", local=True)
+    assert llm._client.max_retries == 0
+
+
+def test_non_local_provider_keeps_the_sdks_default_retries(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+    llm = OpenAICompatibleLLM(model="gpt-5")
+    assert llm._client.max_retries == 2
 
 
 def test_generate_prefixes_the_system_message():

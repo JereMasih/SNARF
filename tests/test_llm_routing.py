@@ -1,5 +1,6 @@
 import anthropic
 import httpx
+import openai
 import pytest
 from google.genai import errors as genai_errors
 
@@ -46,10 +47,18 @@ def test_save_routing_ignores_a_role_that_does_not_exist(tmp_path, monkeypatch):
     assert set(routing.keys()) == set(llm_routing.ROLES)
 
 
-def test_build_llm_defaults_to_anthropic_for_every_role(tmp_path, monkeypatch):
+def test_build_llm_defaults_to_the_local_fast_model_for_every_role_except_drive_vision(tmp_path, monkeypatch):
     monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
     for role in llm_routing.ROLES:
-        assert isinstance(llm_routing.build_llm(role), AnthropicLLM)
+        llm = llm_routing.build_llm(role)
+        if role == "drive_vision":
+            # drive_vision necesita soporte real de imágenes — Qwen3-4B local
+            # es texto-solo, así que ese rol se queda en un proveedor con
+            # visión real incluso en el default.
+            assert isinstance(llm, AnthropicLLM)
+        else:
+            assert isinstance(llm, OpenAICompatibleLLM)
+            assert llm.model == llm_routing.MLX_LOCAL_FAST_MODEL
 
 
 def test_build_llm_resolves_gemini(tmp_path, monkeypatch):
@@ -91,10 +100,44 @@ def test_available_providers_reflects_real_env_vars(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    assert llm_routing.available_providers() == []
+    # mlx_local/mlx_local_fast/mlx_local_mid no exigen ninguna credencial
+    # (corren en esta Mac) — siempre cuentan como disponibles, incluso sin
+    # ninguna env var cargada.
+    assert set(llm_routing.available_providers()) == {"mlx_local", "mlx_local_fast", "mlx_local_mid"}
 
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
-    assert llm_routing.available_providers() == ["gemini"]
+    assert set(llm_routing.available_providers()) == {"gemini", "mlx_local", "mlx_local_fast", "mlx_local_mid"}
+
+
+def test_mlx_local_is_always_available_without_any_credential(monkeypatch):
+    for env_var in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY", "GROQ_API_KEY"):
+        monkeypatch.delenv(env_var, raising=False)
+    assert "mlx_local" in llm_routing.available_providers()
+    assert "mlx_local_fast" in llm_routing.available_providers()
+    assert "mlx_local_mid" in llm_routing.available_providers()
+
+
+def test_build_llm_resolves_mlx_local_without_a_real_api_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    llm_routing.save_routing({"orchestrator": {"provider": "mlx_local", "model": "mlx-community/algun-modelo"}})
+    llm = llm_routing.build_llm("orchestrator")
+    assert isinstance(llm, OpenAICompatibleLLM)
+    assert llm._local is True
+    assert llm.available is True
+
+
+def test_build_llm_resolves_mlx_local_fast_without_a_real_api_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    llm_routing.save_routing(
+        {"history_compaction": {"provider": "mlx_local_fast", "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit"}}
+    )
+    llm = llm_routing.build_llm("history_compaction")
+    assert isinstance(llm, OpenAICompatibleLLM)
+    assert llm._local is True
+    assert llm.available is True
+    assert llm.model == "mlx-community/Qwen3-4B-Instruct-2507-4bit"
 
 
 # --- is_provider_level_error (fallback automático, ADR de esta ronda) -----
@@ -128,6 +171,16 @@ def test_is_provider_level_error_false_for_a_generic_exception():
 def test_is_provider_level_error_true_for_a_real_gemini_client_error():
     exc = genai_errors.ClientError(429, {"error": {"message": "rate limited"}}, response=None)
     assert llm_routing.is_provider_level_error(exc) is True
+
+
+def test_is_provider_level_error_true_for_a_connection_error():
+    # Reabierto para la migración a mlx_local (ver ADR de esta ronda): un
+    # proveedor LOCAL caído (mlx_lm.server sin correr) no devuelve ningún
+    # status HTTP — devuelve un error de conexión real, porque no hay nada
+    # escuchando en ese puerto.
+    request = httpx.Request("POST", "http://localhost:8990/v1/chat/completions")
+    assert llm_routing.is_provider_level_error(anthropic.APIConnectionError(request=request)) is True
+    assert llm_routing.is_provider_level_error(openai.APIConnectionError(request=request)) is True
 
 
 # --- attempt_fallback -------------------------------------------------
@@ -264,6 +317,10 @@ def test_build_resilient_llm_falls_back_and_self_heals_for_the_next_call(tmp_pat
     monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
     monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
     monkeypatch.setattr(llm_routing, "available_providers", lambda: ["anthropic", "xai"])
+    # Fija el proveedor inicial a mano en vez de confiar en DEFAULT_ROUTING
+    # (que hoy es mlx_local_fast) — este test verifica el fallback ante un
+    # error real de proveedor, no cuál es el default vigente.
+    llm_routing.save_routing({"dashboard_curator": {"provider": "anthropic", "model": "claude-haiku-4-5"}})
     calls = []
 
     def fake_build(provider, model):

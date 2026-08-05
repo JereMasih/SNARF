@@ -4,6 +4,7 @@ from snarf.capabilities.anthropic_llm import (
     CACHE_TTL,
     DELIVERABLE_END,
     DELIVERABLE_START,
+    MAX_CONTINUATIONS,
     MAX_OUTPUT_TOKENS,
     MAX_TOOL_ROUNDS,
     SPEECH_END,
@@ -42,6 +43,24 @@ def fake_tool_use_response(tool_use_id, tool_name, tool_input):
     )
 
 
+class FakeStream:
+    """Imita el context manager que devuelve client.messages.stream(...) —
+    generate() ahora llama siempre a stream() + get_final_message(), nunca a
+    create() directo (ver AnthropicLLM._create)."""
+
+    def __init__(self, response):
+        self._response = response
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def get_final_message(self):
+        return self._response
+
+
 class FakeMessages:
     def __init__(self, responses):
         self._responses = list(responses)
@@ -50,6 +69,10 @@ class FakeMessages:
     def create(self, **kwargs):
         self.calls.append(kwargs)
         return self._responses.pop(0)
+
+    def stream(self, **kwargs):
+        self.calls.append(kwargs)
+        return FakeStream(self._responses.pop(0))
 
 
 class FakeClient:
@@ -75,8 +98,10 @@ def test_generate_returns_text_unchanged_when_response_completes_normally():
 def test_generate_appends_visible_note_when_truncated_by_max_tokens():
     """Antes de este fix, un stop_reason == "max_tokens" se devolvía como si
     fuera una respuesta completa, sin ningún indicio de que se cortó a mitad
-    de oración (ver ARCHITECTURE_AUDIT.md, hallazgo 14.1)."""
-    llm = make_llm([fake_response("max_tokens", "esto se corta a la mit")])
+    de oración (ver ARCHITECTURE_AUDIT.md, hallazgo 14.1). Hoy además se
+    reintenta continuar (ver MAX_CONTINUATIONS) — la nota solo debe aparecer
+    si el corte persiste incluso después de agotar esos reintentos."""
+    llm = make_llm([fake_response("max_tokens", "esto se corta a la mit") for _ in range(MAX_CONTINUATIONS + 1)])
     result = llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
     assert result.text.startswith("esto se corta a la mit")
     assert "truncada" in result.text
@@ -87,6 +112,29 @@ def test_generate_requests_a_higher_output_limit_than_the_original_1024():
     llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
     assert llm._client.messages.calls[0]["max_tokens"] == MAX_OUTPUT_TOKENS
     assert MAX_OUTPUT_TOKENS > 1024
+
+
+def test_generate_continues_automatically_when_still_truncated_after_max_tokens():
+    """Antes: un stop_reason == "max_tokens" se aceptaba tal cual, perdiendo
+    todo lo que faltaba. Ahora se le pide al modelo continuar exactamente
+    donde cortó, hasta MAX_CONTINUATIONS veces, y se concatena el resultado."""
+    llm = make_llm(
+        [
+            fake_response("max_tokens", "primera parte, se corta"),
+            fake_response("end_turn", " segunda parte, ahora sí termina"),
+        ]
+    )
+    result = llm.generate(system="sys", messages=[{"role": "user", "content": "escribime algo largo"}])
+    assert result.text == "primera parte, se corta segunda parte, ahora sí termina"
+    assert "truncada" not in result.text
+    assert len(llm._client.messages.calls) == 2
+
+
+def test_generate_gives_up_after_max_continuations_and_marks_the_final_cut():
+    llm = make_llm([fake_response("max_tokens", f"parte {i}") for i in range(MAX_CONTINUATIONS + 1)])
+    result = llm.generate(system="sys", messages=[{"role": "user", "content": "escribime algo larguísimo"}])
+    assert "truncada" in result.text
+    assert len(llm._client.messages.calls) == MAX_CONTINUATIONS + 1
 
 
 def test_generate_sends_system_prompt_with_cache_control():
@@ -309,3 +357,48 @@ def test_split_speech_extracts_deliverable_even_when_the_model_never_closes_habl
     assert result.speech == "versión hablada sin cerrar"
     assert DELIVERABLE_START not in result.speech
     assert result.deliverable == "solo el plan"
+
+
+def test_split_speech_never_leaves_the_screen_text_empty():
+    """Bug real visto con el modelo local: a veces escribe TODO el contenido
+    dentro de ---HABLA---, sin nada antes — sin esta red de seguridad, el
+    fundador vería un globo de chat vacío pese a haber una respuesta real."""
+    raw = f"{SPEECH_START}\nversión completa hablada\n{SPEECH_END}\n"
+    result = split_speech(raw)
+    assert result.text == "versión completa hablada"
+    assert result.speech == "versión completa hablada"
+
+
+def test_split_speech_attaches_thinking_without_touching_the_marker_parsing():
+    """thinking no viaja mezclado en el texto crudo (es un campo aparte del
+    proveedor, ej. `reasoning` de un modelo local) — split_speech solo lo
+    adjunta tal cual al resultado final, con y sin marcadores de habla."""
+    raw_with_markers = f"pantalla\n{SPEECH_START}\nhablado\n{SPEECH_END}\n"
+    result = split_speech(raw_with_markers, thinking="razonando en voz alta...")
+    assert result.thinking == "razonando en voz alta..."
+    assert result.text == "pantalla"
+
+    result_no_markers = split_speech("respuesta simple sin marcadores", thinking="pensando")
+    assert result_no_markers.thinking == "pensando"
+
+    result_default = split_speech("respuesta simple")
+    assert result_default.thinking is None
+
+
+def test_split_speech_tolerates_a_marker_split_across_a_newline():
+    """Bug real visto en producción con el modelo local (Qwen3, menos
+    disciplinado que Claude siguiendo un formato literal exacto): emitió
+    "---\\nHABLA---" en vez de "---HABLA---" — el salto de línea de más
+    rompía el match por substring exacto y toda la respuesta, marcadores
+    crudos incluidos, se mostraba tal cual en pantalla en vez de parsearse."""
+    raw = (
+        "Acá tenés el plan.\n---\nHABLA---\nversión hablada\n---FIN-HABLA---\n"
+        "---ENTREGABLE---\nsolo el plan\n---FIN-ENTREGABLE---\n"
+    )
+    result = split_speech(raw)
+    assert result.text == "Acá tenés el plan."
+    assert result.speech == "versión hablada"
+    assert result.deliverable == "solo el plan"
+    assert "---" not in result.text
+    assert "HABLA" not in result.speech
+    assert "ENTREGABLE" not in result.speech

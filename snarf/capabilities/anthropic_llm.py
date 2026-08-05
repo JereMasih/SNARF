@@ -9,7 +9,17 @@ from snarf.telemetry import detail, usage_tracker
 
 DEFAULT_MODEL = "claude-sonnet-5"
 MAX_TOOL_ROUNDS = 5
-MAX_OUTPUT_TOKENS = 4096
+# Antes en 4096: un tope demasiado bajo para el uso real de Snarf (planes,
+# documentos largos) que cortaba la respuesta a mitad de camino — y como el
+# marcador de habla (---HABLA---) va al final del texto, el corte también
+# tiraba abajo el audio (split_speech no encontraba el marcador y caía al
+# fallback mecánico de 400 caracteres). Ver MAX_CONTINUATIONS más abajo para
+# la red de seguridad si ni así alcanza.
+MAX_OUTPUT_TOKENS = 16000
+# Reintentos de continuación cuando, pese al tope de arriba, la respuesta
+# igual se corta por longitud (documentos muy largos). Cada intento le pide
+# al modelo seguir exactamente donde cortó, nunca reescribir desde cero.
+MAX_CONTINUATIONS = 2
 CACHE_TTL = "1h"
 
 # Marcadores que separan, dentro de un mismo texto generado, la respuesta
@@ -38,11 +48,19 @@ class LLMResponse:
     explícitamente (un plan, un documento, una copia) distinto de la charla
     alrededor, es SOLO ese contenido, fraseado para voz — None si esta
     respuesta es puramente conversacional y no hay nada que aislar.
+    thinking: el razonamiento crudo del modelo antes de la respuesta final
+    (campo `reasoning` que devuelven algunos modelos locales tipo Qwen3.5 vía
+    mlx_lm.server) — None cuando el modelo no expone ese campo (la mayoría:
+    Anthropic sin extended thinking habilitado, o un modelo local "instruct"
+    no-thinking como el default actual). Nunca se persiste a memoria
+    episódica a propósito: es un artefacto de transparencia de ESTA
+    respuesta puntual, no parte del historial de la conversación.
     """
 
     text: str
     speech: str
     deliverable: str | None = None
+    thinking: str | None = None
 
 
 def fallback_speech(text: str) -> str:
@@ -62,42 +80,76 @@ def fallback_speech(text: str) -> str:
     return (truncated[: cut + 1] if cut > 0 else truncated).strip()
 
 
+# Búsqueda de marcadores tolerante a espacios/saltos de línea de más — bug
+# real visto con el modelo local (Qwen3, menos disciplinado que Claude
+# siguiendo un formato literal exacto): emitió "---\nHABLA---" en vez de
+# "---HABLA---" (salto de línea entre los guiones y la palabra). El string
+# literal no matcheaba, split_speech caía a "sin marcador" y el bloque
+# completo —los 4 marcadores crudos incluidos— se mostraba tal cual en
+# pantalla. Cada marcador es de la forma "---PALABRA---" (2-3 guiones,
+# espacio/salto opcional, la palabra, 2-3 guiones) — un regex tolerante
+# sigue reconociéndolo aunque el modelo no reproduzca el string exacto.
+def _marker_pattern(word: str) -> "re.Pattern[str]":
+    return re.compile(r"-{2,3}\s*" + word.replace("-", r"\s*-\s*") + r"\s*-{2,3}")
+
+
+_SPEECH_START_RE = _marker_pattern("HABLA")
+_SPEECH_END_RE = _marker_pattern("FIN-HABLA")
+_DELIVERABLE_START_RE = _marker_pattern("ENTREGABLE")
+_DELIVERABLE_END_RE = _marker_pattern("FIN-ENTREGABLE")
+
+
 def _extract_deliverable(remainder: str) -> str | None:
     """Busca el bloque de entregable en lo que queda después del cierre de habla.
 
     Ausente en la mayoría de las respuestas (puramente conversacionales) — solo
     aparece cuando el modelo decidió que hay algo puntual para aislar."""
-    start = remainder.find(DELIVERABLE_START)
-    if start == -1:
+    match = _DELIVERABLE_START_RE.search(remainder)
+    if match is None:
         return None
-    end = remainder.find(DELIVERABLE_END, start)
-    block = remainder[start + len(DELIVERABLE_START) : end if end != -1 else None].strip()
+    end_match = _DELIVERABLE_END_RE.search(remainder, match.end())
+    block = remainder[match.end() : end_match.start() if end_match else None].strip()
     return block or None
 
 
-def split_speech(raw_text: str) -> LLMResponse:
-    """Separa el texto crudo del modelo en (text, speech, deliverable) según los delimitadores."""
-    start = raw_text.find(SPEECH_START)
-    if start == -1:
-        text = raw_text.strip()
-        return LLMResponse(text=text, speech=fallback_speech(text))
-    text = raw_text[:start].rstrip()
-    tail = raw_text[start + len(SPEECH_START) :]
+def split_speech(raw_text: str, thinking: str | None = None) -> LLMResponse:
+    """Separa el texto crudo del modelo en (text, speech, deliverable) según los delimitadores.
 
-    deliverable_pos = tail.find(DELIVERABLE_START)
+    `thinking` no participa del parseo (no viene mezclado en raw_text, es un
+    campo aparte del proveedor) — solo se adjunta tal cual al LLMResponse
+    final, para que cada llamador no tenga que reconstruir el objeto a mano."""
+    start_match = _SPEECH_START_RE.search(raw_text)
+    if start_match is None:
+        text = raw_text.strip()
+        return LLMResponse(text=text, speech=fallback_speech(text), thinking=thinking)
+    text = raw_text[: start_match.start()].rstrip()
+    tail = raw_text[start_match.end() :]
+
+    deliverable_match = _DELIVERABLE_START_RE.search(tail)
     # El marcador de entregable, si aparece, siempre marca el final real del
     # contenido hablado — incluso cuando el modelo se olvidó de cerrar
     # FIN-HABLA antes de abrirlo (visto en un caso real: el modelo encadenó
     # ---ENTREGABLE--- directo después de la narración, sin cerrar el
     # marcador anterior). Sin este chequeo, esos marcadores quedaban crudos
     # dentro del audio de "escuchar" y el entregable nunca se extraía.
-    speech_region = tail[:deliverable_pos] if deliverable_pos != -1 else tail
-    deliverable = _extract_deliverable(tail[deliverable_pos:]) if deliverable_pos != -1 else None
+    speech_region = tail[: deliverable_match.start()] if deliverable_match else tail
+    deliverable = _extract_deliverable(tail[deliverable_match.start() :]) if deliverable_match else None
 
-    end = speech_region.find(SPEECH_END)
-    speech_block = (speech_region[:end] if end != -1 else speech_region).strip()
+    end_match = _SPEECH_END_RE.search(speech_region)
+    speech_block = (speech_region[: end_match.start()] if end_match else speech_region).strip()
 
-    return LLMResponse(text=text, speech=speech_block or fallback_speech(text), deliverable=deliverable)
+    # Red de seguridad (bug real visto con el modelo local, menos disciplinado
+    # que Claude siguiendo la instrucción de separar pantalla/habla): a veces
+    # el modelo escribe TODO el contenido dentro de ---HABLA---, sin nada
+    # antes — "text" quedaría vacío y el fundador vería un globo de chat en
+    # blanco pese a que sí hay una respuesta real. Nunca dejar la pantalla
+    # vacía: si no hay texto separado, mostrar el mismo contenido que se
+    # habría narrado (ya cubre "todo lo sustancial", por instrucción del
+    # system prompt) en vez de nada.
+    if not text:
+        text = speech_block or fallback_speech(raw_text.strip())
+
+    return LLMResponse(text=text, speech=speech_block or fallback_speech(text), deliverable=deliverable, thinking=thinking)
 
 
 def _mark_cache_breakpoint(message: dict) -> dict:
@@ -142,6 +194,14 @@ class AnthropicLLM(Capability):
         except Exception:
             pass
 
+    def _create(self, **kwargs):
+        """Única forma real de llamar a messages.create en esta clase: siempre
+        vía streaming. La propia SDK de Anthropic rechaza requests NO-streaming
+        con max_tokens alto (arriesgan timeout HTTP en una conexión larga) —
+        con MAX_OUTPUT_TOKENS ya en 16000, streaming deja de ser opcional."""
+        with self._client.messages.stream(**kwargs) as stream:
+            return stream.get_final_message()
+
     def generate(
         self,
         system: str,
@@ -179,7 +239,7 @@ class AnthropicLLM(Capability):
             kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=call_messages)
             if tools:
                 kwargs["tools"] = tools
-            response = self._client.messages.create(**kwargs)
+            response = self._create(**kwargs)
             self._record_usage(response)
 
             if response.stop_reason == "tool_use" and tool_handler:
@@ -199,12 +259,39 @@ class AnthropicLLM(Capability):
                 continue
 
             text = "".join(block.text for block in response.content if block.type == "text")
+            continuations = 0
+            while response.stop_reason == "max_tokens" and continuations < MAX_CONTINUATIONS:
+                # Red de seguridad real: pese a MAX_OUTPUT_TOKENS=16000 la
+                # respuesta se sigue cortando (documento muy largo). En vez de
+                # perder lo que sigue, se le pide al modelo continuar EXACTO
+                # donde cortó — nunca reescribir desde cero — y se concatena.
+                # El marcador de habla (---HABLA---) va al final, así que
+                # split_speech recién corre sobre el texto ya completo, más
+                # abajo.
+                continuations += 1
+                conversation.append({"role": "assistant", "content": response.content})
+                conversation.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Tu respuesta anterior se cortó por el límite de longitud. "
+                            "Continuá exactamente desde donde cortaste — no repitas nada "
+                            "de lo ya escrito, no agregues una introducción nueva."
+                        ),
+                    }
+                )
+                call_messages = list(conversation)
+                call_messages[-1] = _mark_cache_breakpoint(call_messages[-1])
+                response = self._create(
+                    model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=call_messages
+                )
+                self._record_usage(response)
+                text += "".join(block.text for block in response.content if block.type == "text")
+
             if response.stop_reason == "max_tokens":
-                # El corte pudo haber pasado antes de llegar al marcador de habla
-                # (---HABLA---) — split_speech simplemente no lo va a encontrar y
-                # cae al fallback mecánico sobre el texto ya truncado, que sigue
-                # siendo una degradación razonable.
-                text += "\n\n*(respuesta truncada: llegó al límite de longitud de una respuesta)*"
+                # Se agotaron también los reintentos de continuación — recién
+                # acá se admite el corte, en vez de asumirlo de entrada.
+                text += "\n\n*(respuesta truncada: llegó al límite de longitud incluso después de continuar)*"
             return split_speech(text)
 
         # Se agotaron las rondas de herramientas sin llegar a una respuesta
@@ -229,7 +316,7 @@ class AnthropicLLM(Capability):
             }
         )
         try:
-            response = self._client.messages.create(
+            response = self._create(
                 model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=closing_messages
             )
             self._record_usage(response)

@@ -167,6 +167,7 @@ class SendResponse(BaseModel):
     response: str
     speech: str
     deliverable: str | None = None
+    thinking: str | None = None
 
 
 class TTSRequest(BaseModel):
@@ -312,7 +313,7 @@ def send(payload: SendRequest, background_tasks: BackgroundTasks, user_id: str =
         # En background: nombrar la conversación es un nice-to-have, no debe
         # sumarle latencia a la respuesta que el fundador está esperando.
         background_tasks.add_task(orchestrator.generate_conversation_title, payload.conversation_id)
-    return SendResponse(response=result.text, speech=result.speech, deliverable=result.deliverable)
+    return SendResponse(response=result.text, speech=result.speech, deliverable=result.deliverable, thinking=result.thinking)
 
 
 @app.post("/tts", response_model=TTSResponse)
@@ -621,7 +622,14 @@ def get_llm_routing(user_id: str = Depends(require_user)):
 
 @app.put("/llm-routing")
 def put_llm_routing(payload: dict[str, dict], user_id: str = Depends(require_user)):
-    routing = llm_routing.save_routing(payload)
+    # Bug real encontrado en vivo (2026-08-05): save_routing() completa
+    # cualquier rol ausente del payload con DEFAULT_ROUTING, no con lo que ya
+    # estaba guardado — el frontend manda un solo rol por PUT
+    # (persistLlmRouting en web/index.html), así que sin este merge, elegir
+    # UN proveedor nuevo para UN rol desde Configuración reseteaba en
+    # silencio TODOS los demás roles a los defaults del código. attempt_fallback
+    # (llm_routing.py) ya mergeaba así — el endpoint era la única ruta rota.
+    routing = llm_routing.save_routing({**llm_routing.load_routing(), **payload})
     # Sin esto, cambiar un rol acá no tenía ningún efecto hasta el próximo
     # reinicio del servidor — self._llm/self._title_llm quedaban resueltos
     # una sola vez al construir el Orchestrator (bug real encontrado

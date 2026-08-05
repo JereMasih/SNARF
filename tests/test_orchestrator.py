@@ -1,7 +1,7 @@
 import pytest
 
 from snarf.capabilities.anthropic_llm import LLMResponse
-from snarf.core.orchestrator import HISTORY_REPLAY_MAX_CHARS, Orchestrator, _capped_for_replay
+from snarf.core.orchestrator import HISTORY_REPLAY_MAX_CHARS, Orchestrator
 from snarf.knowledge.extraction import ExtractionResult
 from snarf.runtime import llm_routing
 
@@ -15,6 +15,17 @@ def orchestrator(tmp_path, monkeypatch):
 
 
 def test_echo_mode_without_api_key_and_persists_to_memory(orchestrator):
+    # DEFAULT_ROUTING para "orchestrator" es mlx_local_fast (2026-08-05, ver
+    # llm_routing.py) — ese proveedor no exige ninguna credencial real, así
+    # que SIEMPRE cuenta como "available" (aunque no haya ningún server MLX
+    # escuchando en ese puerto, ver OpenAICompatibleLLM.available). Este test
+    # verifica específicamente el modo eco cuando NO hay ningún LLM
+    # configurado — hay que rutear a mano a un proveedor que sí dependa de
+    # una credencial (anthropic), ya borrada por conftest::_no_real_credentials,
+    # para no depender del default vigente ni terminar pegándole de verdad al
+    # server local real que corre en esta Mac durante los tests.
+    llm_routing.save_routing({"orchestrator": {"provider": "anthropic", "model": "claude-haiku-4-5"}})
+    orchestrator.refresh_llm_routing()
     response = orchestrator.handle("text", "hola snarf", conversation_id="c1")
     assert "hola snarf" in response.text
     assert "modo eco" in response.text
@@ -59,6 +70,16 @@ def test_generate_conversation_title_strips_quotes_and_trailing_period(orchestra
 
 
 def test_generate_conversation_title_does_nothing_when_the_cheap_llm_is_unavailable(orchestrator):
+    # Default real de "orchestrator"/"conversation_title" es mlx_local_fast
+    # (2026-08-05) — no exige credencial, así que cuenta como disponible
+    # incluso en tests. Rutear a mano a anthropic (sin API key en este
+    # fixture, ver conftest.py) para que _title_llm quede genuinamente no
+    # disponible, sin depender de si hay un server MLX real corriendo.
+    llm_routing.save_routing({
+        "orchestrator": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+        "conversation_title": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    })
+    orchestrator.refresh_llm_routing()
     orchestrator.handle("text", "hola", conversation_id="c1")
     orchestrator.generate_conversation_title("c1")  # _title_llm sin API key en este fixture
     assert orchestrator.memory.get_title("c1") is None
@@ -591,17 +612,49 @@ def test_bulk_read_tool_confirmed_executes_with_the_exact_amount_requested(
     assert calls[0][param] == 1000
 
 
-def test_capped_for_replay_leaves_short_text_unchanged():
+def test_capped_for_replay_leaves_short_text_unchanged(orchestrator):
     short = "una respuesta normal, nada raro"
-    assert _capped_for_replay(short) == short
+    assert orchestrator._capped_for_replay(short) == short
 
 
-def test_capped_for_replay_truncates_and_flags_long_text():
+def test_capped_for_replay_falls_back_to_hard_cut_when_no_summarizer_available(orchestrator):
+    """En los tests nunca hay ANTHROPIC_API_KEY (ver conftest.py) — rutear
+    history_compaction a mano a anthropic (default real es mlx_local_fast
+    desde 2026-08-05, que no exige credencial y por eso cuenta como
+    disponible incluso en tests) deja el rol no disponible y esto cae al
+    corte duro de siempre, la misma garantía que existía antes de sumar el
+    resumen real: nunca romper el turno si el resumen no se puede hacer."""
+    llm_routing.save_routing({"history_compaction": {"provider": "anthropic", "model": "claude-haiku-4-5"}})
     long_text = "x" * (HISTORY_REPLAY_MAX_CHARS + 500)
-    result = _capped_for_replay(long_text)
+    result = orchestrator._capped_for_replay(long_text)
     assert len(result) < len(long_text)
     assert result.startswith("x" * 100)
     assert "no re-pagar su costo" in result
+
+
+def test_capped_for_replay_uses_a_real_summary_when_the_compaction_role_is_available(orchestrator, monkeypatch):
+    """Con el resumen real disponible, una entrada larga se condensa fiel al
+    contenido (vía el rol history_compaction) en vez de cortarse a lo bruto —
+    y una segunda entrada con el MISMO texto no debe volver a llamar al LLM
+    (cache en memoria por contenido)."""
+    long_text = "x" * (HISTORY_REPLAY_MAX_CHARS + 500)
+    calls = []
+
+    class FakeSummarizer:
+        available = True
+
+        def generate(self, **kwargs):
+            calls.append(kwargs)
+            return LLMResponse(text="resumen fiel y compacto", speech="ok")
+
+    monkeypatch.setattr(llm_routing, "build_resilient_llm", lambda role: FakeSummarizer())
+
+    first = orchestrator._capped_for_replay(long_text)
+    second = orchestrator._capped_for_replay(long_text)
+
+    assert first == "resumen fiel y compacto"
+    assert second == "resumen fiel y compacto"
+    assert len(calls) == 1
 
 
 def test_handle_caps_an_oversized_history_entry_before_replaying_it(orchestrator, monkeypatch):
@@ -610,7 +663,14 @@ def test_handle_caps_an_oversized_history_entry_before_replaying_it(orchestrator
     entero en CADA turno futuro de la misma conversación — una sola llamada
     re-cacheó 523.869 tokens por esto (ver ADR de esta ronda). El JSONL y la
     UI de historial siguen mostrando el original completo, solo lo que se
-    re-manda al LLM se recorta."""
+    re-manda al LLM se recorta.
+
+    history_compaction ruteado a mano a anthropic (sin API key en este
+    fixture) para forzar el corte duro determinístico — el default real es
+    mlx_local_fast (2026-08-05), que sí está disponible y resumiría de
+    verdad el texto de prueba, pegándole a un server real en vez de probar
+    el camino de "no re-pagar su costo" que este test verifica."""
+    llm_routing.save_routing({"history_compaction": {"provider": "anthropic", "model": "claude-haiku-4-5"}})
     monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
     huge_response = "y" * (HISTORY_REPLAY_MAX_CHARS + 1000)
     monkeypatch.setattr(

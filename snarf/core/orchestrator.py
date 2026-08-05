@@ -1,3 +1,4 @@
+import hashlib
 import time
 from datetime import datetime
 from pathlib import Path
@@ -302,6 +303,13 @@ SYSTEM_PREFIX = (
     "notion_search (buscar páginas/bases de datos por texto), notion_read_page (leer el "
     "texto de una página), notion_create_page (crear una subpágina nueva con título y "
     "contenido) y notion_append_to_page (agregar contenido al final de una ya existente). "
+    "Para trabajar con databases (bases de datos) reales del fundador: notion_get_database "
+    "(trae el schema real de properties de esa database — SIEMPRE llamala primero antes de "
+    "crear o actualizar un registro, para saber qué properties existen y de qué tipo es cada "
+    "una — select/multi-select/date/number/checkbox/relation/etc — nunca inventes nombres o "
+    "tipos de properties), notion_query_database (buscar/filtrar registros existentes) y "
+    "notion_create_database_item/notion_update_page_properties (crear o modificar un registro, "
+    "con las properties ya en la forma tipada exacta que exige esa database). "
     "Reversibles desde el propio Notion — no llevan protocolo de confirmed.\n\n"
     "executive_board_consult convoca al board asesor de Inteligencia Ejecutiva (7 roles: cto, "
     "coo, research, ceo, cfo, cmo, creative) — nunca la llames por tu cuenta, solo cuando el "
@@ -1364,6 +1372,72 @@ TOOLS = [
         },
     },
     {
+        "name": "notion_get_database",
+        "description": (
+            "Trae el schema real de una database de Notion (nombre + properties tipadas: select, "
+            "multi-select, date, number, checkbox, relation, etc). Llamala SIEMPRE antes de "
+            "notion_create_database_item o notion_update_page_properties sobre esa database — "
+            "las properties que mandes en esas dos tienen que coincidir en nombre y tipo con lo "
+            "que devuelve acá, nunca inventadas."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"database_id": {"type": "string"}},
+            "required": ["database_id"],
+        },
+    },
+    {
+        "name": "notion_query_database",
+        "description": (
+            "Busca/filtra registros (páginas) dentro de una database de Notion. `filter` y `sorts` "
+            "son opcionales y van en el formato real de la API de Notion (objetos filter/sorts de "
+            "POST /databases/{id}/query) — sin filtro, trae los primeros page_size registros tal cual."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "database_id": {"type": "string"},
+                "filter": {"type": "object", "description": "Filtro en el formato real de la API de Notion, opcional."},
+                "sorts": {"type": "array", "items": {"type": "object"}, "description": "Orden en el formato real de la API de Notion, opcional."},
+                "page_size": {"type": "integer"},
+            },
+            "required": ["database_id"],
+        },
+    },
+    {
+        "name": "notion_create_database_item",
+        "description": (
+            "Crea un registro nuevo (página) dentro de una database de Notion. `properties` va en "
+            "la forma tipada exacta que exige esa database (ver notion_get_database) — ej. "
+            "{'Nombre': {'title': [{'text': {'content': '...'}}]}, 'Estado': {'select': {'name': "
+            "'Hecho'}}}. Reversible desde Notion — no lleva protocolo de confirmed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "database_id": {"type": "string"},
+                "properties": {"type": "object"},
+            },
+            "required": ["database_id", "properties"],
+        },
+    },
+    {
+        "name": "notion_update_page_properties",
+        "description": (
+            "Cambia properties tipadas de una página existente de Notion (típicamente un registro "
+            "dentro de una database) — mismo formato tipado que notion_create_database_item, y "
+            "mismo criterio de llamar antes a notion_get_database para conocer el schema real."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "page_id": {"type": "string"},
+                "properties": {"type": "object"},
+            },
+            "required": ["page_id", "properties"],
+        },
+    },
+    {
         "name": "personality_set_sarcasm",
         "description": (
             "Ajusta el nivel de ingenio seco/sarcasmo de Snarf (0-10, en pasos de 0.5) a pedido "
@@ -1447,11 +1521,21 @@ def profile_identity_instruction(name: str | None) -> str:
 HISTORY_REPLAY_MAX_CHARS = 8000
 
 
-def _capped_for_replay(text: str) -> str:
-    """Recorta lo que se vuelve a mandar al LLM al reconstruir el historial de
-    una conversación — nunca lo que se guarda ni lo que se muestra en la UI.
-    El resultado ya se entregó una vez; no hace falta re-pagarlo en cada
-    turno futuro mientras la conversación siga viva."""
+HISTORY_COMPACTION_SYSTEM_PROMPT = (
+    "Vas a recibir un mensaje largo: una entrada vieja del historial de una conversación real "
+    "entre el fundador y Snarf. Tu única tarea es resumirlo de forma fiel y compacta para que "
+    "Snarf recuerde de qué se trató sin tener que re-leer todo el contenido original en cada "
+    "turno futuro — conservá todos los datos concretos (números, nombres propios, decisiones "
+    "tomadas, resultados reales) y el sentido completo. Nunca inventes ni agregues nada que no "
+    "esté en el texto original (Principio VI de FOUNDATION.md: nunca datos inventados como "
+    "reales). Devolvé SOLO el resumen, sin comentarios, sin introducción, sin markdown."
+)
+
+
+def _hard_cut_for_replay(text: str) -> str:
+    """Corte duro por caracteres — red de seguridad si el resumen real (ver
+    Orchestrator._capped_for_replay) no está disponible o falla, y forma
+    original de este mecanismo antes de esa mejora."""
     if len(text) <= HISTORY_REPLAY_MAX_CHARS:
         return text
     return (
@@ -1476,6 +1560,13 @@ class Orchestrator:
         self._title_llm = llm_routing.build_llm("conversation_title")
         self._memory = EpisodicMemory()
         self._identity = load_identity()
+        # Cache en memoria (no persistida — se pierde con cada reinicio, y
+        # está bien: es barata de reconstruir) de resúmenes reales de
+        # entradas de historial demasiado largas (ver _capped_for_replay más
+        # abajo) — sin esto, la misma entrada vieja se re-resumiría con una
+        # llamada nueva al LLM en cada turno mientras siga dentro de la
+        # ventana de las últimas 10 entradas.
+        self._history_summary_cache: dict[str, str] = {}
 
         google_auth = GoogleAuth(user_id)
         self._drive = GoogleDrive(google_auth)
@@ -1742,6 +1833,16 @@ class Orchestrator:
                 i["parent_page_id"], i["title"], i.get("content", "")
             ),
             "notion_append_to_page": lambda i: self._notion.append_to_page(i["page_id"], i["content"]),
+            "notion_get_database": lambda i: self._notion.get_database(i["database_id"]),
+            "notion_query_database": lambda i: self._notion.query_database(
+                i["database_id"], filter=i.get("filter"), sorts=i.get("sorts"), page_size=i.get("page_size", 100)
+            ),
+            "notion_create_database_item": lambda i: self._notion.create_database_item(
+                i["database_id"], i["properties"]
+            ),
+            "notion_update_page_properties": lambda i: self._notion.update_page_properties(
+                i["page_id"], i["properties"]
+            ),
         }
 
     @property
@@ -2063,6 +2164,39 @@ class Orchestrator:
             activity_log.record(name, "error", duration_ms=(time.monotonic() - started) * 1000, error=str(exc))
             return {"error": str(exc)}
 
+    def _capped_for_replay(self, text: str) -> str:
+        """Lo que se vuelve a mandar al LLM al reconstruir el historial de una
+        conversación — nunca lo que se guarda ni lo que se muestra en la UI.
+        Antes: un corte duro por caracteres que perdía en silencio todo lo que
+        pasaba el tope. Ahora: un resumen real (vía el rol history_compaction,
+        modelo barato) que condensa fielmente en vez de truncar — cacheado en
+        memoria por contenido, así la misma entrada vieja no se re-resume en
+        cada turno mientras siga dentro de la ventana de últimas 10 entradas.
+        Si el resumen falla por cualquier motivo (LLM no disponible, error de
+        red), cae al corte duro de siempre — nunca rompe el turno."""
+        if len(text) <= HISTORY_REPLAY_MAX_CHARS:
+            return text
+        cache_key = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        cached = self._history_summary_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        summary = self._summarize_history_entry(text)
+        self._history_summary_cache[cache_key] = summary
+        return summary
+
+    def _summarize_history_entry(self, text: str) -> str:
+        try:
+            llm = llm_routing.build_resilient_llm("history_compaction")
+            if not llm.available:
+                raise RuntimeError("history_compaction no disponible")
+            result = llm.generate(system=HISTORY_COMPACTION_SYSTEM_PROMPT, messages=[{"role": "user", "content": text}])
+            summary = result.text.strip()
+            if summary:
+                return summary
+        except Exception:
+            pass
+        return _hard_cut_for_replay(text)
+
     def handle(
         self,
         channel_name: str,
@@ -2121,8 +2255,8 @@ class Orchestrator:
                         )
                 messages = []
                 for entry in self._memory.recent(10, conversation_id=conversation_id):
-                    messages.append({"role": "user", "content": _capped_for_replay(entry["input"])})
-                    messages.append({"role": "assistant", "content": _capped_for_replay(entry["response"])})
+                    messages.append({"role": "user", "content": self._capped_for_replay(entry["input"])})
+                    messages.append({"role": "assistant", "content": self._capped_for_replay(entry["response"])})
                 history_chars = sum(len(m["content"]) for m in messages)
                 history_entries = len(messages) // 2
                 messages.append({"role": "user", "content": user_input})
