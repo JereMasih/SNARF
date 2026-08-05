@@ -84,3 +84,109 @@ def test_append_to_page_returns_status(monkeypatch):
     monkeypatch.setattr(module.requests, "patch", lambda *a, **k: fake_response({}))
     result = make_notion().append_to_page("page-1", "contenido nuevo")
     assert result == {"status": "appended", "page_id": "page-1"}
+
+
+def test_get_database_raises_when_not_configured():
+    with pytest.raises(RuntimeError):
+        make_notion(api_key=None).get_database("db-1")
+
+
+def test_get_database_returns_title_and_typed_property_schema(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    payload = {
+        "id": "db-1",
+        "url": "https://notion.so/db-1",
+        "title": [{"plain_text": "Mi Database"}],
+        "properties": {
+            "Name": {"type": "title"},
+            "Status": {"type": "select"},
+            "Due": {"type": "date"},
+        },
+    }
+    monkeypatch.setattr(module.requests, "get", lambda *a, **k: fake_response(payload))
+    result = make_notion().get_database("db-1")
+    assert result == {
+        "id": "db-1",
+        "title": "Mi Database",
+        "url": "https://notion.so/db-1",
+        "properties": {"Name": "title", "Status": "select", "Due": "date"},
+    }
+
+
+def test_query_database_raises_when_not_configured():
+    with pytest.raises(RuntimeError):
+        make_notion(api_key=None).query_database("db-1")
+
+
+def test_query_database_sends_filter_and_sorts_and_returns_typed_properties(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+
+    def fake_post(url, headers, json, timeout):
+        calls.append({"url": url, "json": json})
+        return fake_response(
+            {
+                "results": [
+                    {
+                        "id": "row-1",
+                        "url": "https://notion.so/row-1",
+                        "properties": {"Status": {"type": "select", "select": {"name": "Hecho"}}},
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(module.requests, "post", fake_post)
+    filter_ = {"property": "Status", "select": {"equals": "Hecho"}}
+    sorts = [{"property": "Due", "direction": "ascending"}]
+    result = make_notion().query_database("db-1", filter=filter_, sorts=sorts)
+
+    assert calls[0]["url"] == "https://api.notion.com/v1/databases/db-1/query"
+    assert calls[0]["json"]["filter"] == filter_
+    assert calls[0]["json"]["sorts"] == sorts
+    assert result == [
+        {
+            "id": "row-1",
+            "url": "https://notion.so/row-1",
+            "properties": {"Status": {"type": "select", "select": {"name": "Hecho"}}},
+        }
+    ]
+
+
+def test_create_database_item_sends_properties_untouched(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+
+    def fake_post(url, headers, json, timeout):
+        calls.append({"url": url, "json": json})
+        return fake_response({"id": "new-row", "url": "https://notion.so/new-row"})
+
+    monkeypatch.setattr(module.requests, "post", fake_post)
+    properties = {"Name": {"title": [{"text": {"content": "Nueva tarea"}}]}, "Status": {"select": {"name": "Por hacer"}}}
+    result = make_notion().create_database_item("db-1", properties)
+
+    assert result == {"id": "new-row", "url": "https://notion.so/new-row"}
+    assert calls[0]["url"] == "https://api.notion.com/v1/pages"
+    assert calls[0]["json"]["parent"] == {"database_id": "db-1"}
+    assert calls[0]["json"]["properties"] == properties
+
+
+def test_update_page_properties_sends_a_patch_with_the_properties(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+
+    def fake_patch(url, headers, json, timeout):
+        calls.append({"url": url, "json": json})
+        return fake_response({})
+
+    monkeypatch.setattr(module.requests, "patch", fake_patch)
+    properties = {"Status": {"select": {"name": "Hecho"}}}
+    result = make_notion().update_page_properties("page-1", properties)
+
+    assert result == {"id": "page-1", "status": "updated"}
+    assert calls[0]["url"] == "https://api.notion.com/v1/pages/page-1"
+    assert calls[0]["json"] == {"properties": properties}

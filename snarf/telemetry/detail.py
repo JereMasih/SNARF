@@ -411,6 +411,22 @@ def _notion_append_to_page(i, r):
     return _quoted("agregando a la página:", _input_get(i, "content"))
 
 
+def _notion_get_database(i, r):
+    return _from_input_id("database_id", "revisando database:")(i, r)
+
+
+def _notion_query_database(i, r):
+    return _from_input_id("database_id", "buscando en database:")(i, r)
+
+
+def _notion_create_database_item(i, r):
+    return _from_input_id("database_id", "creando registro en:")(i, r)
+
+
+def _notion_update_page_properties(i, r):
+    return _from_input_id("page_id", "actualizando propiedades de:")(i, r)
+
+
 DETAIL_EXTRACTORS = {
     # utility
     "get_current_datetime": _get_current_datetime,
@@ -516,6 +532,10 @@ DETAIL_EXTRACTORS = {
     "notion_read_page": _from_result_text("leyendo:"),
     "notion_create_page": _from_input("title", prefix="creando página:"),
     "notion_append_to_page": _notion_append_to_page,
+    "notion_get_database": _notion_get_database,
+    "notion_query_database": _notion_query_database,
+    "notion_create_database_item": _notion_create_database_item,
+    "notion_update_page_properties": _notion_update_page_properties,
     # specialist_executive_board
     "executive_board_consult": _executive_board_consult,
     # specialist_skill_factory

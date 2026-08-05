@@ -148,6 +148,14 @@ TOOL_TO_NODE: dict[str, str] = {
     "notion_read_page": "notion",
     "notion_create_page": "notion",
     "notion_append_to_page": "notion",
+    # Databases (query/crear registro/actualizar properties) son CRUD sobre
+    # el mismo recurso ya representado por el nodo "notion" — mismo criterio
+    # del punto 3 de arriba (tier "capability", operaciones parecidas sobre
+    # un mismo recurso no ameritan nodo propio).
+    "notion_get_database": "notion",
+    "notion_query_database": "notion",
+    "notion_create_database_item": "notion",
+    "notion_update_page_properties": "notion",
     # Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094/0098): Especialista
     # Cognitivo nuevo (capa distinta de una Capacidad cruda, ver ADR 0003) —
     # va al tier "specialist" aunque tenga una sola tool, mismo criterio ya

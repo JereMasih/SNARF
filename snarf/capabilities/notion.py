@@ -100,3 +100,61 @@ class Notion(Capability):
             if text:
                 lines.append(text)
         return "\n\n".join(lines)
+
+    def get_database(self, database_id: str) -> dict:
+        """Schema real de una database (nombre + properties tipadas: select,
+        multi-select, date, number, checkbox, relation, etc.) — necesario
+        ANTES de poder llenarla o cambiarle propiedades, para saber qué
+        properties existen y de qué tipo es cada una."""
+        self._require_available()
+        response = requests.get(f"{API_BASE}/databases/{database_id}", headers=self._headers(), timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        return {
+            "id": data.get("id"),
+            "title": "".join(t.get("plain_text", "") for t in data.get("title", [])),
+            "url": data.get("url"),
+            "properties": {
+                name: prop.get("type") for name, prop in data.get("properties", {}).items()
+            },
+        }
+
+    def query_database(self, database_id: str, filter: dict | None = None, sorts: list[dict] | None = None, page_size: int = 100) -> list[dict]:
+        """Registros (páginas) de una database, con las properties tipadas
+        de cada una tal cual las devuelve Notion — sin reinterpretarlas, para
+        no perder información de tipo (select/date/number/etc)."""
+        self._require_available()
+        body: dict = {"page_size": page_size}
+        if filter:
+            body["filter"] = filter
+        if sorts:
+            body["sorts"] = sorts
+        response = requests.post(f"{API_BASE}/databases/{database_id}/query", headers=self._headers(), json=body, timeout=15)
+        response.raise_for_status()
+        return [
+            {"id": r.get("id"), "url": r.get("url"), "properties": r.get("properties", {})}
+            for r in response.json().get("results", [])
+        ]
+
+    def create_database_item(self, database_id: str, properties: dict) -> dict:
+        """Crea un registro (página) dentro de una database. `properties` va
+        tal cual llega — ya en la forma tipada que exige la API de Notion
+        para cada tipo (ver get_database para el schema real de esta
+        database antes de armar el dict)."""
+        self._require_available()
+        body = {"parent": {"database_id": database_id}, "properties": properties}
+        response = requests.post(f"{API_BASE}/pages", headers=self._headers(), json=body, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        return {"id": data.get("id"), "url": data.get("url")}
+
+    def update_page_properties(self, page_id: str, properties: dict) -> dict:
+        """Cambia properties tipadas de una página existente (típicamente un
+        registro dentro de una database) — mismo formato tipado que
+        create_database_item."""
+        self._require_available()
+        response = requests.patch(
+            f"{API_BASE}/pages/{page_id}", headers=self._headers(), json={"properties": properties}, timeout=15
+        )
+        response.raise_for_status()
+        return {"id": page_id, "status": "updated"}

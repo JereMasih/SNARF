@@ -130,6 +130,10 @@ VERB_BY_SKILL: dict[str, str] = {
     "notion_read_page": "leyendo la página",
     "notion_create_page": "creando la página",
     "notion_append_to_page": "sumando a la página",
+    "notion_get_database": "revisando la database",
+    "notion_query_database": "buscando en la database",
+    "notion_create_database_item": "creando el registro",
+    "notion_update_page_properties": "actualizando propiedades",
     # specialist_executive_board
     "executive_board_consult": "convocando al board",
     # specialist_skill_factory
