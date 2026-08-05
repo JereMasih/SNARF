@@ -1265,7 +1265,7 @@ class Orchestrator:
         # ruteo desde configuración se aplica sin reiniciar el servidor
         # (bug real encontrado en esta misma ronda: antes quedaba fijo al
         # momento de construir el Orchestrator).
-        self._gmail_digest = GmailDigestSpecialist(self._gmail, lambda: llm_routing.build_llm("gmail_digest"), user_id)
+        self._gmail_digest = GmailDigestSpecialist(self._gmail, lambda: llm_routing.build_resilient_llm("gmail_digest"), user_id)
 
         # Pipeline de vectorización de Drive (ver ADR 0028): mismo criterio de
         # "modelo barato para tarea acotada" que el digest de Gmail, esta vez
@@ -1274,7 +1274,7 @@ class Orchestrator:
         content_extractor = ContentExtractor(
             drive=self._drive,
             pdf_extractor=PdfExtractor(),
-            vision_llm_factory=lambda: llm_routing.build_llm("drive_vision"),
+            vision_llm_factory=lambda: llm_routing.build_resilient_llm("drive_vision"),
             stt=ElevenLabsSTT(),
             ffmpeg_audio=FfmpegAudioExtractor(),
             docx_extractor=DocxExtractor(),
@@ -1316,9 +1316,8 @@ class Orchestrator:
         # Mismo criterio que GmailDigestSpecialist: modelo barato para una
         # tarea acotada (sugerir 2-4 nombres de subcarpeta por proyecto).
         self._projects = ProjectManager(
-            self._drive, self._drive_indexer, lambda: llm_routing.build_llm("project_summary"), user_id
+            self._drive, self._drive_indexer, lambda: llm_routing.build_resilient_llm("project_summary"), user_id
         )
-
         # Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094/0098): cada rol
         # corre en su propio proceso MCP (snarf/executive/process.py), nunca
         # in-process — es el segundo consumidor real que justificó reabrir
@@ -1798,16 +1797,30 @@ class Orchestrator:
                 # escribió — nunca una llamada extra al modelo, solo
                 # tamaños ya calculados acá mismo.
                 input_preprocessing.record(conversation_id, user_input, len(system), history_chars, history_entries)
+                generate_kwargs = {"system": system, "messages": messages, "tools": TOOLS, "tool_handler": self._handle_tool}
                 try:
-                    response = self._llm.generate(
-                        system=system, messages=messages, tools=TOOLS, tool_handler=self._handle_tool
-                    )
+                    response = self._llm.generate(**generate_kwargs)
                 except Exception as exc:
-                    # Antes esto tiraba un 500 crudo hasta /send — un fallo real
-                    # del LLM (crédito agotado, rate limit, red) degrada con
-                    # gracia igual que /transcribe, en vez de romper la request.
-                    error_text = f"[error real del LLM, no pude responder: {exc}]"
-                    response = LLMResponse(text=error_text, speech=fallback_speech(error_text))
+                    # Fallback automático real (ver llm_routing.attempt_fallback
+                    # y ADR de esta ronda): un fallo real de PROVEEDOR (crédito
+                    # agotado, rate limit, 5xx) reintenta solo con el siguiente
+                    # proveedor disponible antes de rendirse. self._llm no está
+                    # envuelto acá (ver comentario en attempt_fallback: muchos
+                    # tests reemplazan orchestrator._llm._client/.generate
+                    # directamente) — por eso el intento vive inline.
+                    fallback_response, new_entry = llm_routing.attempt_fallback("orchestrator", llm_routing.load_routing()["orchestrator"], exc, **generate_kwargs)
+                    if fallback_response is not None:
+                        response = fallback_response
+                        self.refresh_llm_routing()  # instancia fija — la próxima ronda ya tiene que usar el proveedor que funcionó
+                    else:
+                        # Antes esto tiraba un 500 crudo hasta /send — un fallo
+                        # real del LLM degrada con gracia igual que /transcribe,
+                        # en vez de romper la request. Se llega acá solo si
+                        # ademas el fallback automático se agotó con todos los
+                        # proveedores disponibles (o el error no era de
+                        # proveedor, ver is_provider_level_error).
+                        error_text = f"[error real del LLM, no pude responder: {exc}]"
+                        response = LLMResponse(text=error_text, speech=fallback_speech(error_text))
         finally:
             context.clear_conversation_id()
 
@@ -1834,12 +1847,23 @@ class Orchestrator:
         first = entries[0]
         listing = f"Usuario: {first['input']}\n\nRespuesta: {first['response'][:500]}"
         context.set_conversation_id(conversation_id)
+        title_kwargs = {"system": CONVERSATION_TITLE_SYSTEM_PROMPT, "messages": [{"role": "user", "content": listing}]}
         try:
-            title = self._title_llm.generate(
-                system=CONVERSATION_TITLE_SYSTEM_PROMPT, messages=[{"role": "user", "content": listing}]
-            ).text
-        except Exception:
-            return
+            try:
+                title = self._title_llm.generate(**title_kwargs).text
+            except Exception as exc:
+                # Mismo fallback automático que el chat principal (ver
+                # attempt_fallback) — un título es de bajo riesgo (nunca
+                # bloquea la respuesta real), pero no hay motivo para
+                # perderlo solo porque el proveedor de este rol se quedó
+                # sin crédito mientras otro sigue disponible.
+                fallback_response, new_entry = llm_routing.attempt_fallback(
+                    "conversation_title", llm_routing.load_routing()["conversation_title"], exc, **title_kwargs
+                )
+                if fallback_response is None:
+                    return
+                title = fallback_response.text
+                self.refresh_llm_routing()
         finally:
             context.clear_conversation_id()
         title = title.strip().strip('"').strip("'").rstrip(".")

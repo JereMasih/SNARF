@@ -639,6 +639,51 @@ def test_llm_routing_reports_available_providers_from_real_env_vars(client, tmp_
     assert "gemini" in res2.json()["available_providers"]
 
 
+def test_llm_fallback_events_empty_without_any_real_fallback(client, tmp_path, monkeypatch):
+    from snarf.runtime import llm_routing
+
+    monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
+    res = client.get("/llm-routing/fallback_events")
+    assert res.status_code == 200
+    assert res.json()["events"] == []
+    assert isinstance(res.json()["server_time"], float)
+
+
+def test_llm_fallback_events_reports_a_real_recorded_fallback(client, tmp_path, monkeypatch):
+    from snarf.runtime import llm_routing
+
+    monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
+    llm_routing._append_fallback_log(
+        {
+            "timestamp": 1000.0,
+            "role": "dashboard_curator",
+            "from": {"provider": "anthropic", "model": "claude-haiku-4-5"},
+            "to": {"provider": "xai", "model": "grok-4-1-fast"},
+            "error": "credit balance is too low",
+        }
+    )
+    res = client.get("/llm-routing/fallback_events")
+    events = res.json()["events"]
+    assert len(events) == 1
+    assert events[0]["role"] == "dashboard_curator"
+    assert events[0]["to"]["provider"] == "xai"
+
+
+def test_llm_fallback_events_filters_by_since(client, tmp_path, monkeypatch):
+    from snarf.runtime import llm_routing
+
+    monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
+    llm_routing._append_fallback_log(
+        {"timestamp": 100.0, "role": "old", "from": {}, "to": {}, "error": "e"}
+    )
+    llm_routing._append_fallback_log(
+        {"timestamp": 200.0, "role": "new", "from": {}, "to": {}, "error": "e"}
+    )
+    res = client.get("/llm-routing/fallback_events?since=150")
+    events = res.json()["events"]
+    assert [e["role"] for e in events] == ["new"]
+
+
 def test_profile_defaults_before_any_save(client, tmp_path, monkeypatch):
     from snarf.runtime import user_profile
 

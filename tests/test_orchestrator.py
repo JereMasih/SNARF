@@ -3,6 +3,7 @@ import pytest
 from snarf.capabilities.anthropic_llm import LLMResponse
 from snarf.core.orchestrator import HISTORY_REPLAY_MAX_CHARS, Orchestrator, _capped_for_replay
 from snarf.knowledge.extraction import ExtractionResult
+from snarf.runtime import llm_routing
 
 
 @pytest.fixture
@@ -75,6 +76,42 @@ def test_generate_conversation_title_degrades_gracefully_when_the_llm_call_fails
     assert orchestrator.memory.get_title("c1") is None
 
 
+def test_generate_conversation_title_uses_the_fallback_provider_when_available(orchestrator, monkeypatch):
+    # ADR de esta ronda: un fallo real de proveedor no tiene por qué perder
+    # el título — attempt_fallback (ya testeado a fondo en
+    # tests/test_llm_routing.py) se mockea acá solo para verificar que
+    # generate_conversation_title lo llama bien y usa su resultado.
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    monkeypatch.setattr(orchestrator._title_llm, "_client", object())  # available=True
+    monkeypatch.setattr(orchestrator._title_llm, "generate", lambda **kw: (_ for _ in ()).throw(RuntimeError("sin crédito")))
+
+    calls = []
+
+    def fake_attempt_fallback(role, entry, exc, **kwargs):
+        calls.append(role)
+        return LLMResponse(text="Saludo real vía respaldo", speech=""), {"provider": "xai", "model": "grok-4-1-fast"}
+
+    monkeypatch.setattr(llm_routing, "attempt_fallback", fake_attempt_fallback)
+    refreshed = []
+    monkeypatch.setattr(orchestrator, "refresh_llm_routing", lambda: refreshed.append(True))
+
+    orchestrator.generate_conversation_title("c1")
+
+    assert calls == ["conversation_title"]
+    assert refreshed == [True]
+    assert orchestrator.memory.get_title("c1") == "Saludo real vía respaldo"
+
+
+def test_generate_conversation_title_still_degrades_gracefully_when_the_fallback_also_fails(orchestrator, monkeypatch):
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    monkeypatch.setattr(orchestrator._title_llm, "_client", object())
+    monkeypatch.setattr(orchestrator._title_llm, "generate", lambda **kw: (_ for _ in ()).throw(RuntimeError("sin crédito")))
+    monkeypatch.setattr(llm_routing, "attempt_fallback", lambda role, entry, exc, **kw: (None, None))
+
+    orchestrator.generate_conversation_title("c1")  # nunca debe romper
+    assert orchestrator.memory.get_title("c1") is None
+
+
 def test_generate_conversation_title_does_nothing_for_a_conversation_with_no_entries(orchestrator):
     orchestrator.generate_conversation_title("conversacion-inexistente")
     assert orchestrator.memory.get_title("conversacion-inexistente") is None
@@ -117,6 +154,45 @@ def test_handle_degrades_gracefully_when_the_llm_call_fails(orchestrator, monkey
     assert "error real del LLM" in response.text
     assert "credit balance" in response.text
     assert orchestrator.memory.get_conversation("c1")[0]["response"] == response.text
+
+
+def test_handle_falls_back_automatically_when_the_configured_provider_fails(orchestrator, monkeypatch):
+    # ADR de esta ronda: attempt_fallback ya está testeado a fondo en
+    # tests/test_llm_routing.py — acá solo se verifica que handle() lo llama
+    # bien (mismos kwargs del turno real) y usa su resultado en vez de
+    # degradar al mensaje de error.
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(orchestrator._llm, "generate", lambda **kw: (_ for _ in ()).throw(RuntimeError("sin crédito")))
+
+    calls = []
+
+    def fake_attempt_fallback(role, entry, exc, **kwargs):
+        calls.append((role, "tools" in kwargs))
+        return LLMResponse(text="respuesta real vía el proveedor de respaldo", speech="respuesta real"), {
+            "provider": "xai",
+            "model": "grok-4-1-fast",
+        }
+
+    monkeypatch.setattr(llm_routing, "attempt_fallback", fake_attempt_fallback)
+    refreshed = []
+    monkeypatch.setattr(orchestrator, "refresh_llm_routing", lambda: refreshed.append(True))
+
+    response = orchestrator.handle("text", "hola snarf", conversation_id="c1")
+
+    assert calls == [("orchestrator", True)]
+    assert refreshed == [True]
+    assert response.text == "respuesta real vía el proveedor de respaldo"
+    assert orchestrator.memory.get_conversation("c1")[0]["response"] == response.text
+
+
+def test_handle_still_degrades_gracefully_when_the_fallback_also_fails(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    monkeypatch.setattr(orchestrator._llm, "generate", lambda **kw: (_ for _ in ()).throw(RuntimeError("Your credit balance is too low")))
+    monkeypatch.setattr(llm_routing, "attempt_fallback", lambda role, entry, exc, **kw: (None, None))
+
+    response = orchestrator.handle("text", "hola snarf", conversation_id="c1")
+    assert "error real del LLM" in response.text
+    assert "credit balance" in response.text
 
 
 def test_handle_injects_project_prompt_as_additional_system_context(orchestrator, monkeypatch):

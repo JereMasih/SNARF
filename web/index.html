@@ -561,7 +561,16 @@
      (openChatFocus, ver JS), disparado por un botón chico y sutil en vez de
      la barra grande de antes. --- */
   .chat-dock {
-    position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
+    /* `top` agregado a pedido explícito (antes solo `bottom`, altura de
+       #chat-dock-body topeada a min(58vh,560px)): el chat tiene que fluir
+       en todo el largo de la pantalla, no quedar en un bloque chico
+       flotando cerca del input. Valor de acá (6.8rem) es solo el fallback
+       antes de que JS mida el real: syncChatDockTop() lo pisa siempre con
+       el borde real de abajo del banner (ver renderDashHudBanner) — nunca
+       a ojo, porque el banner cambia de alto según el texto de curación
+       (una o dos líneas) y superponerse a él/al toggle Vista clásica/HUD
+       les robaba los clicks (bug real encontrado con Playwright). */
+    position: fixed; top: 6.8rem; bottom: 1rem; left: 50%; transform: translateX(-50%);
     /* Bug real de colisión de z-index encontrado con Playwright: 11 pisaba
        a .settings-panel (también 11) — cualquier modal (settings/brain/
        chat-focus/node-drill, z-index 10-17) tiene que quedar SIEMPRE por
@@ -607,16 +616,14 @@
     display: flex; width: 42px; height: 42px; flex: 0 0 auto;
   }
 
-  .chat-dock-body { display: flex; flex-direction: column; height: min(58vh, 560px); min-height: 0; }
+  /* flex:1 1 auto (antes height: min(58vh,560px)) — el chat tiene que
+     fluir en todo el largo de la pantalla, ver `.chat-dock` arriba. */
+  .chat-dock-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
   .chat-dock .chat {
     flex: 1 1 auto; min-height: 0; background: none; max-width: none;
-    /* Fondo del chat "abierto" al dashboard de atrás — sin caja contenedora
-       propia, mismo pedido explícito: las burbujas flotan sobre el fondo.
-       Degradado acotado al último 10% superior nada más (pedido real del
-       fundador: la sombra se comía contenido con un tercio entero — el
-       resto del chat queda siempre a opacidad plena). */
-    -webkit-mask-image: linear-gradient(to top, black 90%, transparent 100%);
-    mask-image: linear-gradient(to top, black 90%, transparent 100%);
+    /* Sin caja contenedora propia (pedido explícito): las burbujas flotan
+       sobre el fondo. Sin degradado/sombra de ningún tipo arriba — sacado
+       por completo a pedido explícito, seguía dando problemas. */
   }
   /* Sin contenedor propio (pedido explícito): la barra de input queda
      posada directo sobre el fondo del dashboard, igual que el chat. */
@@ -5185,6 +5192,20 @@ let dashHudLastData = {};
 let dashHudLastWidgets = [];
 let dashHudTemplates = null;
 
+// El chat-dock fluye desde casi arriba de la pantalla hasta el input (ver
+// CSS `.chat-dock`) — pero "casi arriba" no puede ser un pixel fijo: el
+// toggle Vista clásica/HUD + el banner de curación arriba suyo cambian de
+// alto según el texto real (una o dos líneas según el largo del headline).
+// Medido en vivo contra el borde real de abajo del banner, nunca a ojo —
+// bug real encontrado con Playwright: con un `top` fijo, el chat tapaba el
+// toggle y se robaba sus clicks en cuanto el banner medía distinto de lo
+// asumido.
+function syncChatDockTop() {
+  if (chatDock.hidden) return;
+  const bannerRect = dashHudBanner.getBoundingClientRect();
+  chatDock.style.top = Math.max(bannerRect.bottom + 12, 16) + "px";
+}
+
 function setDashboardView(view, { skipPersist = false } = {}) {
   const isHud = view === "hud";
   dashboardPrefs.dashboard_view = isHud ? "hud" : "classic";
@@ -5202,6 +5223,7 @@ function setDashboardView(view, { skipPersist = false } = {}) {
     chatDock.dataset.position = dashboardPrefs.hud_chat_position || "left";
     reparentChatIntoDock();
     chatDock.hidden = false;
+    syncChatDockTop();
     startDashHudPolling();
   } else {
     stopDashHudPolling();
@@ -5675,10 +5697,14 @@ function renderDashHudBanner(curation) {
   if (curation.curating) {
     dashHudBanner.innerHTML = '<span class="dash-hud-banner-dot"></span>curando el dashboard...';
     dashHudBanner.classList.add("curating");
-    return;
+  } else {
+    dashHudBanner.classList.remove("curating");
+    dashHudBanner.textContent = curation.headline || "";
   }
-  dashHudBanner.classList.remove("curating");
-  dashHudBanner.textContent = curation.headline || "";
+  // El texto de arriba puede cambiar de 1 a 2 líneas (headline largo vs
+  // corto) — el chat-dock tiene que re-medir su `top` cada vez, nunca
+  // asumir que el alto del banner quedó igual que la vez anterior.
+  syncChatDockTop();
 }
 
 async function pollDashHud() {
@@ -6223,8 +6249,56 @@ updateSendMicToggle();
 fetch("/status").then(r => r.json()).then(s => {
   ttsAvailable = !!s.tts_available;
   if (!s.stt_available || !s.tts_available) setState("error", "faltan credenciales de voz (ver .env)");
-  else if (!s.llm_available) statusEl.textContent = "modo eco (sin ANTHROPIC_API_KEY)";
+  // Texto genérico a propósito (bug real: decía "sin ANTHROPIC_API_KEY" fijo,
+  // aunque el rol "orchestrator" (ver LLM por rol en Configuración) esté
+  // rutinado a otro proveedor — quedó desactualizado desde que el ruteo por
+  // rol dejó de ser Anthropic-only, ver ADR 0068).
+  else if (!s.llm_available) statusEl.textContent = "modo eco (sin credencial de LLM configurada, ver Configuración → LLM por rol)";
 }).catch(() => {});
+
+// --- Aviso de fallback automático de LLM (ADR de esta ronda) --------------
+// Si un rol se quedó sin crédito/rate-limited y Snarf cambió solo de
+// proveedor (ver snarf/runtime/llm_routing.py::attempt_fallback), el
+// fundador tiene que enterarse siempre, sin importar en qué vista está —
+// se avisa como un mensaje más en el chat (mismo patrón ya usado para
+// cualquier otro aviso informativo real, ej. "no pude subir el archivo..."
+// más arriba en este archivo), nunca un toast nuevo que solo viva en una
+// vista puntual. Corre siempre, independiente de Vista clásica/HUD/mobile.
+const LLM_FALLBACK_ROLE_LABELS = {
+  orchestrator: "el chat principal",
+  gmail_digest: "el resumen de Gmail",
+  drive_vision: "el análisis de imágenes de Drive",
+  project_summary: "el resumen de proyectos",
+  conversation_title: "el título de conversación",
+  dashboard_curator: "el curador del dashboard",
+};
+const LLM_FALLBACK_SEEN_KEY = "snarf_llm_fallback_seen_until";
+
+function llmFallbackNoticeText(ev) {
+  const roleLabel = LLM_FALLBACK_ROLE_LABELS[ev.role] || ev.role;
+  return `⚠️ Cambié automáticamente ${roleLabel} de ${ev.from.provider} a ${ev.to.provider} porque falló: ${ev.error}`;
+}
+
+async function pollLlmFallbackEvents() {
+  try {
+    // Nunca en la primera carga (todo el historial de fallbacks pasados de
+    // una sería ruido, no una reacción a algo que "está pasando" ahora —
+    // mismo criterio ya establecido para pollBrainHudFeed/ADR 0088).
+    const stored = localStorage.getItem(LLM_FALLBACK_SEEN_KEY);
+    const isFirstLoad = stored === null;
+    const url = isFirstLoad ? "/llm-routing/fallback_events" : `/llm-routing/fallback_events?since=${stored}`;
+    const res = await apiFetch(url);
+    const data = await res.json();
+    if (!isFirstLoad) {
+      for (const ev of data.events) addMessage(llmFallbackNoticeText(ev), "snarf");
+    }
+    localStorage.setItem(LLM_FALLBACK_SEEN_KEY, String(data.server_time));
+  } catch (e) {
+    // fallo silencioso: se reintenta en el próximo ciclo, mismo criterio que el resto del dashboard
+  }
+}
+pollLlmFallbackEvents();
+setInterval(pollLlmFallbackEvents, 60000);
 </script>
 </body>
 </html>

@@ -75,7 +75,7 @@ def _dashboard_curation_snapshot() -> dict:
 # navegador, solo el loop periódico de abajo lo refresca de verdad.
 dashboard_curator = DashboardCuratorSpecialist(
     snapshot_provider=_dashboard_curation_snapshot,
-    llm_factory=lambda: llm_routing.build_llm("dashboard_curator"),
+    llm_factory=lambda: llm_routing.build_resilient_llm("dashboard_curator"),
     user_id=DEFAULT_USER_ID,
 )
 dashboard_curating_in_progress = False
@@ -629,6 +629,15 @@ def put_llm_routing(payload: dict[str, dict], user_id: str = Depends(require_use
     # solos (factory), no necesitan este refresh.
     orchestrator.refresh_llm_routing()
     return {"routing": routing, "available_providers": llm_routing.available_providers()}
+
+
+@app.get("/llm-routing/fallback_events")
+def get_llm_fallback_events(since: float | None = None, user_id: str = Depends(require_user)):
+    # Registro trazable real de cada vez que un rol cambió de proveedor solo
+    # (ver llm_routing.generate_with_fallback) — el frontend lo poll-ea para
+    # avisar en el chat apenas pasa algo nuevo, `since` (server_time del
+    # último visto) evita re-mostrar lo mismo en cada carga.
+    return {"events": llm_routing.recent_fallback_events(since=since), "server_time": time.time()}
 
 
 @app.get("/profile")
