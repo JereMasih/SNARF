@@ -1,6 +1,7 @@
 import threading
 
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 from snarf.capabilities.base import Capability
 from snarf.capabilities.google_auth import GoogleAuth
@@ -63,3 +64,24 @@ class GoogleYouTube(Capability):
             {"title": item["snippet"]["title"], "channel": item["snippet"]["channelTitle"]}
             for item in result.get("items", [])
         ]
+
+    def get_video_captions(self, video_id: str) -> str | None:
+        """Devuelve el texto real de la transcripción de `video_id`, o
+        `None` si no hay ninguna disponible por esta vía. La API de YouTube
+        solo permite descargar el contenido real de un caption track cuando
+        el usuario autenticado es dueño del video (o tiene autorización
+        explícita) — para un video de terceros, `captions().download()`
+        devuelve un 403/`HttpError` real, no un caption vacío; se trata
+        igual como "sin captions disponibles" (nunca se distingue "no
+        existe" de "no autorizado" de cara al llamador, ambos son el mismo
+        resultado real: no hay texto que usar por esta vía)."""
+        try:
+            tracks = self._client().captions().list(part="snippet", videoId=video_id).execute()
+            items = tracks.get("items", [])
+            if not items:
+                return None
+            caption_id = items[0]["id"]
+            raw = self._client().captions().download(id=caption_id, tfmt="srt").execute()
+            return raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
+        except HttpError:
+            return None

@@ -26,6 +26,7 @@ from snarf.capabilities.notion import Notion
 from snarf.capabilities.pdf_extractor import PdfExtractor
 from snarf.capabilities.pptx_extractor import PptxExtractor
 from snarf.capabilities.voyage_embeddings import VoyageEmbeddings
+from snarf.capabilities.web_search import TavilySearch
 from snarf.capabilities.xlsx_extractor import XlsxExtractor
 from snarf.core.identity import load_identity
 from snarf.knowledge.document_publisher import DocumentPublisher
@@ -40,6 +41,8 @@ from snarf.executive.specialist import ExecutiveBoardSpecialist
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
 from snarf.specialists.productivity.calendar_brief import CalendarBriefSpecialist
+from snarf.specialists.research.mode import COMPETITOR_WATCH_CONFIG, DEEP_RESEARCH_CONFIG, TREND_SCAN_CONFIG
+from snarf.specialists.research.specialist import ResearchSpecialist
 from snarf.specialists.skill_factory import SkillFactorySpecialist
 from snarf.telemetry import activity_log, context, detail, input_preprocessing, usage_tracker
 
@@ -510,6 +513,55 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {"force_refresh": {"type": "boolean"}},
+        },
+    },
+    {
+        "name": "research_deep_dive",
+        "description": (
+            "Investiga un tema a fondo: búsqueda web real (Tavily, si está configurado) + "
+            "transcripciones reales de videos de YouTube si se pasan URLs — sintetiza un informe "
+            "estructurado, lo publica como documento real en Drive y lo deja indexado (buscable con "
+            "knowledge_search/drive_search_knowledge de inmediato). Si ninguna fuente real está "
+            "disponible, lo dice explícito en vez de inventar un informe."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string"},
+                "video_urls": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["topic"],
+        },
+    },
+    {
+        "name": "research_trend_scan",
+        "description": (
+            "Igual que research_deep_dive, pero enfocado en detectar tendencias/patrones reales que "
+            "se repiten entre varias fuentes distintas sobre un tema — nunca una tendencia basada en "
+            "una sola mención."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string"},
+                "video_urls": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["topic"],
+        },
+    },
+    {
+        "name": "research_competitor_watch",
+        "description": (
+            "Igual que research_deep_dive, pero enfocado en analizar actores/competidores reales de "
+            "un mercado o nicho a partir de fuentes reales."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string"},
+                "video_urls": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["topic"],
         },
     },
     {
@@ -1333,6 +1385,22 @@ class Orchestrator:
             # exista un segundo usuario real, no debe poder pedirlo.
             allow_server_storage=(user_id == DEFAULT_USER_ID),
         )
+        # Fase I, rama Research (ver plan de expansión): una sola clase real,
+        # tres configs — comparten Capacidades reales (búsqueda web,
+        # transcripciones de YouTube, publicación de documentos), solo
+        # cambia el system prompt y el rol de ruteo de LLM.
+        self._web_search = TavilySearch()
+        self._research_specialists = {
+            config.mode: ResearchSpecialist(
+                config,
+                self._web_search,
+                self._youtube,
+                self._document_publisher,
+                lambda role=config.llm_routing_role: llm_routing.build_resilient_llm(role),
+                user_id,
+            )
+            for config in (DEEP_RESEARCH_CONFIG, TREND_SCAN_CONFIG, COMPETITOR_WATCH_CONFIG)
+        }
         # Mismo criterio que GmailDigestSpecialist: modelo barato para una
         # tarea acotada (sugerir 2-4 nombres de subcarpeta por proyecto).
         self._projects = ProjectManager(
@@ -1399,6 +1467,15 @@ class Orchestrator:
             "drive_delete_file": self._tool_drive_delete_file,
             "gmail_summarize_inbox": self._tool_gmail_summarize_inbox,
             "calendar_brief": self._tool_calendar_brief,
+            "research_deep_dive": lambda i: self._research_specialists["deep_research"].research(
+                i["topic"], i.get("video_urls")
+            ),
+            "research_trend_scan": lambda i: self._research_specialists["trend_scan"].research(
+                i["topic"], i.get("video_urls")
+            ),
+            "research_competitor_watch": lambda i: self._research_specialists["competitor_watch"].research(
+                i["topic"], i.get("video_urls")
+            ),
             "drive_index_scan": lambda i: self._drive_indexer.scan(query=i.get("query")),
             "drive_index_catalog_unsupported": lambda i: self._drive_indexer.catalog_unsupported(query=i.get("query")),
             "drive_index_start": lambda i: self._drive_indexer.start(query=i.get("query")),

@@ -678,6 +678,21 @@ def test_calendar_brief_force_refresh_ignores_cache(orchestrator, monkeypatch):
     assert orchestrator._handle_tool("calendar_brief", {"force_refresh": True}) == fresh
 
 
+def test_research_tools_route_to_the_correct_mode(orchestrator, monkeypatch):
+    for tool_name, mode in (
+        ("research_deep_dive", "deep_research"),
+        ("research_trend_scan", "trend_scan"),
+        ("research_competitor_watch", "competitor_watch"),
+    ):
+        fake_result = {"topic": "x", "report_text": f"informe de {mode}", "sources": [], "document": None}
+        monkeypatch.setattr(
+            orchestrator._research_specialists[mode],
+            "research",
+            lambda topic, video_urls=None, fake_result=fake_result: fake_result,
+        )
+        assert orchestrator._handle_tool(tool_name, {"topic": "x"}) == fake_result
+
+
 def test_drive_read_file_delegates_to_the_content_extractor_not_raw_bytes(orchestrator, monkeypatch):
     # Regresión: antes llamaba directo a GoogleDrive.read_file_text(), que
     # decodifica cualquier binario (PDF, Word, imagen) como UTF-8 a lo

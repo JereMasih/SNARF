@@ -60,6 +60,14 @@ def client(tmp_path, monkeypatch):
     # dashboard_curator arriba — estado en disco propio, nunca el cache real
     # de producción.
     monkeypatch.setattr(executive_board_module, "CACHE_DIR", tmp_path / "executive_board")
+    # Skill Factory (ver ADR 0095/0102): _proposals_dir es un atributo de
+    # instancia (no una constante de módulo, a diferencia de arriba) — sin
+    # este redirect, estos tests leerían/escribirían el registro REAL de
+    # producción (data/skill_proposals/), como pasó de verdad: un intento
+    # real de construir "Procesador de PDFs" (falló por crédito real
+    # agotado de Claude Code) quedó ahí y hacía fallar un test que asumía
+    # el registro vacío — mismo tipo de fuga que ADR 0085.
+    monkeypatch.setattr(app_module.orchestrator.skill_factory, "_proposals_dir", tmp_path / "skill_proposals")
     monkeypatch.setenv("SNARF_ACCESS_PASSWORD", TEST_PASSWORD)
     monkeypatch.setenv("SESSION_SECRET", "test-session-secret")
     with TestClient(app_module.app, base_url="https://testserver") as c:

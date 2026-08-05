@@ -2,6 +2,13 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-05] Fase I (Research) de la expansión "Inteligencia Ejecutiva"
+
+- `snarf/capabilities/web_search.py::TavilySearch` (vendor decidido en el plan) + `GoogleYouTube.get_video_captions()` (real, pero limitado por la propia API de YouTube a videos que el fundador posee — un video de terceros devuelve `None`, tratado como "sin captions"). El fallback a ffmpeg+STT para videos de terceros del plan original NO se construyó — necesita una dependencia nueva (`yt-dlp`) con consideraciones reales de ToS, queda como decisión pendiente del fundador.
+- `snarf/specialists/research/`: una sola clase real (`ResearchSpecialist`), tres configs (`deep_research`/`trend_scan`/`competitor_watch`, mismo patrón que los 7 roles de Inteligencia Ejecutiva) — junta fuentes reales, sintetiza con disciplina de honestidad, publica el informe con `DocumentPublisher` (ya lo indexa de inmediato, sin mecanismo nuevo). NotebookLM Bridge queda fuera de alcance: Google no publica ninguna API real para eso.
+- **Hallazgo real de esta ronda**: se encontró un registro real (no de fixture) en `data/skill_proposals/` — un intento real de construir "Procesador de PDFs" vía la Skill Factory (Fase H), que falló por crédito real agotado de Claude Code (`Credit balance is too low`, separado del `ANTHROPIC_API_KEY` que usa Snarf para conversar). Confirma con datos reales de producción que el flujo completo de Fase H funciona de punta a punta, incluida la falla manejada con gracia. El propio test que lo encontró tenía un gap de aislamiento (`SkillFactorySpecialist._proposals_dir` sin neutralizar en la fixture `client`) — corregido.
+- 858/858 tests (22 nuevos). Ver ADR 0104.
+
 ## [2026-08-05] Fase I (Memory + Productivity) de la expansión "Inteligencia Ejecutiva"
 
 - **Memory**: cerrada sin código nuevo — las cuatro piezas que el mapa de referencia pedía ya existen con otro nombre (Knowledge Layer, Proyectos, FOUNDATION/CONSTITUTION/CHARACTER, EpisodicMemory). Documentado explícito en `KNOWLEDGE.md`.

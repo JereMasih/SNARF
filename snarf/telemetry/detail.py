@@ -250,6 +250,13 @@ def _calendar_brief(i, r):
     return None
 
 
+# --- specialist_research -------------------------------------------------
+
+
+def _research_topic(i, r):
+    return _quoted("investigando", _input_get(i, "topic"))
+
+
 # --- specialist_executive_board --------------------------------------------
 
 
@@ -388,6 +395,10 @@ DETAIL_EXTRACTORS = {
     "gmail_summarize_inbox": _gmail_summarize_inbox,
     # specialist_calendar
     "calendar_brief": _calendar_brief,
+    # specialist_research
+    "research_deep_dive": _research_topic,
+    "research_trend_scan": _research_topic,
+    "research_competitor_watch": _research_topic,
     # specialist_projects_manage
     "project_create": _from_input("name", prefix="creando proyecto"),
     "project_list": _list_count("proyectos"),
