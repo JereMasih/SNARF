@@ -10,6 +10,31 @@ from snarf.specialists.base import Specialist
 
 CACHE_DIR = Path("data/executive_board")
 
+# Convención de Skill Framework (ver snarf/specialists/base.py, Fase G).
+INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "question": {"type": "string"},
+        "roles": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": ["cto", "coo", "research", "ceo", "cfo", "cmo", "creative"],
+            },
+        },
+    },
+    "required": ["question"],
+}
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "question": {"type": "string"},
+        "roles": {"type": "object"},
+        "generated_at": {"type": "number"},
+        "error": {"type": "string"},
+    },
+}
+
 
 class ExecutiveBoardSpecialist(Specialist):
     """Board asesor de Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094):

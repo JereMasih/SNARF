@@ -2,6 +2,15 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-04] Fase G de la expansión "Inteligencia Ejecutiva": Skill Framework — convención `INPUT_SCHEMA`/`OUTPUT_SCHEMA`
+
+- De la propuesta original de 13 archivos por skill sobrevivió solo lo genuinamente nuevo: un dict `INPUT_SCHEMA`/`OUTPUT_SCHEMA` a nivel de módulo (misma forma que `orchestrator.TOOLS[i]["input_schema"]`), justificado porque la Skill Factory (Fase H) va a necesitar algo generable/validable por máquina.
+- Documentada en `snarf/specialists/base.py` y retrofiteada en los 3 `Specialist` reales de hoy: `GmailDigestSpecialist`, `DashboardCuratorSpecialist`, `ExecutiveBoardSpecialist` (Fase E). `ProjectManager` queda fuera a propósito — no hereda de `Specialist`, sus 14 tools no comparten una sola forma de entrada/salida.
+- `REGISTRY`/`register()` de `base.py` quedan documentados como deliberadamente sin usar: un dict a nivel de módulo no sostiene más de una instancia por proceso, y varios tests reales instancian más de un `Orchestrator` en el mismo proceso.
+- Test de cobertura nuevo (`tests/test_specialist_schema_coverage.py`, mismo protocolo que `TOOL_TO_NODE`): itera sobre `Specialist.__subclasses__()` real, nunca una lista mantenida a mano.
+- La restructuración de `snarf/specialists/` en sub-paquetes por rama (que el plan nombraba como el único cambio estructural real de esta fase) queda explícitamente diferida a la Fase I, cuando el primer skill real de una rama necesite un lugar donde vivir — mover archivos existentes ahora sería especulativo, y de alto riesgo real puntual (dos de los tres módulos están siendo editados en paralelo por otra sesión, ver ADR 0099).
+- 795/795 tests (1 nuevo). Ver ADR 0101.
+
 ## [2026-08-04] Fase F de la expansión "Inteligencia Ejecutiva": Harness — nombrar el ciclo de vida real, más `compare()`
 
 - El plan pedía un Harness con inyección de contexto por skill, validación/tests automáticos, comparación entre modelos y reintento ante falla de calidad. Revisando el código real antes de construir nada, casi todo ya existía repartido sin nombre común: prompt caching (ADR 0026/0036), confirmación en dos pasos (ADR 0015), `_bulk_read_gate` (ADR 0067), logs unificados, alerta de costo (ADR 0081), ruteo multi-proveedor (ADR 0068) y el reintento ya existente de `AnthropicLLM.generate()` al agotar rondas.

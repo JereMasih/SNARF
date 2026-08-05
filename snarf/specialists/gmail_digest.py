@@ -15,6 +15,22 @@ SYSTEM_PROMPT = (
     "repitas el listado completo, priorizá lo que requiere atención."
 )
 
+# Convención de Skill Framework (ver snarf/specialists/base.py, Fase G).
+INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {"max_results": {"type": "integer", "description": "Default 20."}},
+}
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "generated_at": {"type": "number"},
+        "message_count": {"type": "integer"},
+        "digest_text": {"type": "string"},
+        "latest_message_id": {"type": ["string", "null"]},
+        "messages": {"type": "array"},
+    },
+}
+
 
 class GmailDigestSpecialist(Specialist):
     name = "gmail_digest"

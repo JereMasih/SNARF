@@ -39,6 +39,20 @@ DASHBOARD_CURATOR_SYSTEM_PROMPT = (
     "(0 o más líneas PROPUESTA, solo si de verdad hace falta)"
 )
 
+# Convención de Skill Framework (ver snarf/specialists/base.py, Fase G).
+# refresh() no toma parámetros reales — snapshot_provider ya está inyectado
+# por constructor, no por llamada.
+INPUT_SCHEMA = {"type": "object", "properties": {}}
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "generated_at": {"type": "number"},
+        "headline": {"type": "string"},
+        "node_captions": {"type": "object"},
+        "node_templates": {"type": "object"},
+    },
+}
+
 
 def _template_menu_line(tier: str) -> str:
     templates = widget_templates.templates_for_tier(tier)
