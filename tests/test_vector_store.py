@@ -79,6 +79,25 @@ def test_get_by_file_id_returns_empty_list_when_nothing_matches(tmp_path):
     assert store.get_by_file_id("no-existe") == []
 
 
+def test_add_batches_large_inserts_to_stay_under_chromas_limit(tmp_path, monkeypatch):
+    """Bug real: un archivo con muchos chunks (ej. una transcripción de video
+    larga) pasaba de una sola vez una lista más grande que el batch máximo
+    que acepta chromadb.add() y fallaba siempre con ValueError. add() ahora
+    trocea — este test fuerza un batch chico (2) para no tener que insertar
+    miles de vectores reales solo para probar el troceo."""
+    from snarf.knowledge import vector_store as module
+
+    monkeypatch.setattr(module, "_ADD_BATCH_SIZE", 2)
+    store = make_store(tmp_path)
+    store.add(
+        ids=["a:0", "a:1", "a:2", "a:3", "a:4"],
+        embeddings=[[1.0, float(i)] for i in range(5)],
+        documents=[f"contenido {i}" for i in range(5)],
+        metadatas=[{"file_id": "a", "chunk_index": i} for i in range(5)],
+    )
+    assert store.count() == 5
+
+
 def test_constructing_a_store_does_not_touch_disk(tmp_path):
     # Construir VectorStore no debe crear el directorio de persistencia hasta
     # el primer uso real (mismo criterio que GoogleDrive._client()).

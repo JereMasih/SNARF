@@ -43,3 +43,25 @@ def test_save_and_load_roundtrip_preserves_entries(tmp_path):
 
 def test_load_returns_empty_dict_when_no_file_exists_yet(tmp_path):
     assert IndexManifest(tmp_path / "no_existe.json").load() == {}
+
+
+def test_save_leaves_no_temp_file_behind_and_survives_repeated_writes(tmp_path):
+    """Bug real visto en producción: mientras una indexación corre en
+    background guardando seguido, el dashboard lee el mismo archivo en
+    paralelo (polling) — con la escritura vieja (write_text, no atómica),
+    un lector podía atrapar el archivo a mitad de escritura y recibir un
+    JSON truncado (json.JSONDecodeError real). save() ahora escribe a un
+    temporal y renombra (os.replace, atómico) — un lector siempre ve el
+    archivo viejo completo o el nuevo completo, nunca una mezcla; y no debe
+    quedar ningún .tmp huérfano tras un save exitoso."""
+    path = tmp_path / "manifest.json"
+    manifest = IndexManifest(path)
+    data = {}
+    for i in range(20):
+        manifest.mark(data, f"f{i}", f"t{i}", STATUS_INDEXED, chunk_count=i)
+        manifest.save(data)
+
+    reloaded = IndexManifest(path).load()
+    assert len(reloaded) == 20
+    assert reloaded["f19"]["modifiedTime"] == "t19"
+    assert list(tmp_path.glob("*.tmp")) == []

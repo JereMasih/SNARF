@@ -138,7 +138,20 @@ class DriveIndexer:
 
     def status(self) -> dict:
         with self._lock:
-            return dict(self._status)
+            status = dict(self._status)
+        if not status["running"]:
+            # self._status es estado en memoria del proceso — se resetea a
+            # "idle" en cada __init__/start(), así que tras un reinicio del
+            # server (frecuente en desarrollo activo) esto reportaba "0
+            # indexados" aunque el manifiesto en disco siguiera reflejando
+            # progreso real (bug real: la tool de chat drive_index_status
+            # nunca leía manifest_summary(), a diferencia del dashboard/
+            # cerebro, que sí lo usa). Mientras SÍ está corriendo se deja el
+            # contador en memoria tal cual, que ya refleja esta corrida.
+            persisted = self.manifest_summary()
+            status["indexed"] = persisted["indexed"]
+            status["errors"] = persisted["error"]
+        return status
 
     def manifest_summary(self) -> dict:
         """Cuenta de archivos por estado en el manifiesto ya persistido en

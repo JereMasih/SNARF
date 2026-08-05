@@ -1,3 +1,12 @@
+# chromadb tiene un tope real de items por llamada a add() (~5461 medido en
+# esta instalación, varía por versión/config — chromadb no lo documenta como
+# constante estable). Trocear en lotes seguros de antemano, mismo criterio
+# que VoyageEmbeddings.embed() ya aplica para el límite de su propia API:
+# un archivo con muchos chunks (ej. una transcripción de video larga) fallaba
+# siempre con "ValueError: Batch size of N is greater than max batch size".
+_ADD_BATCH_SIZE = 1000
+
+
 class VectorStore:
     """Wrapper delgado sobre chromadb en modo persistente local (un
     directorio en disco, sin servidor) — embeddings siempre provistos por
@@ -21,7 +30,15 @@ class VectorStore:
     def add(self, ids: list[str], embeddings: list[list[float]], documents: list[str], metadatas: list[dict]) -> None:
         if not ids:
             return
-        self._collection().add(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
+        collection = self._collection()
+        for start in range(0, len(ids), _ADD_BATCH_SIZE):
+            end = start + _ADD_BATCH_SIZE
+            collection.add(
+                ids=ids[start:end],
+                embeddings=embeddings[start:end],
+                documents=documents[start:end],
+                metadatas=metadatas[start:end],
+            )
 
     def delete_by_file_id(self, file_id: str) -> None:
         self._collection().delete(where={"file_id": file_id})

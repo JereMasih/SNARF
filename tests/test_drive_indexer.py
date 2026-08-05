@@ -310,6 +310,31 @@ def test_manifest_summary_counts_files_by_status_without_scanning(tmp_path):
     assert summary == {"indexed": 2, "error": 1, "skipped_unsupported": 1, "total": 4}
 
 
+def test_status_reflects_persisted_progress_after_a_restart(tmp_path):
+    """Bug real: DriveIndexer._status es estado en memoria del proceso, que
+    se resetea a idle en __init__ — tras un reinicio del server, la tool de
+    chat drive_index_status decía "0 indexados" aunque el manifiesto en
+    disco (y el índice real) siguieran con progreso real. status() ahora
+    combina el estado efímero con manifest_summary() cuando no está
+    corriendo."""
+    manifest_path = tmp_path / "manifest.json"
+    manifest = IndexManifest(manifest_path)
+    data = {}
+    manifest.mark(data, "1", "t1", STATUS_INDEXED, chunk_count=3)
+    manifest.mark(data, "2", "t1", STATUS_INDEXED, chunk_count=1)
+    manifest.mark(data, "3", "t1", STATUS_ERROR, reason="boom")
+    manifest.save(data)
+
+    # Instancia NUEVA sobre el mismo manifiesto — simula el server
+    # reiniciando en medio del desarrollo, sin ninguna corrida activa.
+    fresh_indexer = DriveIndexer(FakeDrive([]), FakeExtractor({}), FakeEmbeddings(), FakeVectorStore(), manifest_path)
+
+    status = fresh_indexer.status()
+    assert status["running"] is False
+    assert status["indexed"] == 2
+    assert status["errors"] == 1
+
+
 def test_manifest_summary_with_no_manifest_file_is_all_zeroes(tmp_path):
     indexer = DriveIndexer(FakeDrive([]), FakeExtractor({}), FakeEmbeddings(), FakeVectorStore(), tmp_path / "manifest.json")
 
