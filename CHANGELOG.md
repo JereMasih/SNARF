@@ -2,6 +2,14 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-05] Fase I (Ops/Custom) de la expansión "Inteligencia Ejecutiva" — cierra la Fase I completa
+
+- Vault Cleanup confirmado sin código nuevo (`data_backup.py` + purga de audio, ya existentes). Rama que el plan original marcaba con la captura de referencia parcialmente tapada — consultado al fundador, pidió que se generen las skills operativas reales que hacen falta hoy, con criterio propio.
+- `snarf/runtime/ops_health.py::system_health()` (tool `ops_system_health`): diagnóstico real consolidado — disponibilidad de LLM/Google, llamadas y errores recientes reales, tamaño real en disco de `data/` — reúne señales ya existentes, nunca inventa una cifra. `data_backup.backup_now()` expuesto como tool (`ops_backup_now`) para backups a pedido, sin esperar hasta 6hs. Deliberadamente NO se expone `restore_latest()` — sobreescribe datos en vivo, queda manual.
+- Bug real evitado: los paths default de `backup_now()` se resuelven al definirse la función, no en cada llamada — un test que monkeypercheaba solo la constante de módulo hubiera escrito un snapshot real durante la suite; corregido parcheando la función en sí.
+- 917/917 tests (6 nuevos). Ver ADR 0110.
+- **Cierra la Fase I completa** (las 9 ramas) y con eso el plan de expansión "Inteligencia Ejecutiva" completo (Fases A-I): mapa, gobernanza, Knowledge Layer, servidor MCP, los 7 roles asesores, el Harness, el Skill Framework, la Skill Factory operativa, y las 9 ramas de capacidades reales.
+
 ## [2026-08-05] Fase I (Agency) de la expansión "Inteligencia Ejecutiva"
 
 - `ClientStatusSpecialist` (`snarf/specialists/agency/`), único código genuinamente nuevo de la rama: a diferencia de Sponsor Pitch Deck/Scope-of-Work/Deliverable QA/Retainer Renewal Brief (ya cubiertos sin código nuevo, mismo criterio que Proposal Drafts en Sales), parte de datos reales y estructurados de un Proyecto (`ProjectManager.get()`) — nunca inventa un avance no reflejado en tareas/notas reales. Tool nuevo `agency_client_status`.

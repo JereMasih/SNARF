@@ -392,6 +392,18 @@ def _telemetry_cost_summary(i, r):
     return None
 
 
+def _ops_system_health(i, r):
+    if isinstance(r, dict):
+        return _truncate(f"LLM {'ok' if r.get('llm_available') else 'caído'}, {r.get('recent_error_count', 0)} errores recientes")
+    return None
+
+
+def _ops_backup_now(i, r):
+    if isinstance(r, dict):
+        return _truncate(f"backup en {r.get('snapshot', '')}")
+    return None
+
+
 # --- notion ------------------------------------------------------------
 
 
@@ -404,6 +416,8 @@ DETAIL_EXTRACTORS = {
     "get_current_datetime": _get_current_datetime,
     "measure_text_length": _measure_text_length,
     "telemetry_cost_summary": _telemetry_cost_summary,
+    "ops_system_health": _ops_system_health,
+    "ops_backup_now": _ops_backup_now,
     # memory
     "list_conversations": _list_count("conversaciones"),
     "get_conversation": _get_conversation,

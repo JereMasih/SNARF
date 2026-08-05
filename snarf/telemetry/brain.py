@@ -104,6 +104,11 @@ TOOL_TO_NODE: dict[str, str] = {
     "community_post_message": "specialist_community",
     # Fase I, rama Agency.
     "agency_client_status": "specialist_agency",
+    # Fase I, rama Ops/Custom — capability cruda (diagnóstico/backup), no un
+    # Especialista Cognitivo: cae en el tier "capability", mismo criterio
+    # que telemetry_cost_summary (utility).
+    "ops_system_health": "utility",
+    "ops_backup_now": "utility",
     # Proyectos tenía las 14 tools de este Especialista cayendo en un único
     # nodo — de lejos el más cargado del cerebro, y el más opaco: no se veía
     # QUÉ parte de Proyectos estaba realmente activa. Separado en 3 nodos

@@ -37,7 +37,7 @@ from snarf.knowledge.indexer import KnowledgeIndexer
 from snarf.knowledge.local_repo_source import LocalRepoKnowledgeSource
 from snarf.knowledge.vector_store import VectorStore
 from snarf.memory.episodic import EpisodicMemory
-from snarf.runtime import llm_routing, personality_prefs, user_profile
+from snarf.runtime import data_backup, llm_routing, ops_health, personality_prefs, user_profile
 from snarf.executive.specialist import ExecutiveBoardSpecialist
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
@@ -693,6 +693,27 @@ TOOLS = [
             "properties": {"project_id": {"type": "string"}},
             "required": ["project_id"],
         },
+    },
+    {
+        "name": "ops_system_health",
+        "description": (
+            "Diagnóstico real del sistema ahora mismo: disponibilidad real de LLM/Google, cuántas "
+            "llamadas recientes reales del Orchestrator hubo y cuántas fallaron, tamaño real en "
+            "disco de data/. Reúne señales que ya se registran, nunca inventa una cifra nueva."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"n": {"type": "integer", "description": "Cantidad de llamadas recientes a revisar. Default 50."}},
+        },
+    },
+    {
+        "name": "ops_backup_now",
+        "description": (
+            "Dispara un backup real ahora mismo (normalmente corre solo cada 6hs) — copia memoria "
+            "episódica, logs, preferencias, Proyectos, etc. a data_backups/ con timestamp. Aditivo, "
+            "nunca toca los datos en vivo, no requiere confirmación."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
     },
     {
         "name": "gmail_send_message",
@@ -1658,6 +1679,12 @@ class Orchestrator:
             "community_pulse": lambda i: self._community_pulse.pulse(i.get("message_limit", 100)),
             "community_post_message": self._tool_community_post_message,
             "agency_client_status": lambda i: self._client_status.generate(i["project_id"]),
+            "ops_system_health": lambda i: ops_health.system_health(
+                llm_available=self._llm.available,
+                google_available=self._drive.available,
+                recent_activity=activity_log.recent(i.get("n", 50)),
+            ),
+            "ops_backup_now": lambda i: {"snapshot": str(data_backup.backup_now())},
             "drive_index_scan": lambda i: self._drive_indexer.scan(query=i.get("query")),
             "drive_index_catalog_unsupported": lambda i: self._drive_indexer.catalog_unsupported(query=i.get("query")),
             "drive_index_start": lambda i: self._drive_indexer.start(query=i.get("query")),

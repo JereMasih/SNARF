@@ -751,6 +751,26 @@ def test_community_post_message_with_confirmed_calls_discord(orchestrator, monke
     assert result == {"id": "m1", "content": "hola"}
 
 
+def test_ops_system_health_reflects_real_orchestrator_state(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    result = orchestrator._handle_tool("ops_system_health", {"n": 10})
+    assert result["llm_available"] is True
+    assert "recent_call_count" in result
+
+
+def test_ops_backup_now_triggers_a_real_backup(orchestrator, monkeypatch, tmp_path):
+    # data_backup.backup_now() resuelve sus paths default (DATA_DIR/
+    # BACKUP_DIR) al momento de DEFINIRSE la función, no en cada llamada —
+    # monkeypatchear esas constantes de módulo no alcanza para aislar el
+    # test del disco real. Se parchea la función en sí.
+    from snarf.runtime import data_backup
+
+    fake_snapshot = tmp_path / "snap1"
+    monkeypatch.setattr(data_backup, "backup_now", lambda: fake_snapshot)
+    result = orchestrator._handle_tool("ops_backup_now", {})
+    assert result == {"snapshot": str(fake_snapshot)}
+
+
 def test_drive_read_file_delegates_to_the_content_extractor_not_raw_bytes(orchestrator, monkeypatch):
     # Regresión: antes llamaba directo a GoogleDrive.read_file_text(), que
     # decodifica cualquier binario (PDF, Word, imagen) como UTF-8 a lo
