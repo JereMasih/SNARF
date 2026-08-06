@@ -11,7 +11,7 @@ def test_skill_proposals_reflects_a_real_build(client, monkeypatch, tmp_path):
     import app as app_module
 
     monkeypatch.setattr(app_module.orchestrator.skill_factory, "_proposals_dir", tmp_path / "skill_proposals")
-    monkeypatch.setattr(app_module.orchestrator.skill_factory, "_claude_code", _FakeAvailableClaudeCode())
+    monkeypatch.setattr(app_module.orchestrator.skill_factory, "_code_writer", _FakeAvailableCodeWriter())
     monkeypatch.setattr(app_module.orchestrator.skill_factory, "_git_dirty_files_fn", lambda: set())
     monkeypatch.setattr(app_module.orchestrator.skill_factory, "_run_tests_fn", lambda: {"passed": True, "output": "ok"})
 
@@ -29,10 +29,10 @@ def test_skill_proposal_detail_for_an_unknown_id(client):
     assert "error" in res.json()
 
 
-class _FakeAvailableClaudeCode:
+class _FakeAvailableCodeWriter:
     available = True
 
-    def run(self, prompt):
-        from snarf.capabilities.claude_code import ClaudeCodeResult
+    def run(self, prompt, allowed_write_paths, allowed_edit_paths):
+        from snarf.capabilities.local_code_writer import LocalCodeWriterResult
 
-        return ClaudeCodeResult(ok=True, result_text="listo", session_id="s1", cost_usd=0.01, num_turns=1, raw={})
+        return LocalCodeWriterResult(ok=True, result_text="LISTO", session_id=None, cost_usd=None, num_turns=1, raw={})

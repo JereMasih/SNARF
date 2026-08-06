@@ -73,6 +73,13 @@ ROLES = (
     "books_categorize",
     # Fase I, rama Agency.
     "client_status",
+    # Motor de escritura de código de la Skill Factory (ver ADR 0095/0102/
+    # 0130) — reemplaza al CLI real de Claude Code, que no tiene forma
+    # soportada de apuntar a un modelo no-Claude. Mismo criterio que el
+    # resto: elegible desde Configuración sin tocar código: si el default
+    # rápido no alcanza para código real, cambiar acá a mlx_local/
+    # mlx_local_mid (más capaces, más lentos) sin reiniciar el server.
+    "skill_factory_writer",
 )
 
 # Definida acá arriba (no junto a MLX_LOCAL_FAST_BASE_URL más abajo, donde
@@ -116,6 +123,7 @@ DEFAULT_ROUTING = {
     "sponsor_inbox_triage": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
     "books_categorize": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
     "client_status": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
+    "skill_factory_writer": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
 }
 
 # Cada proveedor mapea a una de las 3 Capacidades reales. xai/groq_llama

@@ -9,6 +9,13 @@ from snarf.capabilities.base import Capability
 from snarf.telemetry import detail, usage_tracker
 
 MAX_TOOL_ROUNDS = 5
+# Default correcto para el chat interactivo (latencia real importa ahí) —
+# generate() acepta max_tool_rounds como parámetro (mismo default acá) para
+# que un uso de background sin restricción de latencia (ej.
+# snarf/capabilities/local_code_writer.py, que corre una construcción real
+# de la Skill Factory tras una confirmación explícita) pueda pedir un
+# presupuesto de rondas mayor sin tocar este default global.
+#
 # Runtimes locales (ej. mlx_lm.server, el server OpenAI-compatible de MLX —
 # ver llm_routing.PROVIDER_PRESETS) no exigen ninguna key real. El cliente
 # openai.OpenAI() sigue necesitando *algo* no-vacío en api_key para
@@ -217,6 +224,7 @@ class OpenAICompatibleLLM(Capability):
         messages: list[dict],
         tools: list[dict] | None = None,
         tool_handler: Callable[[str, dict], object] | None = None,
+        max_tool_rounds: int = MAX_TOOL_ROUNDS,
     ) -> LLMResponse:
         if not self._client:
             raise RuntimeError(f"{self._api_key_env} no configurada. Definila en .env (ver .env.example).")
@@ -226,7 +234,7 @@ class OpenAICompatibleLLM(Capability):
             chat_messages.append({"role": m["role"], "content": _translate_content(m["content"])})
         chat_tools = _translate_tools(tools) if tools else None
 
-        for _ in range(MAX_TOOL_ROUNDS):
+        for _ in range(max_tool_rounds):
             kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, messages=chat_messages)
             if chat_tools:
                 kwargs["tools"] = chat_tools

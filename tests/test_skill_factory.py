@@ -1,28 +1,28 @@
-from snarf.capabilities.claude_code import ClaudeCodeResult
+from snarf.capabilities.local_code_writer import LocalCodeWriterResult
 from snarf.specialists.skill_factory import SkillFactorySpecialist
 
 
-class _FakeClaudeCode:
+class _FakeCodeWriter:
     available = True
 
-    def __init__(self, result: ClaudeCodeResult):
+    def __init__(self, result: LocalCodeWriterResult):
         self._result = result
         self.calls = []
 
-    def run(self, prompt: str) -> ClaudeCodeResult:
-        self.calls.append(prompt)
+    def run(self, prompt: str, allowed_write_paths: set, allowed_edit_paths: set) -> LocalCodeWriterResult:
+        self.calls.append((prompt, allowed_write_paths, allowed_edit_paths))
         return self._result
 
 
-def _ok_result(**overrides) -> ClaudeCodeResult:
-    base = dict(ok=True, result_text="listo", session_id="s1", cost_usd=0.05, num_turns=4, raw={})
+def _ok_result(**overrides) -> LocalCodeWriterResult:
+    base = dict(ok=True, result_text="LISTO", session_id=None, cost_usd=None, num_turns=6, raw={})
     base.update(overrides)
-    return ClaudeCodeResult(**base)
+    return LocalCodeWriterResult(**base)
 
 
 def _factory(
     tmp_path,
-    claude_code=None,
+    code_writer=None,
     dirty_files_sequence=None,
     tests_pass=True,
     restart_calls=None,
@@ -40,7 +40,7 @@ def _factory(
             restart_calls.append(True)
 
     return SkillFactorySpecialist(
-        claude_code=claude_code or _FakeClaudeCode(_ok_result()),
+        code_writer=code_writer or _FakeCodeWriter(_ok_result()),
         repo_root=tmp_path,
         git_dirty_files_fn=dirty_files_fn,
         run_tests_fn=run_tests_fn,
@@ -69,10 +69,44 @@ def test_build_skill_within_scope_succeeds(tmp_path):
     assert manifest["status"] == "built"
 
 
+def test_build_skill_passes_the_scoped_allowed_paths_to_the_code_writer(tmp_path):
+    writer = _FakeCodeWriter(_ok_result())
+    factory = _factory(
+        tmp_path,
+        code_writer=writer,
+        dirty_files_sequence=[
+            set(),
+            {
+                "snarf/specialists/research/x.py",
+                "tests/test_x.py",
+                "snarf/core/orchestrator.py",
+                "snarf/telemetry/brain.py",
+                "snarf/telemetry/verbs.py",
+                "snarf/telemetry/detail.py",
+            },
+        ],
+    )
+
+    factory.build_skill("research", "x", "algo")
+
+    _, allowed_write_paths, allowed_edit_paths = writer.calls[0]
+    assert allowed_write_paths == {
+        "snarf/specialists/research/x.py",
+        "snarf/specialists/research/__init__.py",
+        "tests/test_x.py",
+    }
+    assert allowed_edit_paths == {
+        "snarf/core/orchestrator.py",
+        "snarf/telemetry/brain.py",
+        "snarf/telemetry/verbs.py",
+        "snarf/telemetry/detail.py",
+    }
+
+
 def test_build_skill_tolerates_preexisting_dirty_files_from_another_session(tmp_path):
     # El working tree YA tenía cambios reales sin commitear de otra sesión
-    # antes de esta construcción — no deben contarse como "tocados" por
-    # Claude Code, ni disparar un abort falso.
+    # antes de esta construcción — no deben contarse como "tocados" por el
+    # motor de escritura, ni disparar un abort falso.
     before = {"snarf/runtime/llm_routing.py", "app.py"}
     after = before | {
         "snarf/specialists/finance/receipts_tracker.py",
@@ -149,28 +183,41 @@ def test_build_skill_fails_when_the_real_test_suite_does_not_pass(tmp_path):
     assert "test_output" in result
 
 
-def test_build_skill_fails_honestly_when_claude_code_itself_fails(tmp_path):
-    broken = _FakeClaudeCode(ClaudeCodeResult(ok=False, result_text="crédito agotado", session_id=None, cost_usd=None, num_turns=None, raw={}))
-    factory = _factory(tmp_path, claude_code=broken, dirty_files_sequence=[set(), set()])
+def test_build_skill_fails_honestly_when_the_code_writer_itself_fails(tmp_path):
+    # Mismo criterio que antes con Claude Code: si el motor no termina con
+    # éxito (acá, típico de un modelo local: se quedó sin rondas de
+    # herramientas sin terminar, ver LocalCodeWriter.MAX_BUILD_TOOL_ROUNDS),
+    # el fracaso se muestra tal cual, nunca se disimula.
+    broken = _FakeCodeWriter(
+        LocalCodeWriterResult(
+            ok=False,
+            result_text="[demasiadas consultas a herramientas, no llegué a una respuesta final]",
+            session_id=None,
+            cost_usd=None,
+            num_turns=40,
+            raw={},
+        )
+    )
+    factory = _factory(tmp_path, code_writer=broken, dirty_files_sequence=[set(), set()])
 
     result = factory.build_skill("research", "x", "algo")
 
     assert result["status"] == "failed"
-    assert "crédito agotado" in result["reason"]
+    assert "demasiadas consultas" in result["reason"]
 
 
-def test_build_skill_fails_when_claude_code_is_not_available(tmp_path):
+def test_build_skill_fails_when_the_code_writer_is_not_available(tmp_path):
     class _Unavailable:
         available = False
 
     factory = SkillFactorySpecialist(
-        claude_code=_Unavailable(), repo_root=tmp_path, proposals_dir=tmp_path / "skill_proposals"
+        code_writer=_Unavailable(), repo_root=tmp_path, proposals_dir=tmp_path / "skill_proposals"
     )
 
     result = factory.build_skill("research", "x", "algo")
 
     assert result["status"] == "failed"
-    assert "no está instalado" in result["reason"]
+    assert "no está disponible" in result["reason"]
 
 
 def test_activate_requires_a_built_proposal(tmp_path):

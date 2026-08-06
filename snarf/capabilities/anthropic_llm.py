@@ -213,6 +213,7 @@ class AnthropicLLM(Capability):
         messages: list[dict],
         tools: list[dict] | None = None,
         tool_handler: Callable[[str, dict], object] | None = None,
+        max_tool_rounds: int = MAX_TOOL_ROUNDS,
     ) -> LLMResponse:
         if not self._client:
             raise RuntimeError(
@@ -233,7 +234,7 @@ class AnthropicLLM(Capability):
         ]
 
         conversation = list(messages)
-        for _ in range(MAX_TOOL_ROUNDS):
+        for _ in range(max_tool_rounds):
             call_messages = list(conversation)
             if call_messages:
                 # Segundo punto de cacheo: el historial de la conversación

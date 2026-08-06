@@ -25,6 +25,7 @@ data/telemetry_events.jsonl
 data/input_preprocessing_log.jsonl
 data/audio/
 data/calendar_brief/
+data/morning_routine/
 data/executive_board/
 data/knowledge/
 data/skill_proposals/

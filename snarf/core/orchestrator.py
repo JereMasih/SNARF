@@ -12,7 +12,7 @@ from snarf.capabilities.anthropic_llm import (
     LLMResponse,
     fallback_speech,
 )
-from snarf.capabilities.claude_code import ClaudeCode
+from snarf.capabilities.local_code_writer import LocalCodeWriter
 from snarf.capabilities.discord import Discord
 from snarf.capabilities.docx_extractor import DocxExtractor
 from snarf.capabilities.document_builder import DocumentBuilder
@@ -1077,16 +1077,19 @@ TOOLS = [
     {
         "name": "skill_factory_build",
         "description": (
-            "ALTO IMPACTO. Construye una skill nueva de verdad, invocando a Claude Code (ver ADR "
-            "0095/0102) — crea un módulo Specialist nuevo, su test, y suma el tool correspondiente "
-            "al Orchestrator, siguiendo el Skill Framework (ADR 0101). Solo llamala después de "
-            "conversar vos mismo con el fundador para juntar la especificación (rama, nombre, "
-            "descripción, y las aclaraciones que hagan falta) — vos hacés esa conversación en tu "
-            "propia voz, nunca esta herramienta. Alcance estrictamente acotado a construir/activar "
-            "una skill nueva: nunca edita FOUNDATION/CONSTITUTION/CHARACTER/COGNITION/MASTER_MAP ni "
-            "código fuera de ese flujo — si Claude Code se sale de ese alcance, la construcción se "
-            "aborta sola y te lo informa. Cada construcción es una confirmación nueva, nunca se "
-            "recuerda un 'sí' de una vez anterior."
+            "ALTO IMPACTO. Construye una skill nueva de verdad, con el modelo local del fundador como "
+            "motor de escritura (ver ADR 0095/0102/0130) — crea un módulo Specialist nuevo, su test, "
+            "y suma el tool correspondiente al Orchestrator, siguiendo el Skill Framework (ADR "
+            "0101). Solo llamala después de conversar vos mismo con el fundador para juntar la "
+            "especificación (rama, nombre, descripción, y las aclaraciones que hagan falta) — vos "
+            "hacés esa conversación en tu propia voz, nunca esta herramienta. Alcance estrictamente "
+            "acotado a construir/activar una skill nueva: nunca edita FOUNDATION/CONSTITUTION/"
+            "CHARACTER/COGNITION/MASTER_MAP ni código fuera de ese flujo — si el motor se sale de ese "
+            "alcance, la construcción se aborta sola y te lo informa. Al ser un modelo local (más "
+            "barato pero menos confiable que un modelo grande), esperá que falle más seguido que un "
+            "pedido de código común — si devuelve status='failed' o 'aborted', mostrale el motivo "
+            "real al fundador, nunca lo disimules. Cada construcción es una confirmación nueva, "
+            "nunca se recuerda un 'sí' de una vez anterior."
         ),
         "input_schema": {
             "type": "object",
@@ -1801,12 +1804,16 @@ class Orchestrator:
         self._executive_board = ExecutiveBoardSpecialist(
             llm_factory_for_role=lambda role: llm_routing.build_resilient_llm(f"executive_{role}"), user_id=user_id
         )
-        # Skill Factory (Fase H, ver ADR 0095/0102): Snarf construyendo y
-        # activando una skill nueva de verdad, invocando a Claude Code —
+        # Skill Factory (Fase H, ver ADR 0095/0102/0130): Snarf construyendo y
+        # activando una skill nueva de verdad, con el modelo local del
+        # fundador como motor de escritura (ADR 0130 — el CLI de Claude Code
+        # no tiene forma soportada de apuntar a un modelo no-Claude) —
         # alcance estrecho y nombrado, cada construcción quema su propia
         # confirmación (Constitution Art. VII, nunca una delegación general).
-        self._claude_code = ClaudeCode(cwd=Path.cwd())
-        self._skill_factory = SkillFactorySpecialist(claude_code=self._claude_code, repo_root=Path.cwd())
+        self._code_writer = LocalCodeWriter(
+            llm_factory=lambda: llm_routing.build_resilient_llm("skill_factory_writer"), repo_root=Path.cwd()
+        )
+        self._skill_factory = SkillFactorySpecialist(code_writer=self._code_writer, repo_root=Path.cwd())
 
         self._tool_handlers = {
             "get_current_datetime": lambda i: self._tool_get_current_datetime(),

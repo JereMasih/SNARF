@@ -77,6 +77,7 @@ class GeminiLLM(Capability):
         messages: list[dict],
         tools: list[dict] | None = None,
         tool_handler: Callable[[str, dict], object] | None = None,
+        max_tool_rounds: int = MAX_TOOL_ROUNDS,
     ) -> LLMResponse:
         if not self._client:
             raise RuntimeError("GEMINI_API_KEY no configurada. Definila en .env (ver .env.example).")
@@ -91,7 +92,7 @@ class GeminiLLM(Capability):
         if tools:
             config_kwargs["tools"] = _translate_tools(tools)
 
-        for _ in range(MAX_TOOL_ROUNDS):
+        for _ in range(max_tool_rounds):
             response = self._client.models.generate_content(
                 model=self.model, contents=contents, config=types.GenerateContentConfig(**config_kwargs)
             )

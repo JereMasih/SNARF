@@ -2,6 +2,27 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-06] Skill Factory: motor de escritura local, en vez del CLI de Claude Code (ADR 0130)
+
+- Pedido real del fundador tras quedarse sin crédito de la API de Anthropic en un intento real de
+  construir una skill. Investigado en vivo antes de tocar código: el CLI de Claude Code no tiene
+  ninguna forma soportada de apuntar a un modelo no-Claude (`--model` solo acepta Claude real;
+  Bedrock/Vertex/Foundry siguen siendo Claude, solo cambia la nube) — "hacer que Claude Code use el
+  modelo local" no era una opción real, así que se reemplazó el motor entero.
+- `snarf/capabilities/local_code_writer.py::LocalCodeWriter` reemplaza a `ClaudeCode` (eliminado):
+  mismo shape de resultado, pero con un loop de herramientas angosto (`read_file`/`write_file`
+  restringido a archivos nuevos/`edit_file` restringido a los 4 de wiring con reemplazo exacto de
+  string, nunca reescritura ciega/`run_tests`) en vez de una sesión agéntica de propósito general —
+  el alcance que antes solo se verificaba después por diff de git ahora también se gatea en el
+  momento. La doble verificación real de `SkillFactorySpecialist.build_skill()` (diff + suite
+  completa) sigue exactamente igual, independiente de qué motor escribió el código.
+- `generate()` de las 3 Capacidades de LLM ahora acepta `max_tool_rounds` opcional (default sin
+  cambios) — una construcción de skill en background ya no comparte el presupuesto de 5 rondas
+  pensado para la latencia del chat interactivo.
+- Rol nuevo `skill_factory_writer` en `llm_routing`, default local — configurable desde Configuración
+  como cualquier otro rol si la calidad no alcanza.
+- 1045/1045 tests. Ver ADR 0130.
+
 ## [2026-08-06] `morning_routine`: Especialista nuevo para la rutina del día (ADR 0129)
 
 - **Causa raíz real, no solo el síntoma**: revisando la conversación real de esta misma jornada, el
