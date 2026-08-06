@@ -33,6 +33,7 @@ from snarf.capabilities.xlsx_extractor import XlsxExtractor
 from snarf.core.identity import load_identity
 from snarf.knowledge.document_publisher import DocumentPublisher
 from snarf.knowledge.drive_indexer import DriveIndexer
+from snarf.knowledge.episodic_conversation_source import EpisodicConversationSource
 from snarf.knowledge.extraction import ContentExtractor
 from snarf.knowledge.indexer import KnowledgeIndexer
 from snarf.knowledge.local_repo_source import LocalRepoKnowledgeSource
@@ -920,9 +921,11 @@ TOOLS = [
         "description": (
             "Búsqueda semántica sobre un dominio real de la Knowledge Layer (ver KNOWLEDGE.md). "
             "domain='personal' busca sobre Drive ya indexado (mismo motor que drive_search_knowledge); "
-            "domain='code' busca sobre el propio repositorio de Snarf. Los demás dominios (business/"
-            "trading/marketing/finance) todavía no tienen fuente real conectada — devuelve eso "
-            "explícito en vez de inventar resultados."
+            "domain='code' busca sobre el propio repositorio de Snarf; domain='conversations' busca "
+            "sobre el propio historial de conversaciones (mismo motor que conversations_search, sin "
+            "filtro por proyecto acá — usar conversations_search si hace falta filtrar). Los demás "
+            "dominios (business/trading/marketing/finance) todavía no tienen fuente real conectada — "
+            "devuelve eso explícito en vez de inventar resultados."
         ),
         "input_schema": {
             "type": "object",
@@ -930,7 +933,7 @@ TOOLS = [
                 "query": {"type": "string"},
                 "domain": {
                     "type": "string",
-                    "enum": ["personal", "code", "business", "trading", "marketing", "finance"],
+                    "enum": ["personal", "code", "conversations", "business", "trading", "marketing", "finance"],
                 },
                 "top_k": {"type": "integer"},
             },
@@ -938,16 +941,36 @@ TOOLS = [
         },
     },
     {
-        "name": "knowledge_index_start",
+        "name": "conversations_search",
         "description": (
-            "Arranca (o reanuda) en segundo plano la indexación de un dominio de la Knowledge Layer. "
-            "Hoy solo domain='code' tiene una fuente real conectable por esta vía (el propio "
-            "repositorio) — domain='personal' se indexa con drive_index_start, no acá. Sin costo "
-            "real de vendor más allá de embeddings (Voyage)."
+            "Búsqueda semántica sobre el propio historial de conversaciones de Snarf (dominio "
+            "'conversations' de la Knowledge Layer, ver KNOWLEDGE.md) — cada conversación completa es "
+            "un ítem indexable, no mensaje por mensaje. `project_id` es opcional: si se pasa, acota la "
+            "búsqueda solo a conversaciones asignadas a ese proyecto (mismo project_id real de "
+            "project_list/project_get). Requiere haber indexado antes con "
+            "knowledge_index_start(domain='conversations')."
         ),
         "input_schema": {
             "type": "object",
-            "properties": {"domain": {"type": "string", "enum": ["code"]}},
+            "properties": {
+                "query": {"type": "string"},
+                "project_id": {"type": "string", "description": "Opcional — acota a un proyecto real."},
+                "top_k": {"type": "integer"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "knowledge_index_start",
+        "description": (
+            "Arranca (o reanuda) en segundo plano la indexación de un dominio de la Knowledge Layer. "
+            "domain='code' (el propio repositorio) y domain='conversations' (el propio historial) "
+            "tienen una fuente real conectable por esta vía — domain='personal' se indexa con "
+            "drive_index_start, no acá. Sin costo real de vendor más allá de embeddings (Voyage)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"domain": {"type": "string", "enum": ["code", "conversations"]}},
             "required": ["domain"],
         },
     },
@@ -956,7 +979,7 @@ TOOLS = [
         "description": "Progreso de la indexación de un dominio de la Knowledge Layer en curso (o de la última corrida).",
         "input_schema": {
             "type": "object",
-            "properties": {"domain": {"type": "string", "enum": ["code"]}},
+            "properties": {"domain": {"type": "string", "enum": ["code", "conversations"]}},
             "required": ["domain"],
         },
     },
@@ -1520,6 +1543,11 @@ def profile_identity_instruction(name: str | None) -> str:
 # ronda: una sola llamada re-cacheó 523.869 tokens por esto).
 HISTORY_REPLAY_MAX_CHARS = 8000
 
+# Ver _summarize_history_entry — tope duro sobre el tamaño de lo que se le
+# manda al rol history_compaction, independiente del umbral de arriba (que
+# solo decide CUÁNDO compactar, nunca cuánto puede pesar la entrada).
+HISTORY_COMPACTION_INPUT_MAX_CHARS = 32000
+
 
 HISTORY_COMPACTION_SYSTEM_PROMPT = (
     "Vas a recibir un mensaje largo: una entrada vieja del historial de una conversación real "
@@ -1642,6 +1670,21 @@ class Orchestrator:
             embeddings=VoyageEmbeddings(),
             vector_store=VectorStore(persist_directory=str(code_index_dir / "chroma"), collection_name="code"),
             manifest_path=code_index_dir / "manifest.json",
+        )
+        # Segundo dominio nuevo desde 'code' (ADR de esta ronda): el propio
+        # historial de conversaciones, mismo precedente exacto — costo cero
+        # más allá de embeddings, EpisodicMemory ya es la fuente de verdad
+        # real, sin llamada de red para leer contenido. 'project_id' viaja
+        # como metadata real por conversación (ver EpisodicConversationSource)
+        # para poder filtrar la búsqueda por proyecto sin un dominio aparte.
+        conversations_index_dir = KNOWLEDGE_DATA_DIR / user_id / "conversations"
+        self._conversations_indexer = KnowledgeIndexer(
+            source=EpisodicConversationSource(self._memory),
+            embeddings=VoyageEmbeddings(),
+            vector_store=VectorStore(
+                persist_directory=str(conversations_index_dir / "chroma"), collection_name="conversations"
+            ),
+            manifest_path=conversations_index_dir / "manifest.json",
         )
         self._document_publisher = DocumentPublisher(
             builder=DocumentBuilder(),
@@ -1791,6 +1834,10 @@ class Orchestrator:
             "drive_index_stop": lambda i: self._drive_indexer.stop(),
             "drive_search_knowledge": lambda i: self._drive_indexer.search(i["query"], top_k=i.get("top_k", 5)),
             "codebase_search": lambda i: self._code_indexer.search(i["query"], top_k=i.get("top_k", 5)),
+            "conversations_search": lambda i: self._conversations_indexer.search(
+                i["query"], top_k=i.get("top_k", 5),
+                where={"project_id": i["project_id"]} if i.get("project_id") else None,
+            ),
             "knowledge_search": lambda i: self._tool_knowledge_search(i),
             "knowledge_index_start": lambda i: self._knowledge_index_start(i["domain"]),
             "knowledge_index_status": lambda i: self._knowledge_index_status(i["domain"]),
@@ -1894,6 +1941,10 @@ class Orchestrator:
         return self._code_indexer
 
     @property
+    def conversations_indexer(self) -> KnowledgeIndexer:
+        return self._conversations_indexer
+
+    @property
     def document_publisher(self) -> DocumentPublisher:
         return self._document_publisher
 
@@ -1918,9 +1969,10 @@ class Orchestrator:
         return result.text
 
     # Dominios reales de la Knowledge Layer generalizada (ver KNOWLEDGE.md) —
-    # 'personal' sigue sirviéndose de DriveIndexer sin cambios; 'code' es el
-    # nuevo motor genérico. El resto todavía no tiene fuente real conectada:
-    # se declara explícito en vez de fabricar un resultado (Principio VI).
+    # 'personal' sigue sirviéndose de DriveIndexer sin cambios; 'code' y
+    # 'conversations' (ADR de esta ronda) usan el motor genérico
+    # KnowledgeIndexer. El resto todavía no tiene fuente real conectada: se
+    # declara explícito en vez de fabricar un resultado (Principio VI).
     _KNOWLEDGE_DOMAINS_WITHOUT_SOURCE_YET = ("business", "trading", "marketing", "finance")
 
     def _tool_knowledge_search(self, i: dict) -> dict | list[dict]:
@@ -1931,6 +1983,8 @@ class Orchestrator:
             return self._drive_indexer.search(query, top_k=top_k)
         if domain == "code":
             return self._code_indexer.search(query, top_k=top_k)
+        if domain == "conversations":
+            return self._conversations_indexer.search(query, top_k=top_k)
         return {
             "error": (
                 f"El dominio '{domain}' todavía no tiene una fuente real conectada en la Knowledge "
@@ -1941,6 +1995,8 @@ class Orchestrator:
     def _knowledge_index_start(self, domain: str) -> dict:
         if domain == "code":
             return self._code_indexer.start()
+        if domain == "conversations":
+            return self._conversations_indexer.start()
         return {
             "error": (
                 f"Indexación no disponible todavía para domain='{domain}' por esta vía. "
@@ -1951,6 +2007,8 @@ class Orchestrator:
     def _knowledge_index_status(self, domain: str) -> dict:
         if domain == "code":
             return self._code_indexer.status()
+        if domain == "conversations":
+            return self._conversations_indexer.status()
         return {"error": f"Sin indexador real para domain='{domain}' todavía."}
 
     @staticmethod
@@ -2185,6 +2243,16 @@ class Orchestrator:
         return summary
 
     def _summarize_history_entry(self, text: str) -> str:
+        # Tope duro ANTES de intentar compactar vía LLM: una entrada extrema
+        # (ej. una respuesta anterior con el volcado completo de un resultado
+        # de herramienta gigante) puede superar los ~20K tokens — mandarle eso
+        # entero al rol history_compaction (modelo rápido local, mlx_lm.server
+        # en esta misma Mac) tumbó el server real por out-of-memory de Metal
+        # (ver ADR de esta ronda: 31GB de RAM real, casi toda la Mac). Por
+        # encima de este tope se corta directo, sin pasar por el LLM — no hay
+        # forma segura de "compactar" algo tan grande con un modelo de 4B.
+        if len(text) > HISTORY_COMPACTION_INPUT_MAX_CHARS:
+            return _hard_cut_for_replay(text)
         try:
             llm = llm_routing.build_resilient_llm("history_compaction")
             if not llm.available:
@@ -2266,29 +2334,43 @@ class Orchestrator:
                 # tamaños ya calculados acá mismo.
                 input_preprocessing.record(conversation_id, user_input, len(system), history_chars, history_entries)
                 generate_kwargs = {"system": system, "messages": messages, "tools": TOOLS, "tool_handler": self._handle_tool}
-                try:
-                    response = self._llm.generate(**generate_kwargs)
-                except Exception as exc:
-                    # Fallback automático real (ver llm_routing.attempt_fallback
-                    # y ADR de esta ronda): un fallo real de PROVEEDOR (crédito
-                    # agotado, rate limit, 5xx) reintenta solo con el siguiente
-                    # proveedor disponible antes de rendirse. self._llm no está
-                    # envuelto acá (ver comentario en attempt_fallback: muchos
-                    # tests reemplazan orchestrator._llm._client/.generate
-                    # directamente) — por eso el intento vive inline.
-                    fallback_response, new_entry = llm_routing.attempt_fallback("orchestrator", llm_routing.load_routing()["orchestrator"], exc, **generate_kwargs)
-                    if fallback_response is not None:
-                        response = fallback_response
-                        self.refresh_llm_routing()  # instancia fija — la próxima ronda ya tiene que usar el proveedor que funcionó
-                    else:
-                        # Antes esto tiraba un 500 crudo hasta /send — un fallo
-                        # real del LLM degrada con gracia igual que /transcribe,
-                        # en vez de romper la request. Se llega acá solo si
-                        # ademas el fallback automático se agotó con todos los
-                        # proveedores disponibles (o el error no era de
-                        # proveedor, ver is_provider_level_error).
-                        error_text = f"[error real del LLM, no pude responder: {exc}]"
-                        response = LLMResponse(text=error_text, speech=fallback_speech(error_text))
+                # Si el rol está en un fallback automático ya vencido (ver
+                # llm_routing.maybe_revert_expired_fallback), reintenta solo
+                # el proveedor local por defecto ANTES de usar el fallback
+                # vigente — chequeo barato (compare de timestamps) salvo que
+                # de verdad corresponda reintentar. self._llm no está
+                # envuelto en _ResilientLLM acá (ver comentario más abajo),
+                # por eso el intento vive inline igual que attempt_fallback.
+                reverted_response, reverted_entry = llm_routing.maybe_revert_expired_fallback(
+                    "orchestrator", llm_routing.load_routing()["orchestrator"], **generate_kwargs
+                )
+                if reverted_response is not None:
+                    response = reverted_response
+                    self.refresh_llm_routing()
+                else:
+                    try:
+                        response = self._llm.generate(**generate_kwargs)
+                    except Exception as exc:
+                        # Fallback automático real (ver llm_routing.attempt_fallback
+                        # y ADR de esta ronda): un fallo real de PROVEEDOR (crédito
+                        # agotado, rate limit, 5xx) reintenta solo con el siguiente
+                        # proveedor disponible antes de rendirse. self._llm no está
+                        # envuelto acá (ver comentario en attempt_fallback: muchos
+                        # tests reemplazan orchestrator._llm._client/.generate
+                        # directamente) — por eso el intento vive inline.
+                        fallback_response, new_entry = llm_routing.attempt_fallback("orchestrator", llm_routing.load_routing()["orchestrator"], exc, **generate_kwargs)
+                        if fallback_response is not None:
+                            response = fallback_response
+                            self.refresh_llm_routing()  # instancia fija — la próxima ronda ya tiene que usar el proveedor que funcionó
+                        else:
+                            # Antes esto tiraba un 500 crudo hasta /send — un fallo
+                            # real del LLM degrada con gracia igual que /transcribe,
+                            # en vez de romper la request. Se llega acá solo si
+                            # ademas el fallback automático se agotó con todos los
+                            # proveedores disponibles (o el error no era de
+                            # proveedor, ver is_provider_level_error).
+                            error_text = f"[error real del LLM, no pude responder: {exc}]"
+                            response = LLMResponse(text=error_text, speech=fallback_speech(error_text))
         finally:
             context.clear_conversation_id()
 
@@ -2317,21 +2399,28 @@ class Orchestrator:
         context.set_conversation_id(conversation_id)
         title_kwargs = {"system": CONVERSATION_TITLE_SYSTEM_PROMPT, "messages": [{"role": "user", "content": listing}]}
         try:
-            try:
-                title = self._title_llm.generate(**title_kwargs).text
-            except Exception as exc:
-                # Mismo fallback automático que el chat principal (ver
-                # attempt_fallback) — un título es de bajo riesgo (nunca
-                # bloquea la respuesta real), pero no hay motivo para
-                # perderlo solo porque el proveedor de este rol se quedó
-                # sin crédito mientras otro sigue disponible.
-                fallback_response, new_entry = llm_routing.attempt_fallback(
-                    "conversation_title", llm_routing.load_routing()["conversation_title"], exc, **title_kwargs
-                )
-                if fallback_response is None:
-                    return
-                title = fallback_response.text
+            reverted_response, reverted_entry = llm_routing.maybe_revert_expired_fallback(
+                "conversation_title", llm_routing.load_routing()["conversation_title"], **title_kwargs
+            )
+            if reverted_response is not None:
+                title = reverted_response.text
                 self.refresh_llm_routing()
+            else:
+                try:
+                    title = self._title_llm.generate(**title_kwargs).text
+                except Exception as exc:
+                    # Mismo fallback automático que el chat principal (ver
+                    # attempt_fallback) — un título es de bajo riesgo (nunca
+                    # bloquea la respuesta real), pero no hay motivo para
+                    # perderlo solo porque el proveedor de este rol se quedó
+                    # sin crédito mientras otro sigue disponible.
+                    fallback_response, new_entry = llm_routing.attempt_fallback(
+                        "conversation_title", llm_routing.load_routing()["conversation_title"], exc, **title_kwargs
+                    )
+                    if fallback_response is None:
+                        return
+                    title = fallback_response.text
+                    self.refresh_llm_routing()
         finally:
             context.clear_conversation_id()
         title = title.strip().strip('"').strip("'").rstrip(".")

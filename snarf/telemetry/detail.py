@@ -454,6 +454,7 @@ DETAIL_EXTRACTORS = {
     "drive_index_stop": _drive_index_stop,
     "drive_search_knowledge": _from_input("query", prefix="buscando en lo indexado:"),
     "codebase_search": _from_input("query", prefix="buscando en el código:"),
+    "conversations_search": _from_input("query", prefix="buscando en el historial:"),
     "knowledge_search": _from_input("query", prefix="buscando en lo indexado:"),
     "knowledge_index_start": _knowledge_index_start,
     "knowledge_index_status": _knowledge_index_status,

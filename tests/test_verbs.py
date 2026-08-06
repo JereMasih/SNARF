@@ -56,3 +56,19 @@ def test_verbo_tematico_applies_the_estado_modifier_to_a_skill_specific_verb():
         verbs.verbo_tematico("gmail_send", "capability", estado="error", skill="gmail_send_message")
         == "tropezando con despachando el correo"
     )
+
+
+# --- resumen_llm (ADR de esta ronda: "openai:mlx-comunity/qwen... no aporta") --
+
+
+def test_resumen_llm_strips_the_huggingface_org_prefix():
+    assert verbs.resumen_llm("mlx-community/Qwen3-4B-Instruct-2507-4bit") == "Qwen3-4B-Instruct-2507-4bit"
+
+
+def test_resumen_llm_keeps_a_plain_model_name_as_is():
+    assert verbs.resumen_llm("claude-haiku-4-5") == "claude-haiku-4-5"
+
+
+def test_resumen_llm_degrades_honestly_without_a_model():
+    assert verbs.resumen_llm(None) == "sin modelo"
+    assert verbs.resumen_llm("") == "sin modelo"

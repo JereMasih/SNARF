@@ -1,5 +1,11 @@
-"""Biblioteca de 24 plantillas visuales para los widgets de Vista HUD (v2 del
-rediseño radial): 3 tamaños (chico/mediano/grande) × 8 variantes cada uno.
+"""Biblioteca de 27 plantillas visuales para los widgets de Vista HUD (v2 del
+rediseño radial): originalmente 3 tamaños × 8 variantes cada uno; sumadas 3
+más (2026-08-05, ver Fase 0 del plan de esa sesión) a partir de propuestas
+reales y repetidas del curador en `data/dashboard_template_proposals.json`
+que señalaban huecos genuinos — no una por cada propuesta cruda: varias eran
+duplicados exactos del mismo pedido no resuelto, y otras ya estaban cubiertas
+por una plantilla existente (el curador no siempre distingue "no existe" de
+"no me la asignaron esta vez", ver Contexto del ADR 0091).
 
 El TAMAÑO de un widget se asigna acá mismo, mecánicamente, a partir del
 ranking real de `relevance.dock_priority()` (`assign_tier`) — nunca por el
@@ -23,6 +29,10 @@ TIER_ORDER = (SMALL, MEDIUM, LARGE)
 # con actividad pero fuera del top curado por el LLM.
 # ---------------------------------------------------------------------------
 _SMALL_TEMPLATES = {
+    "pending_note": {
+        "width": 210, "height": 130, "slots": ["label", "body"],
+        "description": "nota informativa neutra y sin urgencia — datos incompletos o investigación en curso, distinto de alert_detail (que es para errores reales)",
+    },
     "icon_minimal": {
         "width": 130, "height": 130, "slots": ["icon", "caption"],
         "description": "ícono + una línea, para score mínimo",
@@ -62,6 +72,14 @@ _SMALL_TEMPLATES = {
 # comparación, nunca los tres a la vez.
 # ---------------------------------------------------------------------------
 _MEDIUM_TEMPLATES = {
+    "breakdown": {
+        "width": 270, "height": 190, "slots": ["stat_grid", "caption"],
+        "description": "desglose real por sub-categoría (ej. costo por módulo: LLM/TTS/Drive) + caption, sin esperar al tier grande",
+    },
+    "process_state": {
+        "width": 260, "height": 170, "slots": ["label", "stat", "caption"],
+        "description": "estado real de un proceso (activo/pausado/detenido) + contador exacto + por qué importa, neutral (no implica error)",
+    },
     "standard_wide": {
         "width": 270, "height": 150, "slots": ["label", "body", "caption"],
         "description": "título + 2-3 líneas de cuerpo + caption",

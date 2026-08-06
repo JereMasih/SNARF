@@ -5,10 +5,23 @@ import app as app_module
 from snarf.memory.audio_store import AudioStore
 from snarf.memory.episodic import EpisodicMemory
 from snarf.executive import specialist as executive_board_module
+from snarf.runtime import llm_routing
 from snarf.specialists import dashboard_curator as dashboard_curator_module
 from snarf.telemetry import activity_log, events, input_log, input_preprocessing, usage_tracker
 from snarf.voice.providers.kokoro_tts import KokoroTTS
 from snarf.voice.providers.local_stt import LocalWhisperSTT
+
+
+class _UnavailableLLM:
+    """Doble seguro para cualquier Specialist resuelto vía
+    llm_routing.build_resilient_llm que un test no mockeó explícitamente —
+    ver el monkeypatch de build_resilient_llm en el fixture `client` de más
+    abajo para el porqué real."""
+
+    available = False
+
+    def generate(self, **kwargs):
+        raise RuntimeError("LLM no disponible en tests — mockeá explícitamente si este test necesita una respuesta real")
 
 TEST_PASSWORD = "test-password-for-pytest"
 
@@ -29,6 +42,24 @@ def client(tmp_path, monkeypatch):
     # task en el primer turno de cualquier conversación, así que sin este
     # neutralizado los tests de /send dispararían llamadas reales.
     monkeypatch.setattr(app_module.orchestrator._title_llm, "_client", None)
+    # Bug real de hermeticidad encontrado en vivo (2026-08-05, ver ADR 0119 —
+    # quedó señalado ahí y nunca auditado a fondo): TODOS los demás
+    # Specialists (gmail_digest, calendar_brief, project_summary, dashboard_
+    # curator, executive_*, etc.) resuelven su LLM vía
+    # llm_routing.build_resilient_llm(role) — antes del routing-default-a-
+    # mlx_local_fast de esta ronda, esos roles requerían una credencial real
+    # (stripeada por conftest::_no_real_credentials), así que `.available`
+    # daba False sola y cada Specialist degradaba rápido sin que el test
+    # necesitara mockear nada. Ahora que el default no exige credencial,
+    # cualquier test que no mockee el Specialist explícitamente (ej.
+    # GET /projects/{id} generando su resumen la primera vez que se pide)
+    # dispara una llamada REAL contra el server local de producción — con
+    # streaming + timeout más generoso, cuelga varios minutos en vez de
+    # fallar rápido. Este default restaura el comportamiento original
+    # ("no configurado") para cualquier test que no mockee nada puntual;
+    # los que sí necesitan una respuesta real siguen mockeando por encima
+    # de esto (monkeypatch por-test siempre gana sobre el del fixture).
+    monkeypatch.setattr(llm_routing, "build_resilient_llm", lambda role: _UnavailableLLM())
     # Fuerza TODA la capa de voz a "nada disponible" sin importar credenciales
     # reales del .env ni si el contenedor Docker de Kokoro está corriendo en
     # esta máquina — los tests nunca deben depender de un servicio externo
@@ -148,9 +179,39 @@ def test_get_single_conversation(client):
     client.post("/send", json={"text": "hola", "conversation_id": "conv-2"})
     res = client.get("/conversations/conv-2")
     assert res.status_code == 200
-    entries = res.json()
-    assert len(entries) == 1
-    assert entries[0]["input"] == "hola"
+    body = res.json()
+    assert body["has_more"] is False
+    assert len(body["entries"]) == 1
+    assert body["entries"][0]["input"] == "hola"
+
+
+def test_get_conversation_paginates_with_limit_and_reports_has_more(client):
+    for i in range(3):
+        client.post("/send", json={"text": f"mensaje {i}", "conversation_id": "conv-page"})
+    res = client.get("/conversations/conv-page", params={"limit": 2})
+    body = res.json()
+    assert body["has_more"] is True
+    assert [e["input"] for e in body["entries"]] == ["mensaje 1", "mensaje 2"]
+
+
+def test_get_conversation_before_cursor_pages_further_back(client):
+    for i in range(3):
+        client.post("/send", json={"text": f"mensaje {i}", "conversation_id": "conv-page-2"})
+    last_page = client.get("/conversations/conv-page-2", params={"limit": 2}).json()
+    oldest_loaded = last_page["entries"][0]["timestamp"]
+    previous_page = client.get(
+        "/conversations/conv-page-2", params={"limit": 2, "before": oldest_loaded}
+    ).json()
+    assert previous_page["has_more"] is False
+    assert [e["input"] for e in previous_page["entries"]] == ["mensaje 0"]
+
+
+def test_get_conversation_has_more_is_false_when_the_page_covers_everything(client):
+    client.post("/send", json={"text": "único mensaje", "conversation_id": "conv-page-3"})
+    res = client.get("/conversations/conv-page-3", params={"limit": 30})
+    body = res.json()
+    assert body["has_more"] is False
+    assert len(body["entries"]) == 1
 
 
 def test_transcribe_without_credentials_returns_empty_transcript(client):
@@ -352,6 +413,20 @@ def test_dashboard_telemetry_feed_returns_events_with_verb_and_summary(client):
     assert ev["estado"] == "completo"
 
 
+def test_dashboard_telemetry_feed_formats_the_llm_summary_without_the_raw_vendor_string(client):
+    # Bug real señalado por el fundador: "openai:mlx-comunity/qwen.... no
+    # aporta" — el resumen del nodo llm ahora es legible; el detalle real
+    # (tokens/costo/latencia) viaja en el propio evento para el click de
+    # detalle (ver renderNodeDrillBody en web/index.html).
+    usage_tracker.record_anthropic_call("claude-haiku-4-5", 1000, 500, duration_ms=842.0)
+    res = client.get("/dashboard/telemetry_feed")
+    ev = res.json()["events"][0]
+    assert ev["nodo"] == "llm"
+    assert ev["resumen"] == "claude-haiku-4-5"
+    assert ev["modelo"] == "claude-haiku-4-5"
+    assert ev["latencia_ms"] == 842.0
+
+
 def test_dashboard_telemetry_feed_since_param_filters_to_new_events_only(client):
     activity_log.record("drive_list_files", "ok")
     first = client.get("/dashboard/telemetry_feed").json()
@@ -470,13 +545,13 @@ def test_dashboard_widget_summaries_discards_stale_cached_template_from_a_higher
     assert widget["template"] == widget_templates.DEFAULT_TEMPLATE_BY_TIER["large"]
 
 
-def test_dashboard_widget_templates_endpoint_returns_all_24(client):
+def test_dashboard_widget_templates_endpoint_returns_all_27(client):
     from snarf.telemetry import widget_templates
 
     res = client.get("/dashboard/widget_templates")
     assert res.status_code == 200
     templates = res.json()["templates"]
-    assert len(templates) == 24
+    assert len(templates) == 27
     assert set(templates.keys()) == set(widget_templates.WIDGET_TEMPLATES.keys())
     tiers = {t["tier"] for t in templates.values()}
     assert tiers == {"small", "medium", "large"}
@@ -555,6 +630,30 @@ def test_dashboard_preferences_put_then_get_roundtrip(client, tmp_path, monkeypa
 
     get_res = client.get("/dashboard/preferences")
     assert get_res.json() == put_res.json()
+
+
+def test_dashboard_preferences_partial_put_does_not_reset_the_rest(client, tmp_path, monkeypatch):
+    """Bug real encontrado en vivo (2026-08-05): DashboardPreferences declara
+    un default propio por campo (visible_widgets={}, widget_options={}, etc.)
+    — un PUT que solo manda un campo pisaba en silencio todos los demás con
+    esos defaults vacíos, perdiendo customización real ya guardada (pasó de
+    verdad: un PUT parcial de prueba reseteó tamaños de widgets reales y
+    volvió dashboard_view a "classic"). Ver el fix análogo de PUT /llm-routing
+    de esta misma ronda."""
+    from snarf.runtime import dashboard_prefs
+
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path / "prefs")
+    client.put(
+        "/dashboard/preferences",
+        json={"widget_options": {"history": {"col_span": 2, "row_span": 19}}, "dashboard_view": "hud"},
+    )
+
+    put_res = client.put("/dashboard/preferences", json={"dashboard_view": "hud"})
+
+    assert put_res.status_code == 200
+    assert put_res.json()["dashboard_view"] == "hud"
+    # el resto de lo ya guardado en el PUT anterior no se pisó con defaults
+    assert put_res.json()["widget_options"]["history"] == {"col_span": 2, "row_span": 19}
 
 
 def test_dashboard_preferences_span_roundtrip_via_http(client, tmp_path, monkeypatch):
@@ -1186,11 +1285,23 @@ def test_get_project_conversations_returns_404_for_a_missing_project(client, pro
     assert res.status_code == 404
 
 
-def test_refresh_project_summary_endpoint(client, projects_fixture):
+def test_refresh_project_summary_endpoint(client, projects_fixture, monkeypatch):
+    # Bug real de hermeticidad encontrado en vivo (2026-08-05): project_summary
+    # ruteaba antes a un proveedor que exigía credencial (stripeada por
+    # conftest::_no_real_credentials, .available quedaba False, degradaba
+    # rápido). Desde que el default pasó a mlx_local_fast (sin credencial,
+    # siempre "available"), este test sin mockear disparaba una llamada REAL
+    # contra el server local de producción — con el streaming/timeout más
+    # generoso de esta ronda, colgaba varios minutos en vez de fallar rápido.
+    monkeypatch.setattr(
+        app_module.orchestrator.projects,
+        "_llm_factory",
+        lambda: type("F", (), {"available": True, "generate": lambda self, **kw: type("R", (), {"text": "resumen real de prueba"})()})(),
+    )
     project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
     res = client.post(f"/projects/{project_id}/summary/refresh")
     assert res.status_code == 200
-    assert res.json()["summary"]
+    assert res.json()["summary"] == "resumen real de prueba"
     assert res.json()["summary_generated_at"] is not None
 
 

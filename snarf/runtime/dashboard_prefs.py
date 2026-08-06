@@ -93,6 +93,10 @@ def _default_prefs() -> dict:
         "hud_widget_options": {},
         "hud_chat_position": "left",
         "hud_sidebar_pinned": False,
+        # Pedido explícito: separadores de fecha (Hoy/Ayer/fecha) arriba de
+        # la conversación + hora dimeada por burbuja, apagado por default
+        # (mismo criterio "cero sorpresa" que dashboard_view arriba).
+        "show_message_timestamps": False,
     }
 
 
@@ -173,6 +177,9 @@ def _normalize(raw: dict) -> dict:
     hud_sidebar_pinned_raw = raw.get("hud_sidebar_pinned")
     hud_sidebar_pinned = hud_sidebar_pinned_raw if isinstance(hud_sidebar_pinned_raw, bool) else False
 
+    show_timestamps_raw = raw.get("show_message_timestamps")
+    show_message_timestamps = show_timestamps_raw if isinstance(show_timestamps_raw, bool) else False
+
     return {
         "visible_widgets": visible,
         "panel_order": order,
@@ -182,6 +189,7 @@ def _normalize(raw: dict) -> dict:
         "hud_widget_options": _normalize_hud_widget_options(raw),
         "hud_chat_position": hud_chat_position,
         "hud_sidebar_pinned": hud_sidebar_pinned,
+        "show_message_timestamps": show_message_timestamps,
     }
 
 

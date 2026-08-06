@@ -142,6 +142,61 @@
   /* En Vista HUD no abre nada que tenga sentido todavía ahí (pedido
      explícito) — la clase la pone/saca JS en setDashboardView. */
   body.dash-hud-active .menu-btn { display: none; }
+  /* En Vista Clásica de escritorio la hamburguesa se reemplaza por el
+     avatar reubicado en #topChromeLeft (ver syncTopChromeAvatar) — la
+     sidebar de hamburguesa no hace falta ahí porque Clásica ya tiene el
+     bloque "Historial" fijo en la grilla. Mobile y HUD conservan la
+     hamburguesa/drawer de siempre, sin cambios. */
+  body.jarvis-mode:not(.dash-hud-active) .menu-btn { display: none; }
+
+  /* --- barra superior de gestión general (#topChrome) ---
+     Solo relevante en desktop (900px+) — mobile conserva su propia barra de
+     siempre. Oculta por default, aparece con mouseenter en la franja
+     superior (ver JS, TOP_CHROME_REVEAL_ZONE) — nunca muestra datos de
+     conversación/proyecto, eso vive en el header propio de cada modo. */
+  .top-chrome {
+    display: none;
+    position: fixed; top: 0; left: 0; right: 0; z-index: 7;
+    align-items: center; justify-content: space-between;
+    height: calc(env(safe-area-inset-top, 0px) + 3rem);
+    padding: env(safe-area-inset-top, 0px) 1rem 0;
+    background: linear-gradient(to bottom, rgba(5,10,12,0.9), rgba(5,10,12,0) 100%);
+    opacity: 0; transform: translateY(-8px); pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  @media (min-width: 900px) {
+    .top-chrome { display: flex; }
+  }
+  .top-chrome.visible { opacity: 1; transform: none; pointer-events: auto; }
+  .top-chrome-left, .top-chrome-right { display: flex; align-items: center; gap: 0.5rem; flex: 1 1 0; }
+  .top-chrome-right { justify-content: flex-end; }
+  /* Switch de Vista clásica/HUD, centrado de verdad (flex:1 en los 3
+     segmentos, no un left/right con justify-content:space-between) para que
+     no se corra si algún día left/right cambian de ancho — icono solo,
+     "lenguaje del branding": la grilla es el mismo glyph que #dashBtn ya
+     usa en otro lado de la app, el radial ecoa el orbe/anillos de Snarf. */
+  .top-chrome-center { display: flex; align-items: center; gap: 0.35rem; flex: 1 1 0; justify-content: center; }
+  .top-chrome-view-btn {
+    width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+    background: rgba(5,10,12,0.65); border: 1px solid rgba(79,216,232,0.25);
+    border-radius: 50%; color: var(--text-dim); cursor: pointer;
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+  .top-chrome-view-btn.active { color: var(--glow); border-color: var(--glow); background: rgba(79,216,232,0.14); }
+  .top-chrome-status, .top-chrome-model {
+    font-size: 0.66rem; color: var(--text-dim); white-space: nowrap;
+    padding: 0.3rem 0.65rem; border-radius: 999px;
+    background: rgba(5,10,12,0.65); border: 1px solid rgba(79,216,232,0.25);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  }
+  .top-chrome-status.ok { color: var(--glow); border-color: rgba(79,216,232,0.4); }
+  .top-chrome-status.warn { color: #e8c86a; border-color: rgba(232,200,106,0.4); }
+  /* El avatar reubicado acá abre su popover hacia ABAJO (al revés que en la
+     sidebar, donde abre hacia arriba porque .user-menu vive cerca del
+     fondo) — #topChrome está pegado arriba de todo. */
+  #topChromeLeft .user-menu { margin: 0; }
+  #topChromeLeft .user-menu-popover { bottom: auto; top: calc(100% + 6px); left: 0; right: auto; }
 
   /* --- sidebar --- */
   .sidebar {
@@ -270,7 +325,6 @@
        ya tiene su propio botón de micrófono al lado — el modo Toque (el
        orbe a pantalla completa) no aporta nada ahí y el toggle quedaba
        sobrando en la barra superior. */
-    body.jarvis-mode .mode-fab { display: none; }
     /* Ya no hay una vista "solo chat" separada en desktop — el chat vive
        siempre dentro de la grilla (ver reparentChatIntoDashboard); el modo
        enfoque cubre la misma necesidad expandiendo ese mismo bloque. */
@@ -320,19 +374,12 @@
      aditivo: la grilla clásica de arriba no pierde ninguna regla, sigue
      funcionando exactamente igual con el toggle en "clásica" (ver Decisión
      R del rediseño: reversible de verdad, no solo en apariencia). Solo
-     relevante en escritorio — Vista HUD nunca se activa en mobile. */
-  .dash-view-toggle { display: none; }
-  body.jarvis-mode .dash-view-toggle { display: flex; gap: 0.4rem; justify-content: center; margin-bottom: 0.6rem; }
-  .dash-view-toggle-btn {
-    font-family: var(--hud-font-mono); font-size: 0.7rem; letter-spacing: 0.02em;
-    background: rgba(79,216,232,0.06); border: 1px solid rgba(79,216,232,0.25);
-    color: var(--text-dim); padding: 0.3rem 0.7rem; border-radius: 999px; cursor: pointer;
-    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
-  }
-  .dash-view-toggle-btn.active { color: var(--glow); border-color: var(--glow); background: rgba(79,216,232,0.12); }
-
+     relevante en escritorio — Vista HUD nunca se activa en mobile. El
+     switch de vista en sí ya no vive acá — se movió a #topChrome (control
+     global de la app, no solo del home del dashboard, ver comentario ahí) —
+     por eso ya no hay ninguna fila propia reservando espacio arriba. */
   .dash-hud-view { display: none; flex-direction: column; min-height: 0; }
-  body.jarvis-mode .dash-hud-view:not([hidden]) { display: flex; height: calc(100% - 2.2rem); }
+  body.jarvis-mode .dash-hud-view:not([hidden]) { display: flex; height: 100%; }
   body.jarvis-mode .dash-grid-desktop[hidden] { display: none; }
 
   .dash-hud-banner {
@@ -591,29 +638,44 @@
   .chat-dock.drawer-open[data-position="left"],
   .chat-dock.drawer-open[data-position="center"] { margin-left: 300px; }
 
-  /* Solo storage: mientras la Vista HUD está activa, los botones reales de
-     acá adentro viven dentro de .text-row, a la altura del input (ver
-     reparentChatIntoDock/reparentChatOutOfDock) — nunca flotando aparte a
-     mitad de pantalla como antes. */
-  .chat-dock-toolbar { display: none; }
+  /* Bug real encontrado en vivo con Playwright (2026-08-06, pedido explícito
+     "que la conversación sea clickeable más allá del mensaje actual"): el
+     dock entero (760px de ancho, alto real de la pantalla) es un rectángulo
+     normal sin pointer-events:none — cualquier zona vacía (el margin-top:
+     auto arriba de una conversación corta, el padding alrededor) capturaba
+     el click igual que si hubiera una burbuja ahí, tapando el grafo de
+     nodos de HUD que vive detrás (z-index 2-3, contra el z-index 9 del
+     dock). Confirmado con elementFromPoint(): un click en una zona vacía
+     resolvía a #chat/.chat-dock-body en vez de al nodo real de atrás.
+     Solución: pointer-events:none en los contenedores puramente
+     estructurales, reactivado explícitamente solo en lo que de verdad
+     necesita recibir clicks — el resto del rectángulo queda transparente a
+     eventos, dejando pasar el click al grafo. */
+  #chatDock, #chatDock .chat-dock-body, #chatDock .chat, #chatDock .chat-inner { pointer-events: none; }
+  #chatDock .msg, #chatDock .project-context-bar, #chatDock #jumpToBottomBtn,
+  #chatDock .chat-dock-toolbar, #chatDock .control-bar { pointer-events: auto; }
+
+  /* Header real y visible del dock HUD — antes display:none (los botones
+     ☰/⤢ vivían "aparcados" acá sin mostrarse nunca, reubicados a mano dentro
+     de .text-row mientras el dock estaba activo). Ahora es también el lugar
+     del título de la conversación en HUD (ver updateChatTitleDisplays en el
+     JS) — ☰/⤢ se quedan siempre acá, ya no se reubican. */
+  .chat-dock-toolbar {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0 0.2rem 0.6rem;
+  }
   .chat-dock-icon-btn {
     width: 1.9rem; height: 1.9rem; border-radius: 50%; display: flex; align-items: center; justify-content: center;
     background: rgba(5,10,12,0.75); border: 1px solid rgba(79,216,232,0.25); color: var(--text-dim);
     font-size: 0.8rem; cursor: pointer; opacity: 0.55; backdrop-filter: blur(4px);
     transition: opacity 150ms ease, color 150ms ease, border-color 150ms ease;
+    flex: 0 0 auto;
   }
   .chat-dock-icon-btn:hover { opacity: 1; color: var(--glow); border-color: var(--glow); }
-  /* Reubicados dentro de la fila de input (Decisión: misma altura que
-     adjuntar, no flotando arriba) — mismo tamaño que el resto de los
-     .icon-btn de la fila para que quede prolijamente alineado. Scopeado a
-     #chatDock a propósito: si el modo enfoque se abre desde acá, .text-row
-     (con estos botones adentro, mismo nodo vivo) viaja a chatFocusMain —
-     ahí no tienen sentido (☰ ya es redundante con el sidebar siempre
-     visible, ⤢ sería reabrir el enfoque en el que ya se está) y quedan
-     ocultos solos, sin lógica de show/hide aparte. */
-  .text-row #chatDockDrawerBtn, .text-row #chatDockFocusBtn { display: none; }
-  #chatDock .text-row #chatDockDrawerBtn, #chatDock .text-row #chatDockFocusBtn {
-    display: flex; width: 42px; height: 42px; flex: 0 0 auto;
+  .chat-dock-title {
+    flex: 1 1 auto; min-width: 0; text-align: center;
+    font-size: 0.75rem; color: var(--text-dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
 
   /* flex:1 1 auto (antes height: min(58vh,560px)) — el chat tiene que
@@ -664,6 +726,7 @@
   .node-drill-row { padding: 0.5rem 0.2rem; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.8rem; }
   .node-drill-row-verb { font-weight: 500; }
   .node-drill-row-detalle { color: var(--text-dim); font-size: 0.74rem; margin-top: 0.1rem; }
+  .node-drill-row-timing { color: var(--glow-soft); font-size: 0.68rem; margin-top: 0.15rem; font-variant-numeric: tabular-nums; }
   .node-drill-row-meta { color: var(--text-dim); font-size: 0.68rem; margin-top: 0.1rem; }
 
   /* --- Drawer lateral de conversaciones/proyectos (Decisión 8, solo Vista
@@ -698,17 +761,27 @@
     position: static; width: 100%; height: 100%; transform: none; transition: none;
   }
 
-  /* --- Chat con profundidad 3D real (Decisión 4, solo dentro del dock de
+  /* --- Chat con profundidad "2D" (Decisión 4, solo dentro del dock de
      Vista HUD — en Vista clásica y en modo enfoque el chat sigue siendo la
-     lista plana de siempre, sin efecto). Los mensajes más viejos se alejan
-     hacia arriba y hacia el fondo: más chicos, más oscuros, más
-     transparentes — la sensación de "canvas 3D" pedida. `--depth` lo fija
-     JS por mensaje (0 = el más nuevo, junto al input) en cada addMessage(). --- */
-  #chatDock .chat { perspective: 900px; }
-  #chatDock .chat-inner { transform-style: preserve-3d; }
+     lista plana de siempre, sin efecto). Los mensajes más viejos quedan más
+     chicos, más oscuros, más transparentes — la sensación de profundidad
+     pedida. `--depth` lo fija JS por mensaje (0 = el más nuevo, junto al
+     input) en cada addMessage().
+     Bug real encontrado en vivo con Playwright (2026-08-06, pedido explícito
+     "que la conversación sea clickeable más allá del mensaje actual"): la
+     versión anterior usaba perspective+translateZ (3D real) — con
+     `perspective: 900px` en `.chat`, `translateZ` proyecta cada burbuja a
+     una posición en pantalla que NO coincide con su rect de layout normal;
+     confirmado con `elementFromPoint()` que un click sobre el desplegable
+     "▾ transcripción" de un mensaje con --depth>0 caía en un punto vacío de
+     `.chat-inner` en vez del botón real, así que nunca se podía abrir.
+     Solución real, verificada con el mismo `elementFromPoint()`: sacar
+     perspective/translateZ/translateY (que dependían el uno del otro) y
+     quedarse solo con `scale` — 2D puro, sin desajuste entre layout e
+     interacción, mismo efecto visual de "aleja y achica". */
   #chatDock .msg {
     --depth: 0;
-    transform: translateZ(calc(var(--depth) * -34px)) translateY(calc(var(--depth) * -2px)) scale(calc(1 - var(--depth) * 0.045));
+    transform: scale(calc(1 - var(--depth) * 0.045));
     opacity: calc(1 - var(--depth) * 0.11);
     filter: brightness(calc(1 - var(--depth) * 0.09));
     transition: transform 500ms ease, opacity 500ms ease, filter 500ms ease;
@@ -1062,6 +1135,11 @@
     background: none; border: 1px solid rgba(79,216,232,0.3); color: var(--text-dim);
     border-radius: 50%; width: 26px; height: 26px; cursor: pointer; font-size: 0.75rem;
   }
+  .chat-focus-title {
+    position: absolute; top: 10px; left: 16px; right: 46px; z-index: 2;
+    font-size: 0.78rem; color: var(--text-dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
 
   .brain-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 12;
@@ -1099,7 +1177,9 @@
   .brain-feed-row {
     display: flex; align-items: baseline; gap: 0.5rem; padding: 0.3rem 0.2rem; font-size: 0.75rem;
     color: var(--text); border-bottom: 1px solid rgba(255,255,255,0.05);
+    cursor: pointer;
   }
+  .brain-feed-row:hover { background: rgba(79,216,232,0.06); }
   .brain-feed-row .dash-dot { align-self: center; }
   .brain-feed-icon { align-self: center; flex-shrink: 0; opacity: 0.9; }
   .brain-feed-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1159,10 +1239,8 @@
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
   }
-  /* Mismo slot que .mode-fab (right:16px) — nunca coinciden: el fab de modo
-     se oculta en escritorio (body.jarvis-mode .mode-fab) y este botón solo
-     se muestra cuando hay una conversación de proyecto cargada, nunca
-     mientras se mira el propio home. */
+  /* right:16px, arriba a la derecha — solo se muestra cuando hay una
+     conversación de proyecto cargada, nunca mientras se mira el propio home. */
   .project-home-btn {
     display: none;
     position: fixed;
@@ -1265,6 +1343,23 @@
     letter-spacing: 0.02em;
   }
   .project-context-bar.visible { display: block; }
+  /* Pedido explícito: aparece arriba del micrófono, a la derecha, apenas se
+     scrollea lejos del último mensaje — cubre tanto "scrolleé para arriba a
+     leer" como "cargué mensajes viejos con la paginación nueva". Absoluto
+     sobre .chat (su propio scrollport, position:relative) para no moverse
+     con el contenido. */
+  .jump-to-bottom-btn {
+    position: absolute; bottom: 0.85rem; right: 1rem; z-index: 4;
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 1px solid rgba(79,216,232,0.3);
+    background: rgba(5,10,12,0.75);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    color: var(--glow);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+  }
+  .jump-to-bottom-btn[hidden] { display: none; }
   .msg {
     max-width: 82%; padding: 0.6rem 0.9rem; border-radius: 14px;
     font-size: 0.85rem; line-height: 1.5; animation: fadein 0.3s ease;
@@ -1272,6 +1367,23 @@
   }
   .msg.snarf a { color: var(--glow-soft); text-decoration: underline; }
   @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  /* Toggle "Mostrar fecha y hora de los mensajes" en Configuración — hora
+     dimeada por burbuja + separador de fecha (ver refreshDateSeparators). */
+  .msg-time {
+    display: block; margin-top: 0.3rem;
+    font-size: 0.62rem; color: var(--text-dim); opacity: 0.55;
+  }
+  .msg.user .msg-time { text-align: right; }
+  .msg-date-separator {
+    align-self: center;
+    margin: 0.4rem 0;
+    padding: 0.25rem 0.8rem;
+    border-radius: 999px;
+    background: rgba(5,10,12,0.6);
+    border: 1px solid rgba(79,216,232,0.2);
+    color: var(--text-dim);
+    font-size: 0.68rem; letter-spacing: 0.02em;
+  }
   .msg.user {
     align-self: flex-end;
     background: radial-gradient(ellipse at center, rgba(79,216,232,0.14) 0%, rgba(10,18,20,0.14) 55%, rgba(4,10,12,0.2) 100%);
@@ -1462,44 +1574,6 @@
     flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 0.7rem;
     width: 100%; padding: 0.6rem 1rem calc(env(safe-area-inset-bottom, 0px) + 1.4rem);
   }
-  .mode-fab {
-    position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 14px);
-    right: 16px;
-    z-index: 6;
-    width: 34px; height: 34px;
-    border-radius: 50%;
-    border: 1px solid rgba(79,216,232,0.3);
-    background: rgba(5,10,12,0.6);
-    color: var(--glow);
-    font-size: 1rem;
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer;
-    transition: opacity 0.2s ease;
-  }
-  .mode-fab.locked { opacity: 0.35; pointer-events: none; }
-  .mode-popover {
-    position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 54px);
-    right: 16px;
-    z-index: 6;
-    background: rgba(5,10,12,0.94);
-    border: 1px solid rgba(79,216,232,0.3);
-    border-radius: 14px;
-    padding: 6px;
-    display: flex; flex-direction: column; gap: 2px;
-    opacity: 0; transform: translateY(-6px); pointer-events: none;
-    transition: opacity 0.2s ease, transform 0.2s ease;
-  }
-  .mode-popover.open { opacity: 1; transform: none; pointer-events: auto; }
-  .mode-option {
-    display: flex; align-items: center; gap: 0.55rem;
-    background: none; border: none; color: var(--text-dim);
-    font-family: inherit; font-size: 0.72rem;
-    padding: 0.5rem 0.75rem; border-radius: 9px; cursor: pointer;
-    white-space: nowrap; text-align: left;
-  }
-  .mode-option.active { background: rgba(79,216,232,0.18); color: var(--text); }
   .status {
     text-transform: uppercase; letter-spacing: 0.2em; font-size: 0.7rem;
     color: var(--text-dim); min-height: 1.2em; text-align: center; padding: 0 1rem;
@@ -1705,13 +1779,31 @@
   <div id="particles"></div>
 
   <button class="menu-btn" id="menuBtn"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
+
+  <!-- Barra superior de gestión general de la app (nunca datos de
+       conversación/proyecto — eso vive en el header propio de cada modo,
+       ver updateChatTitleDisplays): switch de Vista clásica/HUD al centro
+       (antes vivía como fila de texto arriba del dashboard, solo visible ahí
+       — acá es un control global de la app, disponible desde cualquier
+       pantalla, y libera esa fila de espacio real en el home del dashboard),
+       estado de sistemas + modelo de LLM vigente a la derecha, y en Vista
+       Clásica de escritorio el avatar del fundador se reubica acá adentro
+       (ver syncTopChromeAvatar), reemplazando la hamburguesa. Oculta por
+       default, aparece con mouseenter en la franja superior (ver JS) — solo
+       relevante en desktop. -->
+  <div class="top-chrome" id="topChrome">
+    <div class="top-chrome-left" id="topChromeLeft"></div>
+    <div class="top-chrome-center" id="topChromeCenter" role="tablist" aria-label="Vista de la app">
+      <button type="button" class="top-chrome-view-btn active" id="topChromeViewClassic" role="tab" aria-selected="true" title="Vista clásica" aria-label="Vista clásica"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg></button>
+      <button type="button" class="top-chrome-view-btn" id="topChromeViewHud" role="tab" aria-selected="false" title="Vista HUD" aria-label="Vista HUD"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="3.2"/><circle cx="10" cy="10" r="0.9" fill="currentColor" stroke="none"/></svg></button>
+    </div>
+    <div class="top-chrome-right">
+      <span class="top-chrome-status" id="topChromeStatus"></span>
+      <span class="top-chrome-model" id="topChromeModel"></span>
+    </div>
+  </div>
   <button class="dash-btn" id="dashBtn" title="Dashboard"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg></button>
   <button class="project-home-btn" id="projectHomeBtn" title="home del proyecto">🏠</button>
-  <button class="mode-fab" id="modeFab"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="5" width="15" height="10" rx="1.5"/><line x1="5.5" y1="8.5" x2="5.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="8.5" y1="8.5" x2="8.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="11.5" y1="8.5" x2="11.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="14.5" y1="8.5" x2="14.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="6" y1="12" x2="14" y2="12" stroke-linecap="round"/></svg></button>
-  <div class="mode-popover" id="modePopover">
-    <button class="mode-option" data-mode="click"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="1.6" fill="currentColor" stroke="none"/></svg> Toque</button>
-    <button class="mode-option active" data-mode="text"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="5" width="15" height="10" rx="1.5"/><line x1="5.5" y1="8.5" x2="5.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="8.5" y1="8.5" x2="8.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="11.5" y1="8.5" x2="11.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="14.5" y1="8.5" x2="14.5" y2="8.5" stroke-linecap="round" stroke-width="2"/><line x1="6" y1="12" x2="14" y2="12" stroke-linecap="round"/></svg> Teclado</button>
-  </div>
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
   <div class="sidebar" id="sidebar">
     <div class="sidebar-tabs">
@@ -1743,6 +1835,7 @@
 
   <div class="chat-focus-overlay" id="chatFocusOverlay"></div>
   <div class="chat-focus-panel" id="chatFocusPanel">
+    <span class="chat-focus-title" id="chatFocusTitle"></span>
     <button class="chat-focus-close" id="chatFocusCloseBtn">✕</button>
     <div class="chat-focus-main" id="chatFocusMain"></div>
   </div>
@@ -1772,6 +1865,12 @@
 
     <div class="settings-section-head"><h3>LLM por rol</h3></div>
     <div class="llm-routing-list" id="llmRoutingList"></div>
+
+    <div class="settings-section-head"><h3>Chat</h3></div>
+    <div class="settings-row">
+      <span>Mostrar fecha y hora de los mensajes</span>
+      <button class="settings-toggle" id="showTimestampsToggle"></button>
+    </div>
 
     <div class="settings-section-head"><h3>Posición del chat (Vista HUD)</h3></div>
     <div class="settings-list" id="hudChatPositionList"></div>
@@ -1804,7 +1903,7 @@
 
   <div id="appRoot">
   <div class="view-chat active" id="viewChat">
-    <div class="chat" id="chat"><div class="project-context-bar" id="projectContextBar"></div><div class="chat-inner" id="chatInner"></div></div>
+    <div class="chat" id="chat"><div class="project-context-bar" id="projectContextBar"></div><div class="chat-inner" id="chatInner"></div><button class="jump-to-bottom-btn" id="jumpToBottomBtn" title="Ir al último mensaje" hidden><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5v12"/><path d="M5 11l5 5 5-5"/></svg></button></div>
 
     <div class="control-bar">
       <div class="status" id="status">click para grabar</div>
@@ -1849,10 +1948,6 @@
   </div>
 
   <div class="view-dashboard" id="viewDashboard">
-    <div class="dash-view-toggle" role="tablist" aria-label="Vista del dashboard">
-      <button type="button" class="dash-view-toggle-btn active" id="dashViewToggleClassic" role="tab" aria-selected="true">Vista clásica</button>
-      <button type="button" class="dash-view-toggle-btn" id="dashViewToggleHud" role="tab" aria-selected="false">Vista HUD</button>
-    </div>
     <div class="dash-mobile-stack" id="dashboardInner"></div>
     <div class="dash-grid-desktop" id="dashGridDesktop"></div>
     <div class="dash-hud-view" id="dashHudView" hidden>
@@ -1883,6 +1978,7 @@
   <div class="chat-dock" id="chatDock" hidden data-position="left">
     <div class="chat-dock-toolbar" id="chatDockToolbar">
       <button class="chat-dock-icon-btn" id="chatDockDrawerBtn" title="conversaciones y proyectos">☰</button>
+      <span class="chat-dock-title" id="chatDockTitle"></span>
       <button class="chat-dock-icon-btn" id="chatDockFocusBtn" title="modo enfoque">⤢</button>
     </div>
     <div class="chat-dock-body" id="chatDockBody"></div>
@@ -2013,13 +2109,10 @@ const statusEl = document.getElementById("status");
 const retryBtn = document.getElementById("retryBtn");
 const chat = document.getElementById("chat");
 const chatInner = document.getElementById("chatInner");
+const jumpToBottomBtn = document.getElementById("jumpToBottomBtn");
 const controlBar = document.querySelector("#viewChat .control-bar");
 const review = document.getElementById("review");
 const reviewText = document.getElementById("reviewText");
-const modeFab = document.getElementById("modeFab");
-const modePopover = document.getElementById("modePopover");
-const modeOptions = document.querySelectorAll(".mode-option");
-const MODE_ICONS = { click: ICONS.tap, text: ICONS.keyboard };
 const particlesEl = document.getElementById("particles");
 const menuBtn = document.getElementById("menuBtn");
 const sidebar = document.getElementById("sidebar");
@@ -2049,8 +2142,8 @@ const viewChat = document.getElementById("viewChat");
 const viewDashboard = document.getElementById("viewDashboard");
 const dashboardInner = document.getElementById("dashboardInner");
 const dashGridDesktop = document.getElementById("dashGridDesktop");
-const dashViewToggleClassicBtn = document.getElementById("dashViewToggleClassic");
-const dashViewToggleHudBtn = document.getElementById("dashViewToggleHud");
+const dashViewToggleClassicBtn = document.getElementById("topChromeViewClassic");
+const dashViewToggleHudBtn = document.getElementById("topChromeViewHud");
 const dashHudView = document.getElementById("dashHudView");
 const dashHudBanner = document.getElementById("dashHudBanner");
 const dashHudStage = document.getElementById("dashHudStage");
@@ -2061,6 +2154,7 @@ const chatDock = document.getElementById("chatDock");
 const chatDockToolbar = document.getElementById("chatDockToolbar");
 const chatDockDrawerBtn = document.getElementById("chatDockDrawerBtn");
 const chatDockFocusBtn = document.getElementById("chatDockFocusBtn");
+const chatDockTitle = document.getElementById("chatDockTitle");
 const chatDockBody = document.getElementById("chatDockBody");
 const dashHudSidebarDrawer = document.getElementById("dashHudSidebarDrawer");
 const dashHudSidebarPinBtn = document.getElementById("dashHudSidebarPinBtn");
@@ -2072,10 +2166,15 @@ const nodeDrillTitle = document.getElementById("nodeDrillTitle");
 const nodeDrillCloseBtn = document.getElementById("nodeDrillCloseBtn");
 const nodeDrillBody = document.getElementById("nodeDrillBody");
 const hudChatPositionList = document.getElementById("hudChatPositionList");
+const showTimestampsToggle = document.getElementById("showTimestampsToggle");
 const templateProposalsList = document.getElementById("templateProposalsList");
 const dashConvList = document.getElementById("dashConvList");
 const dashConvListPullIndicator = document.getElementById("dashConvListPullIndicator");
 const dashNewConvBtn = document.getElementById("dashNewConvBtn");
+const topChrome = document.getElementById("topChrome");
+const topChromeLeft = document.getElementById("topChromeLeft");
+const topChromeStatus = document.getElementById("topChromeStatus");
+const topChromeModel = document.getElementById("topChromeModel");
 const userMenu = document.getElementById("userMenu");
 const userMenuBtn = document.getElementById("userMenuBtn");
 const userAvatar = document.getElementById("userAvatar");
@@ -2083,6 +2182,7 @@ const userNameLabel = document.getElementById("userNameLabel");
 const settingsBtn = document.getElementById("settingsBtn");
 const chatFocusOverlay = document.getElementById("chatFocusOverlay");
 const chatFocusPanel = document.getElementById("chatFocusPanel");
+const chatFocusTitle = document.getElementById("chatFocusTitle");
 const chatFocusCloseBtn = document.getElementById("chatFocusCloseBtn");
 const chatFocusMain = document.getElementById("chatFocusMain");
 const settingsOverlay = document.getElementById("settingsOverlay");
@@ -2217,7 +2317,6 @@ function setState(next, label) {
   state = next;
   orbWrap.className = "orb-wrap " + next;
   statusEl.textContent = label;
-  modeFab.classList.toggle("locked", next === "listening" || next === "thinking");
 }
 function clearChat() { chatInner.innerHTML = ""; }
 // Sintetiza voz para `text` y devuelve el audio_id, o null si no se pudo
@@ -2293,9 +2392,10 @@ function reindexChatDepth() {
   msgs.forEach((el, i) => el.style.setProperty("--depth", Math.min(total - 1 - i, CHAT_DEPTH_MAX)));
 }
 
-function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliverable, thinking) {
+function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliverable, thinking, insertBeforeNode, timestamp) {
   const div = document.createElement("div");
   div.className = "msg " + who;
+  if (timestamp) div.dataset.timestamp = timestamp;
   if (who === "snarf") {
     // Los reproductores de audio van SIEMPRE arriba del texto — la
     // comunicación primaria cuando hay audio es el audio, la respuesta
@@ -2418,8 +2518,22 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliv
   } else {
     div.textContent = text;
   }
-  chatInner.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
+  if (timestamp && dashboardPrefs && dashboardPrefs.show_message_timestamps) {
+    const timeEl = document.createElement("span");
+    timeEl.className = "msg-time";
+    timeEl.textContent = formatMessageTime(timestamp);
+    div.appendChild(timeEl);
+  }
+  // insertBeforeNode: usado al paginar mensajes viejos hacia arriba (ver
+  // loadOlderMessages) — inserta en su lugar sin forzar el scroll al fondo,
+  // que es lo que se quiere al agregar un mensaje nuevo real, pero rompería
+  // la posición de lectura del fundador si se usara acá también.
+  if (insertBeforeNode) {
+    chatInner.insertBefore(div, insertBeforeNode);
+  } else {
+    chatInner.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+  }
   reindexChatDepth();
   return div;
 }
@@ -2471,8 +2585,6 @@ function hideTyping() {
 function setMode(next, autoFocus = true) {
   if (state === "listening" || state === "thinking") return;
   mode = next;
-  modeFab.innerHTML = MODE_ICONS[mode];
-  modeOptions.forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
   orbWrap.style.display = mode === "text" ? "none" : "";
   review.classList.remove("visible");
   textRow.classList.toggle("visible", mode === "text");
@@ -2482,17 +2594,6 @@ function setMode(next, autoFocus = true) {
   // modo texto pero con el teclado retraído, no abierto de entrada.
   if (mode === "text" && autoFocus) textInput.focus();
 }
-modeOptions.forEach(btn => btn.addEventListener("click", () => { setMode(btn.dataset.mode); closeModePopover(); }));
-
-function openModePopover() { modePopover.classList.add("open"); }
-function closeModePopover() { modePopover.classList.remove("open"); }
-modeFab.addEventListener("click", () => {
-  if (modePopover.classList.contains("open")) closeModePopover();
-  else openModePopover();
-});
-document.addEventListener("click", (e) => {
-  if (!modePopover.contains(e.target) && !modeFab.contains(e.target)) closeModePopover();
-});
 
 /* ---------- reproductor de nota de voz embebido (por burbuja) ----------
    Un solo <audio> real (sharedAudio) alimenta a la burbuja que esté activa
@@ -2734,8 +2835,17 @@ async function showMoveSubmenu(popover, conversationIdToMove, excludeProjectId) 
   });
 }
 
+// Título real de cada conversación, cacheado acá cada vez que se refresca
+// cualquiera de las dos listas (general o de proyecto) — nunca un fetch
+// aparte: el título ya viaja en esas respuestas (list_conversations()),
+// así que el header de cada modo (Clásica/HUD/Foco, ver
+// updateChatTitleDisplays) lo lee de acá en vez de pedirlo de nuevo.
+const conversationTitleCache = new Map();
+
 function renderConvListInto(container, convs) {
   container.innerHTML = "";
+  convs.forEach((c) => conversationTitleCache.set(c.conversation_id, c.title || null));
+  updateChatTitleDisplays();
   if (!convs.length) {
     container.innerHTML = '<div class="conv-empty">sin conversaciones todavía</div>';
     return;
@@ -2818,6 +2928,92 @@ function enablePullToRefresh(listEl, indicatorEl, onRefresh) {
 enablePullToRefresh(convList, convListPullIndicator, refreshConvLists);
 enablePullToRefresh(dashConvList, dashConvListPullIndicator, refreshConvLists);
 
+// Estado de paginación de la conversación abierta — "cargar desde el más
+// reciente hacia atrás" (pedido explícito): loadConversation solo pide el
+// último tramo; loadOlderMessages() trae los anteriores a medida que se
+// scrollea hacia arriba, sin volver a pedir la conversación entera.
+let hasMoreOlderMessages = false;
+let oldestLoadedMessageTimestamp = null;
+let loadingOlderMessages = false;
+
+function isChatScrolledNearBottom() {
+  return chat.scrollTop + chat.clientHeight >= chat.scrollHeight - 80;
+}
+
+// Llamado junto a todo clearChat() que abre una conversación NUEVA (vacía) —
+// sin esto, el estado de paginación de la conversación anterior quedaba
+// pegado y podía disparar un loadOlderMessages() innecesario contra la
+// conversación recién creada.
+function resetConversationPagination() {
+  hasMoreOlderMessages = false;
+  oldestLoadedMessageTimestamp = null;
+  jumpToBottomBtn.hidden = true;
+  updateChatTitleDisplays();
+}
+
+// Título de la conversación en su lugar por modo (pedido explícito: NUNCA en
+// la barra superior de gestión general, #topChrome — esa es solo estado de
+// sistemas/modelo/avatar). Cada modo ya tenía (o casi) un header propio para
+// esto — ver ADR de esta ronda: Clásica reusa el <h3> real de
+// .dash-widget-head del widget de chat, HUD reactiva #chatDockToolbar (antes
+// display:none, solo usado como estacionamiento de los botones ☰/⤢), Foco
+// suma una fila de header nueva. Título "Chat con Snarf" (WIDGET_LABELS.chat)
+// cuando no hay conversación con título real todavía — nunca queda vacío.
+function currentConversationTitle() {
+  if (!conversationId) return null;
+  return conversationTitleCache.get(conversationId) || null;
+}
+// --- timestamps opcionales en el chat (toggle en Configuración) -----------
+function dateKeyFor(timestampSeconds) {
+  return new Date(timestampSeconds * 1000).toDateString();
+}
+function formatMessageTime(timestampSeconds) {
+  return new Date(timestampSeconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+function formatDateSeparator(timestampSeconds) {
+  const date = new Date(timestampSeconds * 1000);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (dateKeyFor(timestampSeconds) === dateKeyFor(today.getTime() / 1000)) return "Hoy";
+  if (dateKeyFor(timestampSeconds) === dateKeyFor(yesterday.getTime() / 1000)) return "Ayer";
+  return date.toLocaleDateString([], {
+    day: "2-digit", month: "long",
+    year: date.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
+  });
+}
+// Reconstruye los separadores de fecha desde cero a partir de lo que YA está
+// en el DOM (`data-timestamp` de cada burbuja) en vez de tratar de llevar
+// estado incremental a través de loadConversation()/loadOlderMessages() —
+// más simple y robusto contra los bordes de la paginación (un tramo viejo
+// puede cruzar varios días, o coincidir con el día del tramo ya cargado):
+// un rescan completo es barato para el tamaño real de una conversación en
+// pantalla, y queda correcto sin importar el orden de inserción.
+function refreshDateSeparators() {
+  chatInner.querySelectorAll(".msg-date-separator").forEach((el) => el.remove());
+  if (!dashboardPrefs || !dashboardPrefs.show_message_timestamps) return;
+  let lastKey = null;
+  chatInner.querySelectorAll(".msg[data-timestamp]").forEach((el) => {
+    const ts = Number(el.dataset.timestamp);
+    const key = dateKeyFor(ts);
+    if (key !== lastKey) {
+      const sep = document.createElement("div");
+      sep.className = "msg-date-separator";
+      sep.textContent = formatDateSeparator(ts);
+      chatInner.insertBefore(sep, el);
+      lastKey = key;
+    }
+  });
+}
+
+function updateChatTitleDisplays() {
+  const title = currentConversationTitle() || WIDGET_LABELS.chat;
+  const classicChatTitle = document.querySelector('.dash-widget[data-widget-id="chat"] .dash-widget-head h3');
+  if (classicChatTitle) classicChatTitle.textContent = title;
+  if (chatDockTitle) chatDockTitle.textContent = title;
+  if (chatFocusTitle) chatFocusTitle.textContent = title;
+}
+
 async function loadConversation(id) {
   // Un reintento pendiente (nota de voz o texto fallido) es propio de la
   // conversación donde ocurrió — cambiar de conversación lo abandona, nunca
@@ -2827,13 +3023,17 @@ async function loadConversation(id) {
   pendingProjectHomeId = null;
   closeSidebar();
   clearChat();
+  resetConversationPagination();
   try {
     const res = await apiFetch("/conversations/" + id);
-    const entries = await res.json();
-    entries.forEach(e => {
-      addMessage(e.input, "user", false, e.input_audio_id);
-      addMessage(e.response, "snarf", ttsAvailable, null, e.speech, false, e.deliverable);
+    const body = await res.json();
+    body.entries.forEach(e => {
+      addMessage(e.input, "user", false, e.input_audio_id, null, false, null, null, null, e.timestamp);
+      addMessage(e.response, "snarf", ttsAvailable, null, e.speech, false, e.deliverable, null, null, e.timestamp);
     });
+    refreshDateSeparators();
+    hasMoreOlderMessages = body.has_more;
+    if (body.entries.length) oldestLoadedMessageTimestamp = body.entries[0].timestamp;
   } catch (e) {
     addMessage("no se pudo cargar la conversación: " + (e.message || e), "snarf");
   }
@@ -2841,12 +3041,55 @@ async function loadConversation(id) {
   updateProjectHomeBtnVisibility();
 }
 
+async function loadOlderMessages() {
+  if (!hasMoreOlderMessages || loadingOlderMessages || oldestLoadedMessageTimestamp == null) return;
+  loadingOlderMessages = true;
+  try {
+    const res = await apiFetch("/conversations/" + conversationId + "?before=" + oldestLoadedMessageTimestamp);
+    const body = await res.json();
+    if (body.entries.length) {
+      // Ancla fija: cada addMessage con insertBeforeNode se inserta
+      // inmediatamente antes de este mismo nodo, así que llamarlas en orden
+      // cronológico ascendente (igual que vienen del backend) preserva el
+      // orden visual correcto sin tener que armar un fragment aparte.
+      const anchor = chatInner.firstChild;
+      const previousScrollHeight = chat.scrollHeight;
+      const previousScrollTop = chat.scrollTop;
+      body.entries.forEach(e => {
+        addMessage(e.input, "user", false, e.input_audio_id, null, false, null, null, anchor, e.timestamp);
+        addMessage(e.response, "snarf", ttsAvailable, null, e.speech, false, e.deliverable, null, anchor, e.timestamp);
+      });
+      // Antes de medir el alto final para compensar el scroll — los
+      // separadores también suman alto, y tienen que estar insertados para
+      // que la compensación de abajo sea exacta.
+      refreshDateSeparators();
+      // Compensa el alto insertado arriba para que la posición de LECTURA
+      // del fundador no salte — sin esto, prependear contenido empuja todo
+      // hacia abajo y el mensaje que estaba mirando se corre de la vista.
+      chat.scrollTop = previousScrollTop + (chat.scrollHeight - previousScrollHeight);
+      oldestLoadedMessageTimestamp = body.entries[0].timestamp;
+    }
+    hasMoreOlderMessages = body.has_more;
+  } finally {
+    loadingOlderMessages = false;
+  }
+}
+
+chat.addEventListener("scroll", () => {
+  jumpToBottomBtn.hidden = isChatScrolledNearBottom();
+  if (chat.scrollTop < 120) loadOlderMessages();
+});
+jumpToBottomBtn.addEventListener("click", () => {
+  chat.scrollTop = chat.scrollHeight;
+});
+
 function startNewConversation() {
   clearRetry();
   conversationId = crypto.randomUUID();
   currentProjectId = null;
   pendingProjectHomeId = null;
   clearChat();
+  resetConversationPagination();
   closeSidebar();
   setState("idle", idleLabel());
   refreshConvLists();
@@ -2893,6 +3136,8 @@ function renderProjectListInto(container, projects) {
 
 function renderProjectConversationsInto(container, conversations) {
   container.innerHTML = "";
+  conversations.forEach((c) => conversationTitleCache.set(c.conversation_id, c.title || null));
+  updateChatTitleDisplays();
   const back = document.createElement("div");
   back.className = "conv-item";
   back.textContent = "← todos los proyectos";
@@ -3143,6 +3388,7 @@ function exitProject() {
   pendingProjectHomeId = null;
   conversationId = crypto.randomUUID();
   clearChat();
+  resetConversationPagination();
   setState("idle", idleLabel());
   refreshProjectList();
   refreshConvLists();
@@ -3167,6 +3413,7 @@ async function startNewProjectConversation(projectId) {
   });
   pendingProjectHomeId = null;
   clearChat();
+  resetConversationPagination();
   closeSidebar();
   setState("idle", idleLabel());
   refreshProjectList();
@@ -3296,6 +3543,23 @@ const desktopMedia = window.matchMedia("(min-width: 900px)");
 function isDesktopDashboard() { return desktopMedia.matches; }
 function applyJarvisMode() {
   document.body.classList.toggle("jarvis-mode", isDesktopDashboard() && currentView === "dashboard");
+  syncTopChromeAvatar();
+}
+
+// Reubica el .user-menu real (avatar+nombre+popover, nunca clonado — mismo
+// criterio que el resto del archivo) dentro de #topChromeLeft cuando
+// corresponde reemplazar la hamburguesa (Vista Clásica de escritorio
+// únicamente), y lo devuelve a su lugar de siempre en la sidebar en
+// cualquier otro caso (HUD, mobile, vista de chat). Llamado desde cada
+// función que ya cambia jarvis-mode/dash-hud-active, para no necesitar un
+// listener aparte.
+function syncTopChromeAvatar() {
+  const shouldDock = document.body.classList.contains("jarvis-mode") && !document.body.classList.contains("dash-hud-active");
+  if (shouldDock && userMenu.parentElement !== topChromeLeft) {
+    topChromeLeft.appendChild(userMenu);
+  } else if (!shouldDock && userMenu.parentElement !== sidebar) {
+    sidebar.appendChild(userMenu);
+  }
 }
 
 function showChat() {
@@ -3313,7 +3577,6 @@ function showDashboard() {
   currentView = "dashboard";
   viewDashboard.classList.add("active");
   viewChat.classList.remove("active");
-  closeModePopover();
   dashBtn.innerHTML = ICONS.chat;
   applyJarvisMode();
   refreshDashboard();
@@ -4154,7 +4417,11 @@ function brainFeedIconHTML(id) {
 function brainFeedRowHTML(ev) {
   const isError = ev.status !== "ok";
   const label = BRAIN_NODE_LABELS[ev.node] || ev.node;
-  return `<div class="brain-feed-row">
+  // data-node: pedido explícito ("al hacer click nos puede mostrar el
+  // detalle del proceso, tiempos, data útil") — reusa el panel de
+  // drill-down por nodo ya existente (mismos datos reales de
+  // /dashboard/node_activity/{node}) en vez de construir un panel nuevo.
+  return `<div class="brain-feed-row" data-node="${escapeHtml(ev.node)}">
     <span class="dash-dot ${isError ? "off" : "ok"}"></span>
     ${brainFeedIconHTML(ev.node)}
     <span class="brain-feed-label">${escapeHtml(label)} · ${escapeHtml(ev.label || "")}</span>
@@ -4171,6 +4438,10 @@ function renderBrainFeed(events, replace) {
   else brainFeedList.insertAdjacentHTML("afterbegin", rowsHtml);
   while (brainFeedList.children.length > 60) brainFeedList.lastElementChild.remove();
 }
+brainFeedList.addEventListener("click", (evt) => {
+  const row = evt.target.closest(".brain-feed-row");
+  if (row) openNodeDrillPanel(row.dataset.node);
+});
 
 // Cobertura completa (ADR 0089): antes un subconjunto de 9 nodos elegidos a
 // mano — dejaba afuera nodos reales como `documents` o `gmail_send`, justo
@@ -5175,6 +5446,7 @@ async function persistLlmRouting(role, value) {
       body: JSON.stringify({ [role]: { provider, model } }),
     })).json();
     llmRoutingState = data.routing;
+    if (role === "orchestrator") refreshTopChromeStatus();
   } catch (e) {}
 }
 
@@ -5275,6 +5547,7 @@ function openChatFocus() {
   chatFocusPanel.classList.add("open");
   refreshConvLists();
   refreshProjectList();
+  updateChatTitleDisplays();
   // Pedido explícito: entrar al modo enfoque tiene que dejar listo para
   // escribir de una, sin un click extra — solo en escritorio (en mobile,
   // enfocar un textarea dispara el teclado nativo sin que el usuario lo pida).
@@ -5291,6 +5564,7 @@ function closeChatFocus() {
     chatHomeEl.appendChild(chat);
     chatHomeEl.appendChild(controlBar);
   }
+  updateChatTitleDisplays();
 }
 chatFocusOverlay.addEventListener("click", closeChatFocus);
 chatFocusCloseBtn.addEventListener("click", closeChatFocus);
@@ -5400,6 +5674,7 @@ function setDashboardView(view, { skipPersist = false } = {}) {
   if (isHud === dashHudActive) return; // ya estaba en ese estado — no repetir los efectos de abajo
   dashHudActive = isHud;
   document.body.classList.toggle("dash-hud-active", isHud);
+  syncTopChromeAvatar();
   if (isHud) {
     chatDock.dataset.position = dashboardPrefs.hud_chat_position || "left";
     reparentChatIntoDock();
@@ -5425,6 +5700,7 @@ function deactivateDashHudSideEffectsOnly() {
   if (!dashHudActive) return;
   dashHudActive = false;
   document.body.classList.remove("dash-hud-active");
+  syncTopChromeAvatar();
   stopDashHudPolling();
   chatDock.hidden = true;
   forceCloseHudSidebarDrawer();
@@ -5438,23 +5714,22 @@ function deactivateDashHudSideEffectsOnly() {
 function reparentChatIntoDock() {
   chatDockBody.appendChild(chat);
   chatDockBody.appendChild(controlBar);
-  // Conversaciones/proyectos (☰) y modo enfoque (⤢) a la misma altura que
-  // adjuntar, al costado izquierdo — nunca clonados, se mueven los mismos
-  // nodos vivos que descansan en #chatDockToolbar mientras el dock no está
-  // activo (mismo criterio "mover, no clonar" del resto de este archivo).
-  textRow.insertBefore(chatDockFocusBtn, attachBtn);
-  textRow.insertBefore(chatDockDrawerBtn, chatDockFocusBtn);
+  // ☰/⤢ se quedan donde ya estaban (#chatDockToolbar) — antes se movían a
+  // .text-row porque el toolbar quedaba display:none (invisible) mientras el
+  // dock estaba activo; ahora el toolbar es un header real y visible (ver
+  // ADR de esta ronda, título de conversación en HUD), así que ya no hace
+  // falta reubicarlos para que sigan siendo clickeables.
   chatHomeEl = chatDockBody;
+  updateChatTitleDisplays();
 }
 function reparentChatOutOfDock() {
-  chatDockToolbar.appendChild(chatDockDrawerBtn);
-  chatDockToolbar.appendChild(chatDockFocusBtn);
   const chatBody = document.querySelector(".dash-chat-body");
   if (chatBody) {
     chatBody.appendChild(chat);
     chatBody.appendChild(controlBar);
     chatHomeEl = chatBody;
   }
+  updateChatTitleDisplays();
 }
 chatDockFocusBtn.addEventListener("click", openChatFocus);
 
@@ -5945,6 +6220,20 @@ async function openNodeDrillPanel(nodeId) {
     nodeDrillBody.innerHTML = '<div class="dash-loading">error cargando el detalle</div>';
   }
 }
+// "Tiempos, data útil" (pedido explícito) — estos campos ya viajan en el
+// evento real (ver events._event/usage_tracker), solo faltaba mostrarlos.
+// Nunca inventa un valor: cada pieza es opcional y se omite si el evento no
+// la trae (ej. latencia_ms es None para eventos previos a esta ronda).
+function nodeDrillTimingLine(ev) {
+  const parts = [];
+  if (ev.modelo) parts.push(ev.modelo);
+  if (ev.tokens_in != null || ev.tokens_out != null) {
+    parts.push(`${ev.tokens_in ?? "?"}→${ev.tokens_out ?? "?"} tokens`);
+  }
+  if (ev.latencia_ms != null) parts.push(`${(ev.latencia_ms / 1000).toFixed(1)}s`);
+  if (ev.costo_usd != null) parts.push(`$${ev.costo_usd.toFixed(4)}`);
+  return parts.join(" · ");
+}
 function renderNodeDrillBody(events) {
   if (!events.length) {
     nodeDrillBody.innerHTML = '<div class="dash-loading">sin actividad registrada todavía</div>';
@@ -5953,14 +6242,16 @@ function renderNodeDrillBody(events) {
   nodeDrillBody.innerHTML = events
     .slice()
     .reverse()
-    .map(
-      (ev) => `
+    .map((ev) => {
+      const timing = nodeDrillTimingLine(ev);
+      return `
     <div class="node-drill-row">
       <div class="node-drill-row-verb">${escapeHtml(ev.verbo)}</div>
       ${ev.detalle ? `<div class="node-drill-row-detalle">${escapeHtml(ev.detalle)}</div>` : ""}
+      ${timing ? `<div class="node-drill-row-timing">${escapeHtml(timing)}</div>` : ""}
       <div class="node-drill-row-meta">${relativeTime(ev.timestamp)}</div>
-    </div>`
-    )
+    </div>`;
+    })
     .join("");
 }
 function closeNodeDrillPanel() {
@@ -5980,6 +6271,7 @@ function openSettings() {
   renderLlmRoutingSection();
   renderHudChatPositionSection();
   renderTemplateProposalsSection();
+  renderShowTimestampsToggle();
 }
 function closeSettings() {
   settingsOverlay.classList.remove("open");
@@ -6028,6 +6320,24 @@ async function renderHudChatPositionSection() {
     });
   });
 }
+
+// Toggle único (no una lista, a diferencia de los de arriba) — mismo patrón
+// visual .settings-toggle, apagado por default (dashboard_prefs.py). Al
+// activarse, loadConversation()/loadOlderMessages() insertan separadores de
+// fecha y addMessage() muestra la hora dimeada por burbuja (ver más abajo).
+async function renderShowTimestampsToggle() {
+  if (!dashboardPrefs) dashboardPrefs = await (await apiFetch("/dashboard/preferences")).json();
+  showTimestampsToggle.classList.toggle("on", dashboardPrefs.show_message_timestamps);
+}
+showTimestampsToggle.addEventListener("click", async () => {
+  dashboardPrefs.show_message_timestamps = !dashboardPrefs.show_message_timestamps;
+  showTimestampsToggle.classList.toggle("on", dashboardPrefs.show_message_timestamps);
+  await persistPrefs();
+  // Reaplica de una sobre lo que ya está en pantalla, sin esperar a
+  // recargar la conversación — mismo criterio de "se ve al toque" que
+  // cualquier otro toggle de Configuración.
+  if (conversationId) loadConversation(conversationId);
+});
 
 // Propuestas de plantilla del curador (Decisión 2, Track A) — de solo
 // lectura: nunca se aplican solas, esto es para que el fundador las vea y
@@ -6157,7 +6467,8 @@ async function postAndHandleSend(text, inputAudioId) {
     if (!res.ok) throw new Error("send HTTP " + res.status);
     const data = await res.json();
     hideTyping();
-    addMessage(data.response, "snarf", ttsAvailable, null, data.speech, Boolean(inputAudioId), data.deliverable, data.thinking);
+    addMessage(data.response, "snarf", ttsAvailable, null, data.speech, Boolean(inputAudioId), data.deliverable, data.thinking, null, Date.now() / 1000);
+    refreshDateSeparators();
     setState("idle", idleLabel());
     // Sin esto, una conversación nueva se queda mostrando el placeholder
     // "(nueva conversación)" en las listas hasta que el usuario navega fuera
@@ -6203,10 +6514,12 @@ async function sendText(text, inputAudioId) {
     });
     pendingProjectHomeId = null;
     clearChat();
+    resetConversationPagination();
     refreshProjectList();
   }
   clearRetry();
-  addMessage(text, "user", false, inputAudioId);
+  addMessage(text, "user", false, inputAudioId, null, false, null, null, null, Date.now() / 1000);
+  refreshDateSeparators();
   await postAndHandleSend(text, inputAudioId);
 }
 
@@ -6454,6 +6767,49 @@ fetch("/status").then(r => r.json()).then(s => {
   // rol dejó de ser Anthropic-only, ver ADR 0068).
   else if (!s.llm_available) statusEl.textContent = "modo eco (sin credencial de LLM configurada, ver Configuración → LLM por rol)";
 }).catch(() => {});
+
+// --- #topChrome: marcas de estado + modelo vigente -------------------------
+async function refreshTopChromeStatus() {
+  try {
+    const [status, routing] = await Promise.all([
+      fetch("/status").then((r) => r.json()),
+      apiFetch("/llm-routing").then((r) => r.json()),
+    ]);
+    const problems = [];
+    if (!status.llm_available) problems.push("LLM sin credencial");
+    if (!status.stt_available || !status.tts_available) problems.push("voz incompleta");
+    topChromeStatus.textContent = problems.length ? ("⚠ " + problems.join(" · ")) : "● todo ok";
+    topChromeStatus.classList.toggle("warn", problems.length > 0);
+    topChromeStatus.classList.toggle("ok", problems.length === 0);
+    const current = routing.routing && routing.routing.orchestrator;
+    if (current) {
+      const preset = LLM_PRESETS.find((p) => p.provider === current.provider && p.model === current.model);
+      topChromeModel.textContent = preset ? preset.label : `${current.provider} — ${current.model}`;
+    }
+  } catch (e) {}
+}
+refreshTopChromeStatus();
+// Refleja el revert automático del fallback (ver ADR de esta ronda) sin
+// necesitar recargar la página — chequeo liviano, mismo intervalo que
+// cualquier otro polling chico de este archivo.
+setInterval(refreshTopChromeStatus, 30000);
+
+// --- #topChrome: aparece con mouseenter sobre la franja superior, se oculta
+// tras dejar de usarse (pedido explícito) — global en vez de solo sobre el
+// propio elemento porque #topChrome arranca con pointer-events:none
+// (invisible) y necesita "sentir" el mouse antes de poder recibir sus
+// propios eventos.
+const TOP_CHROME_REVEAL_ZONE_PX = 64;
+let topChromeHideTimer = null;
+document.addEventListener("mousemove", (e) => {
+  if (e.clientY <= TOP_CHROME_REVEAL_ZONE_PX) {
+    clearTimeout(topChromeHideTimer);
+    topChrome.classList.add("visible");
+  } else if (topChrome.classList.contains("visible") && !topChrome.matches(":hover")) {
+    clearTimeout(topChromeHideTimer);
+    topChromeHideTimer = setTimeout(() => topChrome.classList.remove("visible"), 400);
+  }
+});
 
 // --- Aviso de fallback automático de LLM (ADR de esta ronda) --------------
 // Si un rol se quedó sin crédito/rate-limited y Snarf cambió solo de

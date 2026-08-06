@@ -11,7 +11,25 @@ def orchestrator(tmp_path, monkeypatch):
     # Aísla la memoria episódica del proyecto real: cada test corre en su
     # propio directorio temporal, nunca escribe en data/episodic_memory.jsonl.
     monkeypatch.chdir(tmp_path)
-    return Orchestrator()
+    o = Orchestrator()
+    # Bug real de hermeticidad encontrado en vivo (2026-08-05, mismo que
+    # tests/test_app.py — ver ADR 0119/CHANGELOG): la mayoría de los tests de
+    # este archivo nunca mockearon self._llm/_title_llm a propósito porque el
+    # proveedor default de ANTES exigía una credencial real (stripeada por
+    # conftest::_no_real_credentials) — `.available` daba False sola y
+    # handle()/generate_conversation_title() degradaban en modo eco sin
+    # llamar a nada. Desde que el default pasó a mlx_local_fast (sin
+    # credencial, siempre "available"), esos mismos tests sin mockear
+    # empezaron a disparar llamadas REALES contra el server local de
+    # producción — confirmado con `lsof`: la suite completa colgada varios
+    # minutos contra una conexión TCP real a 127.0.0.1:8991, justo cuando
+    # coincide con tráfico real del fundador en el mismo server. Este default
+    # restaura el comportamiento original (`.available == False`) para
+    # cualquier test que no mockee `_llm`/`_title_llm` a mano — los que sí
+    # necesitan una respuesta real siguen sobreescribiendo esto ellos mismos.
+    monkeypatch.setattr(o._llm, "_client", None)
+    monkeypatch.setattr(o._title_llm, "_client", None)
+    return o
 
 
 def test_echo_mode_without_api_key_and_persists_to_memory(orchestrator):
@@ -214,6 +232,67 @@ def test_handle_still_degrades_gracefully_when_the_fallback_also_fails(orchestra
     response = orchestrator.handle("text", "hola snarf", conversation_id="c1")
     assert "error real del LLM" in response.text
     assert "credit balance" in response.text
+
+
+def test_handle_reverts_to_local_automatically_when_the_fallback_cooldown_expired(orchestrator, monkeypatch):
+    # ADR de esta ronda: maybe_revert_expired_fallback ya está testeado a
+    # fondo en tests/test_llm_routing.py — acá solo se verifica que handle()
+    # lo consulta ANTES de usar self._llm, y usa su resultado sin siquiera
+    # llamar al proveedor de fallback vigente.
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+
+    def boom_if_called(**kwargs):
+        raise AssertionError("no debería llamar al proveedor de fallback vigente — el revert ya respondió")
+
+    monkeypatch.setattr(orchestrator._llm, "generate", boom_if_called)
+
+    calls = []
+
+    def fake_maybe_revert(role, entry, **kwargs):
+        calls.append((role, "tools" in kwargs))
+        return LLMResponse(text="respuesta real, ya de vuelta en local", speech="ya volví"), {
+            "provider": "mlx_local_fast",
+            "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        }
+
+    monkeypatch.setattr(llm_routing, "maybe_revert_expired_fallback", fake_maybe_revert)
+    refreshed = []
+    monkeypatch.setattr(orchestrator, "refresh_llm_routing", lambda: refreshed.append(True))
+
+    response = orchestrator.handle("text", "hola snarf", conversation_id="c1")
+
+    assert calls == [("orchestrator", True)]
+    assert refreshed == [True]
+    assert response.text == "respuesta real, ya de vuelta en local"
+
+
+def test_generate_conversation_title_reverts_to_local_automatically_when_the_fallback_cooldown_expired(orchestrator, monkeypatch):
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    monkeypatch.setattr(orchestrator._title_llm, "_client", object())  # available=True
+
+    def boom_if_called(**kwargs):
+        raise AssertionError("no debería llamar al proveedor de fallback vigente — el revert ya respondió")
+
+    monkeypatch.setattr(orchestrator._title_llm, "generate", boom_if_called)
+
+    calls = []
+
+    def fake_maybe_revert(role, entry, **kwargs):
+        calls.append(role)
+        return LLMResponse(text="Título real, ya de vuelta en local", speech=""), {
+            "provider": "mlx_local_fast",
+            "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        }
+
+    monkeypatch.setattr(llm_routing, "maybe_revert_expired_fallback", fake_maybe_revert)
+    refreshed = []
+    monkeypatch.setattr(orchestrator, "refresh_llm_routing", lambda: refreshed.append(True))
+
+    orchestrator.generate_conversation_title("c1")
+
+    assert calls == ["conversation_title"]
+    assert refreshed == [True]
+    assert orchestrator.memory.get_title("c1") == "Título real, ya de vuelta en local"
 
 
 def test_handle_injects_project_prompt_as_additional_system_context(orchestrator, monkeypatch):
@@ -657,6 +736,34 @@ def test_capped_for_replay_uses_a_real_summary_when_the_compaction_role_is_avail
     assert len(calls) == 1
 
 
+def test_capped_for_replay_skips_the_llm_entirely_for_an_extreme_entry(orchestrator, monkeypatch):
+    """Bug real (esta ronda): una entrada MUY grande (ej. una respuesta vieja
+    con el volcado completo de un resultado de herramienta gigante) mandada
+    entera al rol history_compaction tumbó el server MLX local real por
+    out-of-memory de Metal (~20.800 tokens en un solo prompt, 31GB de RAM
+    real). Por encima de HISTORY_COMPACTION_INPUT_MAX_CHARS, el corte duro se
+    aplica directo — el LLM ni se llama, sin importar que esté disponible."""
+    from snarf.core.orchestrator import HISTORY_COMPACTION_INPUT_MAX_CHARS
+
+    calls = []
+
+    class FakeSummarizer:
+        available = True
+
+        def generate(self, **kwargs):
+            calls.append(kwargs)
+            return LLMResponse(text="no debería llegar a usarse", speech="ok")
+
+    monkeypatch.setattr(llm_routing, "build_resilient_llm", lambda role: FakeSummarizer())
+    extreme_text = "z" * (HISTORY_COMPACTION_INPUT_MAX_CHARS + 1000)
+
+    result = orchestrator._capped_for_replay(extreme_text)
+
+    assert calls == []
+    assert len(result) < len(extreme_text)
+    assert "no re-pagar su costo" in result
+
+
 def test_handle_caps_an_oversized_history_entry_before_replaying_it(orchestrator, monkeypatch):
     """Bug real que motivó esto: un resultado de herramienta gigante (ej. un
     barrido de mil correos) embebido en una sola respuesta se re-transmitía
@@ -1048,8 +1155,8 @@ class _FakeDomainIndexer:
         self._status = {"running": False}
         self._search_result = search_result if search_result is not None else [{"text": "resultado real"}]
 
-    def search(self, query, top_k=5):
-        self.search_calls.append((query, top_k))
+    def search(self, query, top_k=5, where=None):
+        self.search_calls.append((query, top_k, where))
         return self._search_result
 
     def start(self):
@@ -1066,7 +1173,7 @@ def test_knowledge_search_with_domain_personal_delegates_to_the_drive_indexer(or
 
     result = orchestrator._handle_tool("knowledge_search", {"query": "impuestos", "domain": "personal"})
 
-    assert fake.search_calls == [("impuestos", 5)]
+    assert fake.search_calls == [("impuestos", 5, None)]
     assert result == [{"text": "resultado real"}]
 
 
@@ -1076,7 +1183,7 @@ def test_knowledge_search_with_domain_code_delegates_to_the_code_indexer(orchest
 
     result = orchestrator._handle_tool("knowledge_search", {"query": "orchestrator", "domain": "code", "top_k": 3})
 
-    assert fake.search_calls == [("orchestrator", 3)]
+    assert fake.search_calls == [("orchestrator", 3, None)]
     assert result == [{"text": "resultado real"}]
 
 
@@ -1093,7 +1200,7 @@ def test_codebase_search_always_uses_the_code_indexer(orchestrator, monkeypatch)
 
     result = orchestrator._handle_tool("codebase_search", {"query": "orchestrator"})
 
-    assert fake.search_calls == [("orchestrator", 5)]
+    assert fake.search_calls == [("orchestrator", 5, None)]
     assert result == [{"text": "resultado real"}]
 
 
@@ -1131,3 +1238,59 @@ def test_knowledge_index_status_with_an_unsupported_domain_reports_it_explicitly
     result = orchestrator._handle_tool("knowledge_index_status", {"domain": "marketing"})
 
     assert "error" in result
+
+
+# --- dominio 'conversations' (ADR de esta ronda, mismo precedente que 'code') ---
+
+
+def test_knowledge_search_with_domain_conversations_delegates_to_the_conversations_indexer(orchestrator, monkeypatch):
+    fake = _FakeDomainIndexer()
+    monkeypatch.setattr(orchestrator, "_conversations_indexer", fake)
+
+    result = orchestrator._handle_tool("knowledge_search", {"query": "el plan de marca", "domain": "conversations"})
+
+    assert fake.search_calls == [("el plan de marca", 5, None)]
+    assert result == [{"text": "resultado real"}]
+
+
+def test_conversations_search_without_project_id_searches_the_whole_history(orchestrator, monkeypatch):
+    fake = _FakeDomainIndexer()
+    monkeypatch.setattr(orchestrator, "_conversations_indexer", fake)
+
+    result = orchestrator._handle_tool("conversations_search", {"query": "el plan de marca"})
+
+    assert fake.search_calls == [("el plan de marca", 5, None)]
+    assert result == [{"text": "resultado real"}]
+
+
+def test_conversations_search_with_project_id_filters_by_it(orchestrator, monkeypatch):
+    fake = _FakeDomainIndexer()
+    monkeypatch.setattr(orchestrator, "_conversations_indexer", fake)
+
+    orchestrator._handle_tool("conversations_search", {"query": "estado del cliente", "project_id": "proj-1", "top_k": 3})
+
+    assert fake.search_calls == [("estado del cliente", 3, {"project_id": "proj-1"})]
+
+
+def test_knowledge_index_start_with_domain_conversations_starts_the_conversations_indexer(orchestrator, monkeypatch):
+    fake = _FakeDomainIndexer()
+    monkeypatch.setattr(orchestrator, "_conversations_indexer", fake)
+
+    result = orchestrator._handle_tool("knowledge_index_start", {"domain": "conversations"})
+
+    assert fake.start_called is True
+    assert result == {"status": "started"}
+
+
+def test_knowledge_index_status_with_domain_conversations_reads_the_conversations_indexer(orchestrator, monkeypatch):
+    fake = _FakeDomainIndexer()
+    fake._status = {"running": True, "processed": 7}
+    monkeypatch.setattr(orchestrator, "_conversations_indexer", fake)
+
+    result = orchestrator._handle_tool("knowledge_index_status", {"domain": "conversations"})
+
+    assert result == {"running": True, "processed": 7}
+
+
+def test_conversations_indexer_property_returns_the_real_instance(orchestrator):
+    assert orchestrator.conversations_indexer is orchestrator._conversations_indexer

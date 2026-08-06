@@ -174,6 +174,27 @@ def test_record_generic_llm_call_emits_a_unified_event_on_the_llm_node(tmp_path)
     assert emitted[0]["tokens_out"] == 500
 
 
+def test_record_anthropic_call_threads_duration_ms_into_the_unified_event(tmp_path):
+    # "Tiempos, data útil" al hacer click en el feed del cerebro (pedido
+    # explícito) — antes latencia_ms quedaba siempre None para llamadas de
+    # LLM, el campo existía en el schema pero nunca se llenaba acá.
+    events_path = tmp_path / "events.jsonl"
+    usage_tracker.record_anthropic_call(
+        "claude-sonnet-5", 1000, 500, path=tmp_path / "usage.jsonl", events_path=events_path, duration_ms=1234.5
+    )
+    emitted = events.recent(path=events_path)
+    assert emitted[0]["latencia_ms"] == 1234.5
+
+
+def test_record_generic_llm_call_threads_duration_ms_into_the_unified_event(tmp_path):
+    events_path = tmp_path / "events.jsonl"
+    usage_tracker.record_generic_llm_call(
+        "xai", "grok-4.1-fast", 1000, 500, path=tmp_path / "usage.jsonl", events_path=events_path, duration_ms=567.0
+    )
+    emitted = events.recent(path=events_path)
+    assert emitted[0]["latencia_ms"] == 567.0
+
+
 def test_record_groq_stt_call_emits_a_unified_event_on_the_stt_node(tmp_path):
     events_path = tmp_path / "events.jsonl"
     usage_tracker.record_groq_stt_call(12.5, path=tmp_path / "usage.jsonl", events_path=events_path)

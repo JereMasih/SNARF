@@ -38,6 +38,7 @@ class FakeVectorStore:
     def __init__(self):
         self.added = []
         self.deleted = []
+        self.search_calls = []
 
     def add(self, ids, embeddings, documents, metadatas):
         self.added.append((ids, embeddings, documents, metadatas))
@@ -46,6 +47,7 @@ class FakeVectorStore:
         self.deleted.append(file_id)
 
     def search(self, query_embedding, top_k=5, where=None):
+        self.search_calls.append({"top_k": top_k, "where": where})
         return [{"text": "resultado", "embedding": query_embedding, "top_k": top_k}]
 
 
@@ -150,6 +152,23 @@ def test_search_embeds_the_query_and_delegates_to_the_vector_store(tmp_path):
 
     assert embeddings.calls == [(["una pregunta sobre el código"], "query")]
     assert results[0]["top_k"] == 3
+
+
+def test_search_without_where_passes_none_through(tmp_path):
+    # Pedido explícito (conversations_search sin project_id busca sobre todo
+    # el historial, no solo un proyecto) — sin where, nunca se filtra.
+    indexer, _, vector_store = make_indexer(tmp_path, [], {})
+    indexer.search("una pregunta")
+    assert vector_store.search_calls[0]["where"] is None
+
+
+def test_search_with_where_filters_the_vector_store_query(tmp_path):
+    # conversations_search(project_id=...) — el filtro real llega hasta
+    # chromadb sin que KnowledgeIndexer conozca conversations en particular
+    # (genérico, mismo motor que 'code').
+    indexer, _, vector_store = make_indexer(tmp_path, [], {})
+    indexer.search("una pregunta", where={"project_id": "proj-1"})
+    assert vector_store.search_calls[0]["where"] == {"project_id": "proj-1"}
 
 
 def test_manifest_summary_counts_items_by_status_without_scanning(tmp_path):

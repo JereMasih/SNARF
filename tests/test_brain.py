@@ -102,6 +102,21 @@ def test_snapshot_aggregates_usage_entries_by_vendor_and_splits_elevenlabs_by_mo
     assert result["nodes"]["tts"]["count"] == 1
 
 
+def test_snapshot_formats_the_llm_node_label_without_the_raw_vendor_prefix():
+    # Bug real señalado por el fundador: "openai:mlx-comunity/qwen.... no
+    # aporta" — el nodo llm ahora muestra el modelo solo, legible; otros
+    # nodos de vendor (ej. tts) se quedan con el "vendor:model" de siempre.
+    usage = [
+        {"timestamp": 1.0, "vendor": "anthropic", "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit"},
+        {"timestamp": 2.0, "vendor": "elevenlabs", "model": "tts"},
+    ]
+    result = brain.snapshot([], usage, [], {})
+    llm_event = next(e for e in result["events"] if e["node"] == "llm")
+    tts_event = next(e for e in result["events"] if e["node"] == "tts")
+    assert llm_event["label"] == "Qwen3-4B-Instruct-2507-4bit"
+    assert tts_event["label"] == "elevenlabs:tts"
+
+
 def test_snapshot_routes_alternative_llm_providers_to_the_llm_node():
     # Encontrado durante la instrumentación unificada de telemetría (Fase 1
     # del plan de HUD): estos 4 vendors ya generaban entradas reales en

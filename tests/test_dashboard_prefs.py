@@ -283,3 +283,22 @@ def test_save_prefs_rejects_non_bool_hud_sidebar_pinned(tmp_path, monkeypatch):
     monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
     saved = dashboard_prefs.save_prefs("fundador", {"hud_sidebar_pinned": 1})
     assert saved["hud_sidebar_pinned"] is False
+
+
+def test_default_show_message_timestamps_is_false(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    prefs = dashboard_prefs.load_prefs("fundador")
+    assert prefs["show_message_timestamps"] is False
+
+
+def test_save_prefs_accepts_show_message_timestamps_true(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    saved = dashboard_prefs.save_prefs("fundador", {"show_message_timestamps": True})
+    assert saved["show_message_timestamps"] is True
+    assert dashboard_prefs.load_prefs("fundador")["show_message_timestamps"] is True
+
+
+def test_save_prefs_rejects_non_bool_show_message_timestamps(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_prefs, "PREFS_DIR", tmp_path)
+    saved = dashboard_prefs.save_prefs("fundador", {"show_message_timestamps": 1})
+    assert saved["show_message_timestamps"] is False

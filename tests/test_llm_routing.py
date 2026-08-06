@@ -1,3 +1,5 @@
+import time
+
 import anthropic
 import httpx
 import openai
@@ -213,7 +215,9 @@ def test_attempt_fallback_switches_to_the_next_available_provider_and_leaves_a_t
     response, new_entry = llm_routing.attempt_fallback("dashboard_curator", entry, exc)
 
     assert response.text == "respuesta real de xai"
-    assert new_entry == {"provider": "xai", "model": "grok-4-1-fast"}
+    assert new_entry["provider"] == "xai"
+    assert new_entry["model"] == "grok-4-1-fast"
+    assert new_entry["fallback_expires_at"] > time.time()  # ver test_attempt_fallback_stamps_new_entries_...
     # se persiste como nuevo default real del rol
     assert llm_routing.load_routing()["dashboard_curator"] == new_entry
     # y queda un registro trazable real
@@ -260,6 +264,23 @@ def test_attempt_fallback_never_tries_a_provider_without_credentials(tmp_path, m
     assert result == (None, None)
 
 
+def test_attempt_fallback_stamps_new_entries_with_an_expiring_cooldown(tmp_path, monkeypatch):
+    """Sin esto, un fallback quedaba persistido para siempre (bug real
+    reportado por el fundador: "sigue en grok" mucho después de que el
+    server local ya podía responder de nuevo) — ver maybe_revert_expired_fallback."""
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
+    monkeypatch.setattr(llm_routing, "available_providers", lambda: ["anthropic", "xai"])
+    monkeypatch.setattr(llm_routing, "_build", lambda provider, model: type("F", (), {"generate": lambda self, **kw: type("R", (), {"text": "ok"})()})())
+    entry = {"provider": "anthropic", "model": "claude-haiku-4-5"}
+    before = time.time()
+
+    _, new_entry = llm_routing.attempt_fallback("dashboard_curator", entry, _anthropic_status_error(500))
+
+    assert new_entry["fallback_expires_at"] > before
+    assert new_entry["fallback_expires_at"] <= before + llm_routing.FALLBACK_COOLDOWN_SECONDS + 1
+
+
 def test_attempt_fallback_uses_the_conservative_vision_order_for_drive_vision(tmp_path, monkeypatch):
     monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
     monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
@@ -298,6 +319,88 @@ def test_recent_fallback_events_filters_by_since(tmp_path, monkeypatch):
     llm_routing._append_fallback_log({"timestamp": 200.0, "role": "y", "from": {}, "to": {}, "error": "e"})
     events = llm_routing.recent_fallback_events(since=150.0)
     assert [e["role"] for e in events] == ["y"]
+
+
+# --- maybe_revert_expired_fallback ---------------------------------------
+
+
+def test_maybe_revert_expired_fallback_does_nothing_before_the_cooldown_expires(tmp_path, monkeypatch):
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+
+    def fake_build(provider, model):
+        raise AssertionError("no debería ni intentar reconstruir el proveedor local todavía")
+
+    monkeypatch.setattr(llm_routing, "_build", fake_build)
+    entry = {"provider": "anthropic", "model": "claude-haiku-4-5", "fallback_expires_at": time.time() + 300}
+    result = llm_routing.maybe_revert_expired_fallback("dashboard_curator", entry)
+    assert result == (None, None)
+
+
+def test_maybe_revert_expired_fallback_does_nothing_for_a_manual_choice_without_the_flag(tmp_path, monkeypatch):
+    """Una entrada sin fallback_expires_at es una elección manual del
+    fundador (ver PUT /llm-routing) — nunca debe revertirse sola."""
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+
+    def fake_build(provider, model):
+        raise AssertionError("una elección manual nunca debería reintentarse sola")
+
+    monkeypatch.setattr(llm_routing, "_build", fake_build)
+    entry = {"provider": "anthropic", "model": "claude-haiku-4-5"}
+    result = llm_routing.maybe_revert_expired_fallback("dashboard_curator", entry)
+    assert result == (None, None)
+
+
+def test_maybe_revert_expired_fallback_reverts_to_the_local_default_when_it_works_again(tmp_path, monkeypatch):
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
+
+    class _Response:
+        text = "respuesta real del local, ya recuperado"
+
+    def fake_build(provider, model):
+        assert (provider, model) == (
+            llm_routing.DEFAULT_ROUTING["dashboard_curator"]["provider"],
+            llm_routing.DEFAULT_ROUTING["dashboard_curator"]["model"],
+        )
+        return type("F", (), {"generate": lambda self, **kw: _Response()})()
+
+    monkeypatch.setattr(llm_routing, "_build", fake_build)
+    entry = {"provider": "anthropic", "model": "claude-haiku-4-5", "fallback_expires_at": time.time() - 1}
+
+    response, new_entry = llm_routing.maybe_revert_expired_fallback("dashboard_curator", entry)
+
+    assert response.text == "respuesta real del local, ya recuperado"
+    assert new_entry == llm_routing.DEFAULT_ROUTING["dashboard_curator"]
+    persisted = llm_routing.load_routing()["dashboard_curator"]
+    assert persisted == llm_routing.DEFAULT_ROUTING["dashboard_curator"]
+    assert "fallback_expires_at" not in persisted  # vuelve limpio, no queda marcado como fallback
+    events = llm_routing.recent_fallback_events()
+    assert len(events) == 1
+    assert events[0]["reverted"] is True
+    assert events[0]["to"] == llm_routing.DEFAULT_ROUTING["dashboard_curator"]
+
+
+def test_maybe_revert_expired_fallback_extends_the_cooldown_when_the_local_is_still_down(tmp_path, monkeypatch):
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
+
+    def fake_build(provider, model):
+        def boom(self, **kw):
+            raise RuntimeError("el proveedor local sigue caído")
+
+        return type("F", (), {"generate": boom})()
+
+    monkeypatch.setattr(llm_routing, "_build", fake_build)
+    original_expiry = time.time() - 1
+    entry = {"provider": "anthropic", "model": "claude-haiku-4-5", "fallback_expires_at": original_expiry}
+
+    result = llm_routing.maybe_revert_expired_fallback("dashboard_curator", entry)
+
+    assert result == (None, None)
+    persisted = llm_routing.load_routing()["dashboard_curator"]
+    assert persisted["provider"] == "anthropic"  # se queda en el fallback vigente
+    assert persisted["fallback_expires_at"] > original_expiry  # pero el cooldown se extendió
+    assert llm_routing.recent_fallback_events() == []  # extender el cooldown no es un fallback nuevo
 
 
 # --- build_resilient_llm / _ResilientLLM ---------------------------------

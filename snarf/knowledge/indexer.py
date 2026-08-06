@@ -77,9 +77,9 @@ class KnowledgeIndexer:
         self._stop_event.set()
         return {"status": "stopping"}
 
-    def search(self, query: str, top_k: int = 5) -> list[dict]:
+    def search(self, query: str, top_k: int = 5, where: dict | None = None) -> list[dict]:
         embedding = self._embeddings.embed([query], input_type="query")[0]
-        return self._vector_store.search(embedding, top_k=top_k)
+        return self._vector_store.search(embedding, top_k=top_k, where=where)
 
     def _run(self) -> None:
         data = self._manifest.load()

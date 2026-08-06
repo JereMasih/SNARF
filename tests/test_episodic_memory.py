@@ -218,6 +218,41 @@ def test_get_conversation_returns_only_its_own_entries(tmp_path, monkeypatch):
     assert entries[0]["input"] == "a"
 
 
+def test_get_conversation_with_limit_returns_the_most_recent_entries_in_ascending_order(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    for i in range(5):
+        memory.append("text", f"pregunta {i}", f"respuesta {i}", conversation_id="c1")
+    entries = memory.get_conversation("c1", limit=2)
+    # las 2 MÁS RECIENTES (índices 3 y 4), pero en orden cronológico
+    # ascendente — igual que sin paginar, solo un tramo más chico.
+    assert [e["input"] for e in entries] == ["pregunta 3", "pregunta 4"]
+
+
+def test_get_conversation_with_before_timestamp_pages_backward(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    for i in range(5):
+        memory.append("text", f"pregunta {i}", f"respuesta {i}", conversation_id="c1")
+    last_page = memory.get_conversation("c1", limit=2)
+    oldest_loaded = last_page[0]["timestamp"]
+    previous_page = memory.get_conversation("c1", limit=2, before_timestamp=oldest_loaded)
+    assert [e["input"] for e in previous_page] == ["pregunta 1", "pregunta 2"]
+
+
+def test_get_conversation_without_limit_still_returns_everything(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    for i in range(5):
+        memory.append("text", f"pregunta {i}", f"respuesta {i}", conversation_id="c1")
+    entries = memory.get_conversation("c1")
+    assert len(entries) == 5
+
+
+def test_get_conversation_with_limit_larger_than_history_returns_everything(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "única", "respuesta", conversation_id="c1")
+    entries = memory.get_conversation("c1", limit=30)
+    assert len(entries) == 1
+
+
 def test_search_matches_input_or_response_case_insensitive(tmp_path, monkeypatch):
     memory = make_memory(tmp_path, monkeypatch)
     memory.append("text", "hablemos de Snarf", "listo", conversation_id="c1")

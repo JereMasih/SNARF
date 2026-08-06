@@ -206,7 +206,17 @@ def _normalize(raw: dict) -> dict:
             and isinstance(entry.get("model"), str)
             and entry["model"]
         ):
-            routing[role] = {"provider": entry["provider"], "model": entry["model"]}
+            normalized = {"provider": entry["provider"], "model": entry["model"]}
+            # fallback_expires_at (ver attempt_fallback/maybe_revert_expired_
+            # fallback más abajo) se preserva acá a propósito — es lo único
+            # que distingue "esto quedó así por un fallback automático" de
+            # "el fundador lo eligió a mano desde Configuración" (un PUT
+            # manual nunca manda este campo, así que se pierde solo al
+            # elegir a mano, que es exactamente el comportamiento correcto:
+            # una elección real del fundador nunca debe revertirse sola).
+            if isinstance(entry.get("fallback_expires_at"), (int, float)):
+                normalized["fallback_expires_at"] = entry["fallback_expires_at"]
+            routing[role] = normalized
         else:
             routing[role] = dict(DEFAULT_ROUTING[role])
     return routing
@@ -320,6 +330,16 @@ _PROVIDER_LEVEL_STATUS_CODES = {400, 401, 403, 429, 500, 502, 503, 504, 529}
 _PROVIDER_STATUS_ERROR_TYPES = (anthropic.APIStatusError, openai.APIStatusError, genai_errors.APIError)
 _PROVIDER_CONNECTION_ERROR_TYPES = (anthropic.APIConnectionError, openai.APIConnectionError)
 
+# Cuánto tiempo se queda un rol en el proveedor de fallback antes de
+# reintentar solo el proveedor local por defecto (ver
+# maybe_revert_expired_fallback más abajo). Pedido real del fundador
+# ("necesitamos... algo para que vuelva al modelo correcto después de
+# resolver el requisito por timeout") — antes de esto, attempt_fallback
+# persistía el cambio PARA SIEMPRE: un timeout puntual (server local
+# ocupado, no caído) dejaba el rol en un proveedor pago indefinidamente,
+# sin ninguna señal de que ya podía volver.
+FALLBACK_COOLDOWN_SECONDS = 600
+
 # Orden de intento cuando el proveedor configurado de un rol falla — mismo
 # orden que ya venía usando el fundador a mano (Anthropic primero por
 # calidad, xAI como alternativa barata ya probada en producción).
@@ -413,13 +433,53 @@ def attempt_fallback(role: str, entry: dict, first_exc: Exception, **generate_kw
             response = _build(provider, model).generate(**generate_kwargs)
         except Exception:
             continue
-        new_entry = {"provider": provider, "model": model}
+        # fallback_expires_at marca esto como un fallback AUTOMÁTICO (ver
+        # maybe_revert_expired_fallback) — vencido el cooldown, se reintenta
+        # solo el proveedor local por defecto antes de seguir gastando
+        # tokens pagos indefinidamente por un timeout que ya pasó.
+        new_entry = {"provider": provider, "model": model, "fallback_expires_at": time.time() + FALLBACK_COOLDOWN_SECONDS}
         save_routing({**load_routing(), role: new_entry})
         _append_fallback_log(
             {"timestamp": time.time(), "role": role, "from": entry, "to": new_entry, "error": str(first_exc)[:300]}
         )
         return response, new_entry
     return None, None
+
+
+def maybe_revert_expired_fallback(role: str, entry: dict, **generate_kwargs):
+    """Si `entry` es un fallback automático (tiene `fallback_expires_at`,
+    ver attempt_fallback) y ya venció, intenta volver al proveedor local por
+    defecto del rol (DEFAULT_ROUTING) con una llamada REAL — mismo criterio
+    de honestidad que attempt_fallback: nunca revierte a ciegas, solo si el
+    intento tuvo éxito. Devuelve `(response, new_entry)` del intento
+    revertido si funcionó; `(None, None)` si no correspondía revertir
+    (no es un fallback vencido) o si el intento de volver falló — en ese
+    caso extiende el cooldown para no reintentar en cada turno mientras el
+    proveedor local sigue sin responder.
+
+    Nunca toca una elección manual del fundador (una entrada sin
+    fallback_expires_at, ver _normalize) — solo actúa sobre lo que
+    attempt_fallback dejó."""
+    expires_at = entry.get("fallback_expires_at")
+    if expires_at is None or time.time() < expires_at:
+        return None, None
+    default_entry = dict(DEFAULT_ROUTING[role])
+    if entry.get("provider") == default_entry["provider"] and entry.get("model") == default_entry["model"]:
+        # Ya está en el default (no debería tener fallback_expires_at, pero
+        # por las dudas se limpia el flag para no seguir evaluando esto).
+        save_routing({**load_routing(), role: default_entry})
+        return None, None
+    try:
+        response = _build(default_entry["provider"], default_entry["model"]).generate(**generate_kwargs)
+    except Exception:
+        extended = {**entry, "fallback_expires_at": time.time() + FALLBACK_COOLDOWN_SECONDS}
+        save_routing({**load_routing(), role: extended})
+        return None, None
+    save_routing({**load_routing(), role: default_entry})
+    _append_fallback_log(
+        {"timestamp": time.time(), "role": role, "from": entry, "to": default_entry, "reverted": True}
+    )
+    return response, default_entry
 
 
 class _ResilientLLM:
@@ -457,6 +517,14 @@ class _ResilientLLM:
         return self._llm.available
 
     def generate(self, **generate_kwargs):
+        # Chequeo barato (un compare de timestamps, sin red) salvo que
+        # self._entry sea realmente un fallback vencido — ahí sí intenta
+        # volver al proveedor local antes de usar el de fallback (ver
+        # maybe_revert_expired_fallback).
+        reverted_response, reverted_entry = maybe_revert_expired_fallback(self._role, self._entry, **generate_kwargs)
+        if reverted_response is not None:
+            self._llm, self._entry = _build(reverted_entry["provider"], reverted_entry["model"]), reverted_entry
+            return reverted_response
         try:
             return self._llm.generate(**generate_kwargs)
         except Exception as first_exc:

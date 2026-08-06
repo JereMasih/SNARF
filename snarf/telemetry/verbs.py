@@ -52,6 +52,7 @@ VERB_BY_SKILL: dict[str, str] = {
     "drive_index_stop": "frenando la indexación",
     "drive_search_knowledge": "rastreando lo indexado",
     "codebase_search": "buscando en el propio código",
+    "conversations_search": "buscando en el historial",
     "knowledge_search": "buscando en lo indexado",
     "knowledge_index_start": "indexando el conocimiento",
     "knowledge_index_status": "revisando el progreso",
@@ -194,6 +195,30 @@ ESTADO_MODIFIER: dict[str, str] = {
     "error": "tropezando con",
     "truncado": "conteniéndose en",
 }
+
+
+def _short_model_name(modelo: str) -> str:
+    """Nombre de modelo sin el prefijo de organización de HuggingFace (ej.
+    'mlx-community/Qwen3-4B-Instruct-2507-4bit' -> 'Qwen3-4B-Instruct-2507-4bit')
+    — nunca inventa un alias "amigable" por modelo (se desactualizaría solo
+    apenas cambie un modelo), solo recorta lo que no aporta."""
+    return modelo.rsplit("/", 1)[-1] if modelo else modelo
+
+
+def resumen_llm(modelo: str | None) -> str:
+    """Resumen legible para un evento del nodo `llm` — reemplaza el string
+    crudo "vendor:model" (pedido explícito del fundador: "openai:mlx-
+    comunity/qwen.... no aporta") por el nombre de modelo solo, sin el
+    prefijo de organización de HuggingFace. Sin prefijo "Razonamiento —": en
+    el único lugar real donde esto se muestra hoy (brainFeedRowHTML en
+    web/index.html), ya va precedido por BRAIN_NODE_LABELS["llm"] =
+    "Razonamiento" — anteponerlo acá también duplicaba la palabra
+    ("Razonamiento · Razonamiento — Qwen3-4B..."), encontrado en vivo con
+    Playwright. El vendor real ya se perdía en el string viejo de cualquier
+    forma (los roles locales quedan etiquetados "openai" por un detalle de
+    implementación de OpenAICompatibleLLM) — mostrar el modelo solo es
+    además más honesto."""
+    return _short_model_name(modelo) if modelo else "sin modelo"
 
 
 def verbo_tematico(nodo: str, agente: str, estado: str = "completo", skill: str | None = None) -> str:

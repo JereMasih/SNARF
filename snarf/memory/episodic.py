@@ -162,8 +162,24 @@ class EpisodicMemory:
 
         return sorted(by_id.values(), key=lambda c: c["last_activity"], reverse=True)
 
-    def get_conversation(self, conversation_id: str) -> list[dict]:
-        return [e for e in self._read_all() if e.get("conversation_id") == conversation_id]
+    def get_conversation(
+        self, conversation_id: str, limit: int | None = None, before_timestamp: float | None = None
+    ) -> list[dict]:
+        """Sin `limit`, devuelve la conversación completa (comportamiento
+        original, usado por generate_conversation_title/la tool
+        get_conversation, que necesitan verla entera). Con `limit`, devuelve
+        las últimas `limit` entradas anteriores a `before_timestamp` (o las
+        últimas `limit` en general si no se pasa cursor), siempre en orden
+        cronológico ascendente — igual que sin paginar, solo un tramo más
+        chico. Pensado para paginar el chat "desde el más reciente hacia
+        atrás" (ver GET /conversations/{id} en app.py) sin tener que leer y
+        parsear el archivo completo en el cliente en cada scroll."""
+        entries = [e for e in self._read_all() if e.get("conversation_id") == conversation_id]
+        if before_timestamp is not None:
+            entries = [e for e in entries if e["timestamp"] < before_timestamp]
+        if limit is None:
+            return entries
+        return entries[-limit:]
 
     def search(self, query: str, limit: int = 10) -> list[dict]:
         query_lower = query.lower().strip()

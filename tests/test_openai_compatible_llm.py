@@ -40,7 +40,55 @@ def make_llm(responses):
     llm._api_key_env = "OPENAI_API_KEY"
     llm._vendor = "openai"
     llm._api_key = "fake"
+    llm._local = False
     llm._client = FakeClient(responses)
+    return llm
+
+
+class FakeChunk:
+    """Mismo shape que un ChatCompletionChunk real de streaming (ver
+    _consume_stream) — `choices` vacío + `usage` seteado simula el chunk
+    final de `stream_options={"include_usage": True}`."""
+
+    def __init__(self, content=None, reasoning=None, tool_calls=None, finish_reason=None, usage=None):
+        if content is None and reasoning is None and tool_calls is None and finish_reason is None:
+            self.choices = []
+        else:
+            delta = SimpleNamespace(content=content, reasoning=reasoning, tool_calls=tool_calls)
+            self.choices = [SimpleNamespace(delta=delta, finish_reason=finish_reason)]
+        self.usage = usage
+
+
+class FakeToolCallDelta:
+    def __init__(self, index, id=None, name=None, arguments=None):
+        self.index = index
+        self.id = id
+        self.function = SimpleNamespace(name=name, arguments=arguments) if (name is not None or arguments is not None) else None
+
+
+class FakeStreamingCompletions:
+    def __init__(self, streams):
+        self._streams = list(streams)
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return iter(self._streams.pop(0))
+
+
+class FakeStreamingClient:
+    def __init__(self, streams):
+        self.chat = SimpleNamespace(completions=FakeStreamingCompletions(streams))
+
+
+def make_local_llm(streams):
+    llm = OpenAICompatibleLLM.__new__(OpenAICompatibleLLM)
+    llm.model = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+    llm._api_key_env = "OPENAI_API_KEY"
+    llm._vendor = "openai"
+    llm._api_key = "not-needed"
+    llm._local = True
+    llm._client = FakeStreamingClient(streams)
     return llm
 
 
@@ -86,6 +134,38 @@ def test_generate_continues_automatically_when_still_truncated_by_length():
     assert result.text == "primera parte, se corta segunda parte, ahora sí termina"
     assert "truncada" not in result.text
     assert len(llm._client.chat.completions.calls) == 2
+
+
+def test_generate_records_a_real_duration_ms_for_non_local_providers(monkeypatch):
+    # "Tiempos, data útil" al hacer click en el feed del cerebro (pedido
+    # explícito) — antes duration_ms no se medía en absoluto para este
+    # camino (no-streaming, proveedores cloud).
+    captured = {}
+    monkeypatch.setattr(
+        "snarf.capabilities.openai_compatible_llm.usage_tracker.record_generic_llm_call",
+        lambda *a, **kw: captured.update(kw),
+    )
+    llm = make_llm([fake_response("stop", "ok", usage=SimpleNamespace(prompt_tokens=10, completion_tokens=2))])
+    llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+    assert isinstance(captured["duration_ms"], float)
+    assert captured["duration_ms"] >= 0
+
+
+def test_generate_records_a_real_duration_ms_for_local_streaming_providers(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "snarf.capabilities.openai_compatible_llm.usage_tracker.record_generic_llm_call",
+        lambda *a, **kw: captured.update(kw),
+    )
+    stream = [
+        FakeChunk(content="hola"),
+        FakeChunk(finish_reason="stop"),
+        FakeChunk(usage=SimpleNamespace(prompt_tokens=5, completion_tokens=1)),
+    ]
+    llm = make_local_llm([stream])
+    llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+    assert isinstance(captured["duration_ms"], float)
+    assert captured["duration_ms"] >= 0
 
 
 def test_local_provider_builds_a_client_without_a_real_api_key(monkeypatch):
@@ -215,6 +295,98 @@ def test_available_is_false_without_a_client():
     llm = OpenAICompatibleLLM.__new__(OpenAICompatibleLLM)
     llm._client = None
     assert llm.available is False
+
+
+def test_local_provider_uses_a_bigger_timeout_as_a_secondary_safety_net():
+    """LOCAL_TIMEOUT_SECONDS subió de 150s a 240s esta ronda — sigue
+    existiendo como red de seguridad adicional, pero el mecanismo principal
+    ahora es el timeout de inactividad entre chunks del streaming (ver los
+    tests de _consume_stream/generate más abajo)."""
+    from snarf.capabilities.openai_compatible_llm import LOCAL_TIMEOUT_SECONDS
+
+    assert LOCAL_TIMEOUT_SECONDS == 240.0
+    llm = OpenAICompatibleLLM(model="local-model", base_url="http://localhost:8080/v1", local=True)
+    assert llm._client.timeout == LOCAL_TIMEOUT_SECONDS
+
+
+def test_generate_streams_for_local_providers_and_accumulates_content():
+    """Bug real que esto evita: sin streaming, el timeout de httpx cubre
+    TODA la generación de una — con streaming pasa a cubrir solo la
+    inactividad entre chunks, así que una respuesta lenta pero que sigue
+    progresando ya no dispara un fallback falso."""
+    stream = [
+        FakeChunk(content="Hola"),
+        FakeChunk(content=" mundo"),
+        FakeChunk(finish_reason="stop"),
+        FakeChunk(usage=SimpleNamespace(prompt_tokens=10, completion_tokens=2)),
+    ]
+    llm = make_local_llm([stream])
+    result = llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+    assert result.text == "Hola mundo"
+    assert llm._client.chat.completions.calls[0]["stream"] is True
+    assert llm._client.chat.completions.calls[0]["stream_options"] == {"include_usage": True}
+
+
+def test_generate_streams_reasoning_separately_from_content_for_local_providers():
+    stream = [
+        FakeChunk(reasoning="pensando..."),
+        FakeChunk(content="respuesta"),
+        FakeChunk(finish_reason="stop"),
+    ]
+    llm = make_local_llm([stream])
+    result = llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+    assert result.text == "respuesta"
+    assert result.thinking == "pensando..."
+
+
+def test_generate_reassembles_a_streamed_tool_call_and_invokes_the_handler():
+    calls = []
+
+    def tool_handler(name, args):
+        calls.append((name, args))
+        return {"ok": True}
+
+    first_stream = [
+        FakeChunk(tool_calls=[FakeToolCallDelta(0, id="call-1", name="buscar_algo")]),
+        FakeChunk(tool_calls=[FakeToolCallDelta(0, arguments='{"query"')]),
+        FakeChunk(tool_calls=[FakeToolCallDelta(0, arguments=': "test"}')]),
+        FakeChunk(finish_reason="tool_calls"),
+    ]
+    second_stream = [FakeChunk(content="resultado final"), FakeChunk(finish_reason="stop")]
+    llm = make_local_llm([first_stream, second_stream])
+    result = llm.generate(
+        system="sys",
+        messages=[{"role": "user", "content": "hola"}],
+        tools=[{"name": "buscar_algo", "description": "d", "input_schema": {"type": "object", "properties": {}}}],
+        tool_handler=tool_handler,
+    )
+    assert calls == [("buscar_algo", {"query": "test"})]
+    assert result.text == "resultado final"
+
+
+def test_generate_gives_up_after_max_tool_rounds_when_streaming():
+    stream = [
+        FakeChunk(tool_calls=[FakeToolCallDelta(0, id="c", name="t", arguments="{}")]),
+        FakeChunk(finish_reason="tool_calls"),
+    ]
+    llm = make_local_llm([stream for _ in range(MAX_TOOL_ROUNDS)])
+    result = llm.generate(
+        system="sys",
+        messages=[{"role": "user", "content": "hola"}],
+        tools=[{"name": "t", "description": "d", "input_schema": {"type": "object", "properties": {}}}],
+        tool_handler=lambda name, args: {},
+    )
+    assert "demasiadas consultas" in result.text
+
+
+def test_generate_continues_automatically_when_still_truncated_by_length_while_streaming():
+    first_stream = [FakeChunk(content="primera parte, se corta"), FakeChunk(finish_reason="length")]
+    second_stream = [FakeChunk(content=" segunda parte, ahora sí termina"), FakeChunk(finish_reason="stop")]
+    llm = make_local_llm([first_stream, second_stream])
+    result = llm.generate(system="sys", messages=[{"role": "user", "content": "escribime algo largo"}])
+    assert result.text == "primera parte, se corta segunda parte, ahora sí termina"
+    assert "truncada" not in result.text
+    assert len(llm._client.chat.completions.calls) == 2
 
 
 def test_generate_raises_a_clear_error_without_a_client():

@@ -24,6 +24,10 @@ data/input_log.jsonl
 data/telemetry_events.jsonl
 data/input_preprocessing_log.jsonl
 data/audio/
+data/calendar_brief/
+data/executive_board/
+data/knowledge/
+data/skill_proposals/
 data_backups/
 credentials/
 server.log

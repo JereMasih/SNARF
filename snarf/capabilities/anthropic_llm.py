@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 from typing import Callable
 
@@ -198,9 +199,13 @@ class AnthropicLLM(Capability):
         """Única forma real de llamar a messages.create en esta clase: siempre
         vía streaming. La propia SDK de Anthropic rechaza requests NO-streaming
         con max_tokens alto (arriesgan timeout HTTP en una conexión larga) —
-        con MAX_OUTPUT_TOKENS ya en 16000, streaming deja de ser opcional."""
+        con MAX_OUTPUT_TOKENS ya en 16000, streaming deja de ser opcional.
+        Devuelve (response, duration_ms) — la duración real de ESTA ronda, para
+        el detalle al click del feed del cerebro (ver ADR de esta ronda)."""
+        start = time.monotonic()
         with self._client.messages.stream(**kwargs) as stream:
-            return stream.get_final_message()
+            response = stream.get_final_message()
+        return response, (time.monotonic() - start) * 1000
 
     def generate(
         self,
@@ -239,8 +244,8 @@ class AnthropicLLM(Capability):
             kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=call_messages)
             if tools:
                 kwargs["tools"] = tools
-            response = self._create(**kwargs)
-            self._record_usage(response)
+            response, duration_ms = self._create(**kwargs)
+            self._record_usage(response, duration_ms)
 
             if response.stop_reason == "tool_use" and tool_handler:
                 conversation.append({"role": "assistant", "content": response.content})
@@ -282,10 +287,10 @@ class AnthropicLLM(Capability):
                 )
                 call_messages = list(conversation)
                 call_messages[-1] = _mark_cache_breakpoint(call_messages[-1])
-                response = self._create(
+                response, duration_ms = self._create(
                     model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=call_messages
                 )
-                self._record_usage(response)
+                self._record_usage(response, duration_ms)
                 text += "".join(block.text for block in response.content if block.type == "text")
 
             if response.stop_reason == "max_tokens":
@@ -316,10 +321,10 @@ class AnthropicLLM(Capability):
             }
         )
         try:
-            response = self._create(
+            response, duration_ms = self._create(
                 model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=closing_messages
             )
-            self._record_usage(response)
+            self._record_usage(response, duration_ms)
             text = "".join(block.text for block in response.content if block.type == "text")
             if text.strip():
                 return split_speech(text)
@@ -329,7 +334,7 @@ class AnthropicLLM(Capability):
         timeout_text = "[demasiadas consultas a herramientas, no llegué a una respuesta final]"
         return LLMResponse(text=timeout_text, speech=timeout_text)
 
-    def _record_usage(self, response) -> None:
+    def _record_usage(self, response, duration_ms: float | None = None) -> None:
         usage = getattr(response, "usage", None)
         if usage is None:
             return
@@ -346,4 +351,5 @@ class AnthropicLLM(Capability):
             getattr(usage, "cache_read_input_tokens", 0) or 0,
             stop_reason=getattr(response, "stop_reason", None),
             detalle=detail.truncate_detalle(text),
+            duration_ms=duration_ms,
         )

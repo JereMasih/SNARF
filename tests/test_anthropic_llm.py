@@ -266,6 +266,22 @@ def test_generate_records_token_usage_for_cost_tracking(monkeypatch):
     assert args[2] == 50
 
 
+def test_generate_records_a_real_duration_ms(monkeypatch):
+    # "Tiempos, data útil" al hacer click en el feed del cerebro (pedido
+    # explícito) — antes duration_ms no se medía en absoluto acá.
+    from snarf.capabilities import anthropic_llm as module
+
+    recorded = []
+    monkeypatch.setattr(module.usage_tracker, "record_anthropic_call", lambda *a, **k: recorded.append(k))
+
+    usage = SimpleNamespace(input_tokens=100, output_tokens=50, cache_creation_input_tokens=0, cache_read_input_tokens=0)
+    llm = make_llm([fake_response("end_turn", "ok", usage=usage)])
+    llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+
+    assert isinstance(recorded[0]["duration_ms"], float)
+    assert recorded[0]["duration_ms"] >= 0
+
+
 def test_generate_does_not_record_usage_when_response_has_no_usage_info(monkeypatch):
     from snarf.capabilities import anthropic_llm as module
 

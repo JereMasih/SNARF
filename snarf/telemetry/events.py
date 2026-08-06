@@ -96,7 +96,7 @@ def record_tool_event(tool_name: str, status: str, duration_ms: float | None = N
     )
 
 
-def record_vendor_event(vendor: str, model: str, cost_usd: float | None, metric: dict, estado: str = "completo", timestamp: float | None = None, path: Path | None = None, detalle: str | None = None) -> None:
+def record_vendor_event(vendor: str, model: str, cost_usd: float | None, metric: dict, estado: str = "completo", timestamp: float | None = None, path: Path | None = None, detalle: str | None = None, duration_ms: float | None = None) -> None:
     """Un evento por cada llamada real a un vendor (LLM/STT/TTS/embeddings)
     — llamar desde adentro de usage_tracker.record(). `metric` es el mismo
     dict que usage_tracker ya arma (input_tokens/output_tokens/etc.)."""
@@ -119,6 +119,7 @@ def record_vendor_event(vendor: str, model: str, cost_usd: float | None, metric:
             tokens_in=metric.get("input_tokens"),
             tokens_out=metric.get("output_tokens"),
             costo_usd=cost_usd,
+            latencia_ms=duration_ms,
             timestamp=timestamp,
             detalle=detalle,
         ),

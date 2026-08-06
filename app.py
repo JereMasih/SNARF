@@ -201,6 +201,7 @@ class DashboardPreferences(BaseModel):
     # conversaciones/proyectos queda fijo abierto — también aditivos.
     hud_chat_position: str = "left"
     hud_sidebar_pinned: bool = False
+    show_message_timestamps: bool = False
 
 
 class PersonalityPreferences(BaseModel):
@@ -473,7 +474,11 @@ def dashboard_telemetry_feed(since: float | None = None, user_id: str = Depends(
         {
             **e,
             "verbo": verbs.verbo_tematico(e["nodo"], e["agente"], e["estado"], skill=e["skill"]),
-            "resumen": (e["skill"] or "")[:TELEMETRY_FEED_SUMMARY_MAX_CHARS],
+            "resumen": (
+                verbs.resumen_llm(e.get("modelo"))
+                if e["nodo"] == "llm"
+                else (e["skill"] or "")[:TELEMETRY_FEED_SUMMARY_MAX_CHARS]
+            ),
         }
         for e in all_events[-100:]
     ]
@@ -602,7 +607,18 @@ def get_dashboard_preferences(user_id: str = Depends(require_user)):
 
 @app.put("/dashboard/preferences")
 def put_dashboard_preferences(payload: DashboardPreferences, user_id: str = Depends(require_user)):
-    return save_prefs(user_id, payload.model_dump())
+    # Bug real encontrado en vivo (2026-08-05, mismo patrón que el fix de
+    # PUT /llm-routing de esta misma ronda): DashboardPreferences declara un
+    # default propio en cada campo (visible_widgets={}, widget_options={},
+    # etc.) — un PUT parcial (cualquier cliente que no mande TODOS los
+    # campos) pisaba en silencio cada campo omitido con ese default vacío,
+    # perdiendo customización real ya guardada (tamaños/orden de widgets,
+    # estado y posición de nodos HUD). El frontend real siempre manda el
+    # objeto completo (persistPrefs() hace JSON.stringify(dashboardPrefs) tal
+    # cual se cargó), así que este merge no le cambia el comportamiento —
+    # solo protege contra un PUT parcial de cualquier otro cliente.
+    merged = {**load_prefs(user_id), **payload.model_dump(exclude_unset=True)}
+    return save_prefs(user_id, merged)
 
 
 @app.get("/personality/preferences")
@@ -792,9 +808,23 @@ def list_conversations(user_id: str = Depends(require_user)):
     return orchestrator.memory.list_conversations(unassigned_only=True)
 
 
+# Tamaño de página al abrir/paginar una conversación desde el chat (ver
+# loadConversation() en web/index.html) — la tool conversacional
+# get_conversation y generate_conversation_title siguen pidiendo la
+# conversación entera (sin limit) directo contra EpisodicMemory, esto solo
+# aplica a esta ruta HTTP.
+CONVERSATION_PAGE_SIZE = 30
+
+
 @app.get("/conversations/{conversation_id}")
-def get_conversation(conversation_id: str, user_id: str = Depends(require_user)):
-    return orchestrator.memory.get_conversation(conversation_id)
+def get_conversation(
+    conversation_id: str, limit: int = CONVERSATION_PAGE_SIZE, before: float | None = None, user_id: str = Depends(require_user)
+):
+    # Pide un elemento de más para saber si queda más historial antes del
+    # tramo devuelto, sin un segundo query — se descarta antes de responder.
+    page = orchestrator.memory.get_conversation(conversation_id, limit=limit + 1, before_timestamp=before)
+    has_more = len(page) > limit
+    return {"entries": page[-limit:] if has_more else page, "has_more": has_more}
 
 
 @app.put("/conversations/{conversation_id}/project")

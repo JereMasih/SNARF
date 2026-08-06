@@ -1,5 +1,7 @@
 import json
 import os
+import time
+from types import SimpleNamespace
 from typing import Callable
 
 from snarf.capabilities.anthropic_llm import MAX_CONTINUATIONS, MAX_OUTPUT_TOKENS, LLMResponse, split_speech
@@ -22,19 +24,17 @@ _LOCAL_DUMMY_API_KEY = "not-needed"
 # como error de proveedor — es subclase de APIConnectionError) en vez de
 # dejar al fundador esperando en silencio.
 #
-# 150s, no 90s: bug real encontrado en vivo esta ronda — con 90s, la
-# PRIMERA request real contra el prefijo en frío del prompt completo de
-# Snarf (system + 88 tools, ~15.630 tokens) tarda ~90-105s incluso con el
-# modelo "pesado" liviano (Qwen3-8B) — un pelo MÁS que el timeout. Eso
-# disparaba el fallback automático (que sí persiste el cambio en
-# data/llm_routing.json, ver attempt_fallback) apenas arrancaba el server
-# MLX, revirtiendo `orchestrator` a otro proveedor en silencio antes de que
-# el prefijo llegara a cachearse — exactamente la peor combinación posible
-# con los LaunchAgents 24/7 (ver ADR de esta ronda), que garantizan que la
-# primera request real de cada arranque SIEMPRE sea en frío. 150s da margen
-# real sobre el peor caso medido sin dejar de fallar mucho más rápido que
-# el default de 10 minutos de la SDK.
-LOCAL_TIMEOUT_SECONDS = 150.0
+# 240s, no 150s: el rol orchestrator (con tool-calling real de punta a
+# punta, varias rondas de herramientas en un turno complejo) seguía cayendo
+# a fallback en vivo con 150s incluso con el server ya caliente — no por
+# estar colgado, sino por estar genuinamente ocupado generando. Ver también
+# streaming abajo: con `stream=True` este timeout pasa a ser de INACTIVIDAD
+# entre chunks (httpx corta si no llega NINGÚN byte en ese lapso), no de
+# duración total — una generación lenta pero que sigue progresando ya no
+# choca contra este número, solo un cuelgue real lo hace. 240s queda como
+# red de seguridad adicional sobre ese mecanismo, no como el límite
+# principal.
+LOCAL_TIMEOUT_SECONDS = 240.0
 
 # xAI (Grok) y Llama vía Groq exponen la API clásica de Chat Completions de
 # OpenAI (no la Responses API, que es propietaria de OpenAI) — la misma
@@ -72,6 +72,68 @@ def _translate_tools(tools: list[dict]) -> list[dict]:
         {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["input_schema"]}}
         for t in tools
     ]
+
+
+class _StreamedToolCall:
+    """Mismo shape que un tool_call real no-streaming (`.id`,
+    `.function.name`, `.function.arguments`, `.model_dump()`) — reconstruido
+    acumulando los deltas de `_consume_stream`, para que el resto de
+    `generate()` no tenga que distinguir de dónde vino."""
+
+    def __init__(self, id: str, name: str, arguments: str):
+        self.id = id
+        self.function = SimpleNamespace(name=name, arguments=arguments)
+
+    def model_dump(self) -> dict:
+        return {"id": self.id, "type": "function", "function": {"name": self.function.name, "arguments": self.function.arguments}}
+
+
+def _consume_stream(stream):
+    """Recorre un stream real de chunks (`stream=True`) y devuelve
+    `(content, reasoning, tool_calls, finish_reason, usage)` con la misma
+    forma que leer `choice.message`/`choice.finish_reason` de una respuesta
+    no-streaming — mlx_lm.server (confirmado en vivo, 2026-08-05) manda los
+    argumentos de cada tool_call completos en un solo delta por índice, pero
+    esto igual los acumula fragmento a fragmento por si algún proveedor los
+    parte de verdad (así es como streaming de tool-calls funciona en la API
+    real de OpenAI). El punto real de esto no es la acumulación en sí — es
+    que iterar el stream hace que el timeout de httpx (LOCAL_TIMEOUT_SECONDS)
+    pase a medir inactividad ENTRE chunks en vez de la duración total de la
+    generación (ver comentario ahí)."""
+    content = ""
+    reasoning = ""
+    tool_calls_by_index: dict[int, dict] = {}
+    finish_reason = None
+    usage = None
+    for chunk in stream:
+        if getattr(chunk, "usage", None) is not None:
+            usage = chunk.usage
+        if not chunk.choices:
+            continue
+        choice = chunk.choices[0]
+        if choice.finish_reason:
+            finish_reason = choice.finish_reason
+        delta = choice.delta
+        if delta.content:
+            content += delta.content
+        reasoning_piece = getattr(delta, "reasoning", None)
+        if reasoning_piece:
+            reasoning += reasoning_piece
+        if delta.tool_calls:
+            for tc_delta in delta.tool_calls:
+                entry = tool_calls_by_index.setdefault(tc_delta.index, {"id": None, "name": None, "arguments": ""})
+                if tc_delta.id:
+                    entry["id"] = tc_delta.id
+                if tc_delta.function:
+                    if tc_delta.function.name:
+                        entry["name"] = tc_delta.function.name
+                    if tc_delta.function.arguments:
+                        entry["arguments"] += tc_delta.function.arguments
+    tool_calls = [
+        _StreamedToolCall(entry["id"], entry["name"], entry["arguments"])
+        for _, entry in sorted(tool_calls_by_index.items())
+    ] or None
+    return content, reasoning, tool_calls, finish_reason, usage
 
 
 class OpenAICompatibleLLM(Capability):
@@ -124,6 +186,31 @@ class OpenAICompatibleLLM(Capability):
         except Exception:
             pass
 
+    def _complete_once(self, kwargs: dict):
+        """Una sola llamada real al proveedor. Local usa streaming — el
+        timeout de httpx (LOCAL_TIMEOUT_SECONDS) pasa a medir inactividad
+        ENTRE chunks en vez de la duración total de la generación (un modelo
+        lento pero que sigue progresando ya no choca contra el límite, solo
+        un cuelgue real lo hace); cloud sigue sin streaming, sin motivo real
+        para tocar un camino ya probado en producción. Devuelve
+        `(content, reasoning, tool_calls, finish_reason)` — mismo shape para
+        los dos casos, el resto de generate() no necesita saber cuál fue."""
+        start = time.monotonic()
+        if self._local:
+            stream = self._client.chat.completions.create(**kwargs, stream=True, stream_options={"include_usage": True})
+            content, reasoning, tool_calls, finish_reason, usage = _consume_stream(stream)
+            self._record_usage_from_parts(usage, content, (time.monotonic() - start) * 1000)
+            return content, reasoning, tool_calls, finish_reason
+        response = self._client.chat.completions.create(**kwargs)
+        self._record_usage(response, (time.monotonic() - start) * 1000)
+        choice = response.choices[0]
+        # Algunos modelos locales "thinking" (ej. Qwen3.5, vía mlx_lm.server)
+        # devuelven el razonamiento en un campo separado `reasoning`, fuera
+        # del schema estándar de OpenAI — se lee con getattr (ausente para
+        # cualquier proveedor/modelo que no lo exponga, incluida la mayoría).
+        reasoning = getattr(choice.message, "reasoning", None) or ""
+        return choice.message.content, reasoning, choice.message.tool_calls, choice.finish_reason
+
     def generate(
         self,
         system: str,
@@ -143,20 +230,17 @@ class OpenAICompatibleLLM(Capability):
             kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, messages=chat_messages)
             if chat_tools:
                 kwargs["tools"] = chat_tools
-            response = self._client.chat.completions.create(**kwargs)
-            self._record_usage(response)
-            choice = response.choices[0]
+            content, reasoning, tool_calls, finish_reason = self._complete_once(kwargs)
 
-            if choice.finish_reason == "tool_calls" and tool_handler and choice.message.tool_calls:
-                message = choice.message
+            if finish_reason == "tool_calls" and tool_handler and tool_calls:
                 chat_messages.append(
                     {
                         "role": "assistant",
-                        "content": message.content,
-                        "tool_calls": [tc.model_dump() for tc in message.tool_calls],
+                        "content": content,
+                        "tool_calls": [tc.model_dump() for tc in tool_calls],
                     }
                 )
-                for tc in message.tool_calls:
+                for tc in tool_calls:
                     args = json.loads(tc.function.arguments) if tc.function.arguments else {}
                     result = tool_handler(tc.function.name, args)
                     chat_messages.append(
@@ -164,15 +248,10 @@ class OpenAICompatibleLLM(Capability):
                     )
                 continue
 
-            text = choice.message.content or ""
-            # Algunos modelos locales "thinking" (ej. Qwen3.5, vía
-            # mlx_lm.server) devuelven el razonamiento en un campo separado
-            # `reasoning`, fuera de `content` — no está en el schema estándar
-            # de OpenAI, así que se lee con getattr (ausente para cualquier
-            # proveedor/modelo que no lo exponga, incluida la mayoría).
-            thinking = getattr(choice.message, "reasoning", None) or ""
+            text = content or ""
+            thinking = reasoning or ""
             continuations = 0
-            while choice.finish_reason == "length" and continuations < MAX_CONTINUATIONS:
+            while finish_reason == "length" and continuations < MAX_CONTINUATIONS:
                 # Misma red de seguridad que AnthropicLLM.generate(): en vez
                 # de aceptar el corte, pedirle al modelo que continúe exacto
                 # donde quedó y concatenar.
@@ -189,31 +268,33 @@ class OpenAICompatibleLLM(Capability):
                     }
                 )
                 kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, messages=chat_messages)
-                response = self._client.chat.completions.create(**kwargs)
-                self._record_usage(response)
-                choice = response.choices[0]
-                text += choice.message.content or ""
-                thinking += getattr(choice.message, "reasoning", None) or ""
+                cont_content, cont_reasoning, _, finish_reason = self._complete_once(kwargs)
+                text += cont_content or ""
+                thinking += cont_reasoning or ""
 
-            if choice.finish_reason == "length":
+            if finish_reason == "length":
                 text += "\n\n*(respuesta truncada: llegó al límite de longitud incluso después de continuar)*"
             return split_speech(text, thinking=thinking or None)
 
         timeout_text = "[demasiadas consultas a herramientas, no llegué a una respuesta final]"
         return LLMResponse(text=timeout_text, speech=timeout_text)
 
-    def _record_usage(self, response) -> None:
+    def _record_usage(self, response, duration_ms: float | None = None) -> None:
         usage = getattr(response, "usage", None)
-        if usage is None:
-            return
         text = ""
         choices = getattr(response, "choices", None) or []
         if choices and getattr(choices[0], "message", None):
             text = choices[0].message.content or ""
+        self._record_usage_from_parts(usage, text, duration_ms)
+
+    def _record_usage_from_parts(self, usage, text: str, duration_ms: float | None = None) -> None:
+        if usage is None:
+            return
         usage_tracker.record_generic_llm_call(
             self._vendor,
             self.model,
             getattr(usage, "prompt_tokens", 0) or 0,
             getattr(usage, "completion_tokens", 0) or 0,
-            detalle=detail.truncate_detalle(text),
+            detalle=detail.truncate_detalle(text or ""),
+            duration_ms=duration_ms,
         )

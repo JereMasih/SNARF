@@ -1,3 +1,5 @@
+from snarf.telemetry import verbs
+
 CENTER_NODE = "orchestrator"
 
 # ---------------------------------------------------------------------------
@@ -62,6 +64,7 @@ TOOL_TO_NODE: dict[str, str] = {
     # una fuente nueva, no algo que un usuario reconocería como una
     # subcapacidad distinta (criterio del protocolo de arriba).
     "codebase_search": "knowledge",
+    "conversations_search": "knowledge",
     "knowledge_search": "knowledge",
     "knowledge_index_start": "knowledge",
     "knowledge_index_status": "knowledge",
@@ -313,7 +316,12 @@ def snapshot(
             {
                 "timestamp": ts,
                 "node": node_id,
-                "label": f"{vendor}:{entry.get('model', '')}",
+                # Pedido explícito: "openai:mlx-comunity/qwen.... no aporta"
+                # — string crudo vendor:model reemplazado por algo legible
+                # solo para el nodo llm (ver verbs.resumen_llm). stt/tts
+                # siguen mostrando vendor:model tal cual, no se pidió cambiar
+                # eso y esos strings sí son legibles ("elevenlabs:tts").
+                "label": verbs.resumen_llm(entry.get("model", "")) if node_id == "llm" else f"{vendor}:{entry.get('model', '')}",
                 "status": "ok",
             }
         )

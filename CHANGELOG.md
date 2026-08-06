@@ -2,6 +2,151 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-06] Switch Vista clásica/HUD movido a #topChrome, y fix de un fallback a Grok que quedó pegado
+
+- El switch Vista clásica/HUD (antes una fila de texto solo visible parada en el home del dashboard) se
+  movió al centro de `#topChrome` como dos botones de solo ícono (grilla = clásica, mismo glyph que
+  `#dashBtn`; anillos concéntricos = HUD, ecoando el orbe/anillos ya usados en el resto de la app) — encaja
+  en el alcance ya definido para esa barra (gestión general de la app, ADR 0123) y ahora es un control
+  global disponible desde cualquier pantalla, no solo desde el home. Libera esa fila de espacio real
+  arriba del dashboard (la Vista HUD ya no reserva un hueco fijo para ella). Verificado en vivo con
+  Playwright contra el server real: el switch aparece/cambia correctamente, cero errores de consola.
+- **Bug real encontrado y corregido**: el `orchestrator` (el rol que atiende el chat) estaba pegado en
+  Grok desde un timeout de ayer 18:45 — de ANTES de que el mecanismo de cooldown/revert automático (ADR
+  0121, esta misma ronda) se desplegara. Esa entrada vieja nunca recibió el marcador
+  `fallback_expires_at`, así que el código de revert (correcto) la trataba como una elección manual del
+  fundador y nunca la tocaba. Backfill puntual del marcador (dato, no código) — confirmado en vivo: el
+  siguiente mensaje real volvió a usar el modelo local.
+
+## [2026-08-06] Fix real de fuga de memoria del server MLX local (31GB) + tope duro de cuota (ADR 0128)
+
+- **Causa real encontrada** (reporte del fundador: "el modelo local no se usa, todo cae a Grok", proceso
+  Python real con 31GB de RAM en una Mac de 32GB): una entrada extrema del historial (volcado completo de
+  un resultado de herramienta gigante) se mandó entera, sin ningún tope, al rol `history_compaction`
+  (modelo local de 4B) — 20.804 tokens en un solo prompt, tumbó el server MLX real por out-of-memory de
+  Metal, y la limpieza posterior también falló, dejando esa memoria fugada para siempre mientras el
+  proceso siguiera vivo (0% CPU, cada request real caía a Grok desde entonces).
+- Tope nuevo en `Orchestrator._summarize_history_entry()`: por encima de 32.000 caracteres, corte duro
+  directo — nunca se le manda al modelo local algo tan grande como para arriesgar tumbarlo.
+- **Bug real confirmado en `mlx_lm` 0.31.3**: `--prompt-cache-bytes` nunca llega al constructor real de su
+  caché LRU — el límite de bytes que veníamos usando desde ADR 0120 era casi un no-op. `--prompt-cache-size`
+  (tope de cantidad de secuencias) sí se respeta de verdad — bajado a 3 en los 3 LaunchAgents MLX.
+- **Watchdog nuevo** (`snarf/runtime/mlx_memory_watchdog.py`, `com.snarf.mlx-watchdog.plist`, cada 90s):
+  reinicia cualquier server MLX real que supere el 25% de la RAM total de la Mac — la garantía dura pedida
+  por el fundador, independiente de cualquier causa futura no prevista.
+
+## [2026-08-06] Indexado y búsqueda semántica del historial de conversaciones (ADR 0127)
+
+- Dominio nuevo `conversations` para la Knowledge Layer, mismo motor genérico que `code` (ADR 0096):
+  `EpisodicConversationSource` + `KnowledgeIndexer` + `VectorStore` propio, reindexado incremental
+  automático vía `last_activity`. Tool nueva del Orchestrator: `conversations_search(query,
+  project_id=None, top_k=5)`.
+- **Bug real encontrado con un smoke test contra las 180 conversaciones reales de producción** (invisible
+  para los tests unitarios, que usan un vector store fake): chromadb rechaza `None` como valor de
+  metadata — `project_id: None` en conversaciones sin proyecto asignado tiraba `TypeError` al indexar.
+  Fix: se omite la clave entera en vez de guardar `None`.
+
+## [2026-08-06] HUD: clickeabilidad real del dock de chat (ADR 0126)
+
+- Bug real encontrado con Playwright: el efecto de profundidad 3D real (`perspective`+`translateZ`) del
+  chat en HUD rompía el hit-testing de mensajes que no fueran el más nuevo — un click en "▾
+  transcripción" de cualquier mensaje viejo no hacía nada. Simplificado a 2D puro (`scale`+`opacity`+
+  `filter`), mismo efecto visual, sin el desajuste.
+- El dock entero bloqueaba clicks al grafo de nodos HUD detrás en cualquier zona vacía (sin contenido).
+  `pointer-events: none` en los contenedores estructurales, reactivado solo donde hace falta — Vista
+  Clásica/modo Foco sin cambios.
+
+## [2026-08-06] Títulos legibles del feed del cerebro + detalle real al click (ADR 0125)
+
+- El feed (Vista HUD y panel Cerebro clásico) dejó de mostrar el string crudo `"openai:mlx-comunity/
+  qwen...."` para eventos de LLM — ahora muestra el nombre de modelo solo, sin el vendor (que además
+  mentía para roles locales) ni el prefijo de organización de HuggingFace.
+- Click en cualquier fila del feed abre el panel de detalle por nodo ya existente, ahora con una línea
+  de timing real (modelo/tokens/latencia/costo) — se agregó medición real de `latencia_ms` de punta a
+  punta (antes el campo existía en el schema pero nunca se llenaba para llamadas de LLM).
+
+## [2026-08-05/06] Timestamps opcionales en el chat, y fix real de `PUT /dashboard/preferences` (ADR 0124)
+
+- Toggle nuevo en Configuración → Chat: separadores de fecha (Hoy/Ayer/fecha) + hora dimeada por
+  burbuja, apagado por default.
+- **Bug real encontrado y corregido en el mismo endpoint que ya había mostrado el mismo patrón en
+  `/llm-routing` esta ronda**: `PUT /dashboard/preferences` no mergeaba con lo ya guardado — un PUT
+  parcial de prueba pisó en silencio customización real del fundador (tamaños de widgets, un nodo HUD
+  fijado a mano). Restaurado byte a byte desde el backup automático más reciente; endpoint corregido
+  (`exclude_unset=True` + merge) para que esto no pueda volver a pasar.
+- El server de producción venía corriendo desde antes de todos los cambios de esta sesión — reiniciado
+  al cierre de esta ronda para desplegar Fases 0, 1, 2 y 4 realmente (confirmado con tráfico real
+  post-restart).
+
+## [2026-08-05] Barra superior de gestión general (#topChrome) y título de conversación por modo (ADR 0123)
+
+- Barra nueva, oculta hasta hacer hover arriba de la ventana: estado de sistemas + modelo de LLM
+  vigente a la derecha; en Clásica desktop, el avatar del fundador se reubica ahí reemplazando la
+  hamburguesa (mobile/HUD conservan la suya). Nunca muestra nombre de conversación/proyecto — eso vive
+  en el header propio de cada modo (`.dash-widget-head h3` en Clásica, `#chatDockToolbar` reactivado en
+  HUD, header nuevo en Foco), sincronizados por `updateChatTitleDisplays()`.
+- `#modeFab`/`#modePopover` (selector de modo de entrada en mobile) retirados — confirmado sin uso.
+- Verificado en vivo con Playwright contra producción (sin tocar datos reales): título coherente al
+  cambiar de HUD a Clásica a Foco, avatar/popover funcionando, mobile intacto, cero errores de consola.
+
+## [2026-08-05] Fix real de hermeticidad: la suite completa disparaba llamadas reales al LLM local de producción
+
+- Encontrado en vivo verificando ADR 0121 (la suite completa, que normalmente corre en segundos, tardó
+  40 minutos): antes del routing default a `mlx_local_fast` (sin credencial, siempre "available"),
+  decenas de tests en `tests/test_app.py` y `tests/test_orchestrator.py` nunca mockearon el LLM a
+  propósito porque el proveedor viejo exigía una credencial real que `conftest.py` ya stripea —
+  `.available` daba `False` sola y todo degradaba en modo eco sin llamar a nada. Con el default actual,
+  esos mismos tests sin mockear disparan llamadas REALES contra el server local DE PRODUCCIÓN —
+  confirmado con `lsof`/`sample`: el proceso de pytest bloqueado en `sock_recv` sobre una conexión TCP
+  real a `127.0.0.1:8991`, justo cuando coincide con tráfico real del fundador en el mismo server.
+  Exactamente el riesgo que ADR 0119 había señalado ("audit de tests que no mockean `_llm`") sin
+  completar nunca.
+- Fix sistémico en dos fixtures: el `client` de `test_app.py` ahora neutraliza
+  `llm_routing.build_resilient_llm` por default (`_UnavailableLLM`, `.available = False`); el
+  `orchestrator` de `test_orchestrator.py` ahora neutraliza `_llm`/`_title_llm._client` a `None` por
+  default. Ambos restauran el comportamiento original ("LLM no configurado, degradar") para cualquier
+  test que no mockee algo puntual — los que sí necesitan una respuesta real siguen mockeando por encima,
+  sin cambios de comportamiento para ellos.
+- `test_refresh_project_summary_endpoint` además gana su propio mock explícito (necesita una respuesta
+  real de prueba, no solo "no disponible").
+- Resultado real: `test_orchestrator.py` pasó de 97s (ya lento, pegándole de verdad al server pero sin
+  colgarse) a 2.94s; la suite completa dejó de colgarse contra tráfico de producción real.
+
+## [2026-08-05] Paginación de conversaciones desde el más reciente, botón "ir al final" (ADR 0122)
+
+- `GET /conversations/{id}` ahora pagina (`limit`/`before`, responde `{entries, has_more}`) en vez de
+  devolver siempre la conversación entera — el chat carga solo el último tramo y trae los mensajes
+  viejos a medida que se scrollea hacia arriba, sin saltos de posición.
+- Botón flotante nuevo arriba del micrófono para volver al último mensaje cuando no se está al fondo.
+
+## [2026-08-05] Streaming para el LLM local, timeout más alto, y revert automático del fallback (ADR 0121)
+
+- **`LOCAL_TIMEOUT_SECONDS` pasa a ser un timeout de inactividad, no de duración total**: las llamadas
+  locales (`OpenAICompatibleLLM`) ahora usan `stream=True` — confirmado en vivo contra el server real que
+  esto hace que httpx corte por falta de bytes ENTRE chunks, no por la generación completa. Una respuesta
+  lenta pero que sigue progresando ya no dispara un fallback falso. Subido además de 150s a 240s como red
+  de seguridad adicional.
+- **Revert automático tras 10 minutos** (`FALLBACK_COOLDOWN_SECONDS`): un rol que cayó a un proveedor
+  pago por un timeout puntual ahora vuelve solo al modelo local apenas éste responde de nuevo — antes
+  quedaba en el fallback para siempre, sin ninguna señal de que ya podía volver (bug real: "sigue en
+  grok" reportado en vivo por el fundador). Nunca toca una elección manual hecha desde Configuración.
+
+## [2026-08-05] 3 plantillas nuevas de widget HUD, a mano, a partir de propuestas reales del curador (ADR 0091)
+
+- Leídas las 19 propuestas vigentes en `data/dashboard_template_proposals.json` (vía `GET
+  /dashboard/template_proposals`): varias eran duplicados exactos del mismo pedido nunca resuelto (el
+  nodo `cost` repitió "deep_chart" 8 veces — resultó ser una plantilla LARGE que ya existía, pero el
+  nodo `cost` rara vez cae en tier LARGE, así que nunca podía usarla) y otras ya estaban cubiertas por
+  una plantilla existente (`alert_detail` genérico ya sirve para cualquier nodo, incluido Drive).
+- Agregadas 3 plantillas nuevas a `snarf/telemetry/widget_templates.py` (27 en total) por los huecos
+  reales que sí quedaban sin cubrir: `breakdown` (medium, desglose por sub-categoría — cubre el pedido
+  repetido de "cost"), `process_state` (medium, estado neutral de un proceso activo/pausado/detenido,
+  sin implicar error) y `pending_note` (small, nota informativa sin urgencia para datos incompletos).
+  Esto sigue siendo Track A de ADR 0091 (el curador solo propone, un humano decide y construye a mano) —
+  no una automatización nueva.
+- Cola de propuestas vaciada en `data/dashboard_template_proposals.json` para que las próximas entren
+  limpias.
+
 ## [2026-08-05] Causa real de los crashes de memoria (cache sin límite de mlx_lm.server), Kokoro TTS nativo con GPU (ADR 0120)
 
 - **Hallazgo real, con `footprint` (la misma herramienta que Activity Monitor):** el problema nunca fue
