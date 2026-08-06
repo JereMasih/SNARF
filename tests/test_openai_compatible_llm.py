@@ -1,8 +1,15 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from snarf.capabilities.anthropic_llm import MAX_CONTINUATIONS
-from snarf.capabilities.openai_compatible_llm import MAX_TOOL_ROUNDS, OpenAICompatibleLLM
+from snarf.capabilities.openai_compatible_llm import (
+    MAX_LOCAL_PROMPT_CHARS,
+    MAX_TOOL_ROUNDS,
+    LocalPromptTooLargeError,
+    OpenAICompatibleLLM,
+)
 
 
 class FakeToolCall:
@@ -398,3 +405,49 @@ def test_generate_raises_a_clear_error_without_a_client():
         assert False, "debería haber lanzado RuntimeError"
     except RuntimeError as e:
         assert "XAI_API_KEY" in str(e)
+
+
+def test_local_provider_raises_when_the_initial_prompt_exceeds_the_safe_cap():
+    # Regresión directa de un incidente real (ADR de esta ronda): un prompt
+    # de 82.284 tokens tumbó el server MLX local con un crash real de
+    # Metal (out-of-memory). No hace falta ningún stream real acá — el
+    # tope se chequea ANTES de tocar el cliente.
+    llm = make_local_llm([])
+    with pytest.raises(LocalPromptTooLargeError):
+        llm.generate(system="s" * (MAX_LOCAL_PROMPT_CHARS + 1), messages=[{"role": "user", "content": "hola"}])
+
+
+def test_cloud_provider_never_applies_the_local_prompt_cap():
+    llm = make_llm([fake_response("stop", "respuesta real")])
+    result = llm.generate(
+        system="s" * (MAX_LOCAL_PROMPT_CHARS + 1), messages=[{"role": "user", "content": "hola"}]
+    )
+    assert result.text == "respuesta real"
+
+
+def test_local_provider_under_the_cap_proceeds_normally():
+    stream = [FakeChunk(content="ok"), FakeChunk(finish_reason="stop")]
+    llm = make_local_llm([stream])
+    result = llm.generate(system="sys corto", messages=[{"role": "user", "content": "hola"}])
+    assert result.text == "ok"
+
+
+def test_local_prompt_cap_is_rechecked_each_round_as_tool_results_grow():
+    # Un prompt inicial chico puede volverse gigante DENTRO del mismo turno
+    # si un resultado de herramienta es enorme — el mismo riesgo real que
+    # un prompt inicial gigante, así que el tope se re-chequea en cada
+    # ronda, no solo antes del loop.
+    first_stream = [
+        FakeChunk(tool_calls=[FakeToolCallDelta(0, id="call-1", name="t", arguments="{}")]),
+        FakeChunk(finish_reason="tool_calls"),
+    ]
+    llm = make_local_llm([first_stream, "nunca debería llegar a esta segunda ronda"])
+    huge_tool_result = {"data": "x" * (MAX_LOCAL_PROMPT_CHARS + 1)}
+    with pytest.raises(LocalPromptTooLargeError):
+        llm.generate(
+            system="sys corto",
+            messages=[{"role": "user", "content": "hola"}],
+            tools=[{"name": "t", "description": "d", "input_schema": {"type": "object", "properties": {}}}],
+            tool_handler=lambda name, args: huge_tool_result,
+        )
+    assert len(llm._client.chat.completions.calls) == 1  # nunca intentó la segunda ronda real

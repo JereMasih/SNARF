@@ -43,6 +43,36 @@ _LOCAL_DUMMY_API_KEY = "not-needed"
 # principal.
 LOCAL_TIMEOUT_SECONDS = 240.0
 
+# Tope real de tamaño de prompt antes de mandarlo a un proveedor LOCAL (ver
+# LocalPromptTooLargeError más abajo) — nunca se aplica a un proveedor cloud
+# (esos no comparten la memoria de Metal de esta Mac con el resto del
+# sistema). Basado en números reales medidos en esta misma sesión, no
+# estimados: el system+tools del rol orchestrator solo ya son ~16.000
+# caracteres/~15.630 tokens (medido en vivo, ver comentario de
+# MLX_LOCAL_BASE_URL en llm_routing.py) — eso funciona sin problema en cada
+# request normal. Lo que SÍ tumbó el server MLX local con un crash real de
+# Metal (out-of-memory) fue un prompt de 20.804 tokens combinado con otros
+# requests concurrentes (ADR 0128, incidente original) y, de nuevo el mismo
+# día de esta ronda, un prompt de 82.284 tokens en un único request (mismo
+# error real de Metal, misma falla de limpieza — ver ADR de esta ronda).
+# 60.000 caracteres da margen real para el uso normal (system+tools más un
+# historial de conversación cargado) sin acercarse a ninguna de las dos
+# zonas ya confirmadas como peligrosas.
+MAX_LOCAL_PROMPT_CHARS = 60000
+
+
+class LocalPromptTooLargeError(RuntimeError):
+    """El prompt total (system + mensajes, en cualquier ronda del loop de
+    herramientas) supera MAX_LOCAL_PROMPT_CHARS para un proveedor local —
+    nunca se intenta la llamada real. Un prompt de este tamaño es la causa
+    confirmada de un crash real de Metal (out-of-memory) en el server MLX
+    local, con fuga de memoria real en la limpieza posterior (ver ADR de
+    esta ronda) — más vale un error claro acá que arriesgar tumbar el
+    server que atiende a TODOS los roles locales. Reconocida como
+    fallback-worthy en llm_routing.is_provider_level_error(): un prompt
+    demasiado grande para el hardware local puede seguir siendo viable en
+    un proveedor cloud con más memoria real disponible."""
+
 # xAI (Grok) y Llama vía Groq exponen la API clásica de Chat Completions de
 # OpenAI (no la Responses API, que es propietaria de OpenAI) — la misma
 # clase cubre los tres, solo cambia base_url/api_key_env/model. Investigado
@@ -235,6 +265,18 @@ class OpenAICompatibleLLM(Capability):
         chat_tools = _translate_tools(tools) if tools else None
 
         for _ in range(max_tool_rounds):
+            if self._local:
+                # Recalculado en CADA ronda, no solo antes del loop: un
+                # resultado de herramienta grande puede hacer crecer
+                # chat_messages a mitad de un turno (ver docstring de
+                # LocalPromptTooLargeError) — el mismo riesgo real que un
+                # prompt inicial gigante.
+                total_chars = sum(len(str(m.get("content", ""))) for m in chat_messages)
+                if total_chars > MAX_LOCAL_PROMPT_CHARS:
+                    raise LocalPromptTooLargeError(
+                        f"El prompt total ({total_chars} caracteres) supera el tope seguro para un "
+                        f"proveedor local ({MAX_LOCAL_PROMPT_CHARS}) — ver ADR de esta ronda."
+                    )
             kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, messages=chat_messages)
             if chat_tools:
                 kwargs["tools"] = chat_tools

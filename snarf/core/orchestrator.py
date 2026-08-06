@@ -2371,6 +2371,11 @@ class Orchestrator:
         # dónde sacar la sesión. Siempre se limpia en el finally, nunca
         # sobrevive más allá de este turno.
         context.set_conversation_id(conversation_id)
+        # Rol real para usage_log/telemetry_events (ADR de esta ronda) — acá
+        # sí es siempre "orchestrator" porque este método es exactamente ese
+        # rol de instancia fija (ver comentario de _ResilientLLM en
+        # llm_routing.py sobre por qué no pasa por ahí).
+        context.set_llm_role("orchestrator")
         try:
             if not self._llm.available:
                 echo_text = (
@@ -2451,6 +2456,7 @@ class Orchestrator:
                             error_text = f"[error real del LLM, no pude responder: {exc}]"
                             response = LLMResponse(text=error_text, speech=fallback_speech(error_text))
         finally:
+            context.clear_llm_role()
             context.clear_conversation_id()
 
         self._memory.append(
@@ -2476,6 +2482,7 @@ class Orchestrator:
         first = entries[0]
         listing = f"Usuario: {first['input']}\n\nRespuesta: {first['response'][:500]}"
         context.set_conversation_id(conversation_id)
+        context.set_llm_role("conversation_title")
         title_kwargs = {"system": CONVERSATION_TITLE_SYSTEM_PROMPT, "messages": [{"role": "user", "content": listing}]}
         try:
             reverted_response, reverted_entry = llm_routing.maybe_revert_expired_fallback(
@@ -2501,6 +2508,7 @@ class Orchestrator:
                     title = fallback_response.text
                     self.refresh_llm_routing()
         finally:
+            context.clear_llm_role()
             context.clear_conversation_id()
         title = title.strip().strip('"').strip("'").rstrip(".")
         if title:

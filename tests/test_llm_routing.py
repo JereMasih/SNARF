@@ -90,7 +90,7 @@ def test_build_llm_resolves_xai_via_the_openai_compatible_capability(tmp_path, m
 
 def test_build_llm_resolves_groq_llama_reusing_the_existing_groq_key(tmp_path, monkeypatch):
     monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
-    llm_routing.save_routing({"orchestrator": {"provider": "groq_llama", "model": "llama-4-scout"}})
+    llm_routing.save_routing({"orchestrator": {"provider": "groq_llama", "model": "llama-3.3-70b-versatile"}})
     llm = llm_routing.build_llm("orchestrator")
     assert isinstance(llm, OpenAICompatibleLLM)
     assert llm._api_key_env == "GROQ_API_KEY"
@@ -183,6 +183,16 @@ def test_is_provider_level_error_true_for_a_connection_error():
     request = httpx.Request("POST", "http://localhost:8990/v1/chat/completions")
     assert llm_routing.is_provider_level_error(anthropic.APIConnectionError(request=request)) is True
     assert llm_routing.is_provider_level_error(openai.APIConnectionError(request=request)) is True
+
+
+def test_is_provider_level_error_true_for_a_local_prompt_too_large_error():
+    # Un prompt rechazado por ser demasiado grande para el hardware local
+    # (ver ADR de esta ronda, incidente real de Metal out-of-memory) puede
+    # seguir siendo viable en un proveedor cloud con más memoria — mismo
+    # criterio de "reintentar con otro proveedor" que el resto de acá.
+    from snarf.capabilities.openai_compatible_llm import LocalPromptTooLargeError
+
+    assert llm_routing.is_provider_level_error(LocalPromptTooLargeError("demasiado grande")) is True
 
 
 # --- attempt_fallback -------------------------------------------------
@@ -404,6 +414,25 @@ def test_maybe_revert_expired_fallback_extends_the_cooldown_when_the_local_is_st
 
 
 # --- build_resilient_llm / _ResilientLLM ---------------------------------
+
+
+def test_build_resilient_llm_sets_and_clears_the_llm_role_context(tmp_path, monkeypatch):
+    from snarf.telemetry import context
+
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    captured = {}
+
+    def fake_generate(self, **kw):
+        captured["role_during_call"] = context.get_llm_role()
+        return type("R", (), {"text": "ok"})()
+
+    monkeypatch.setattr(llm_routing, "_build", lambda provider, model: type("F", (), {"available": True, "generate": fake_generate})())
+    context.clear_llm_role()
+    llm = llm_routing.build_resilient_llm("dashboard_curator")
+    llm.generate(system="x", messages=[])
+
+    assert captured["role_during_call"] == "dashboard_curator"
+    assert context.get_llm_role() is None
 
 
 def test_build_resilient_llm_behaves_normally_when_the_provider_works(tmp_path, monkeypatch):

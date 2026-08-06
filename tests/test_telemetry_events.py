@@ -1,4 +1,23 @@
-from snarf.telemetry import events
+from snarf.telemetry import context, events
+
+
+def test_record_vendor_event_tags_the_real_llm_role_when_set(tmp_path):
+    path = tmp_path / "events.jsonl"
+    context.set_llm_role("dashboard_curator")
+    try:
+        events.record_vendor_event("xai", "grok-4-1-fast", 0.001, {"input_tokens": 10, "output_tokens": 5}, path=path)
+    finally:
+        context.clear_llm_role()
+    entries = events.recent(path=path)
+    assert entries[0]["llm_role"] == "dashboard_curator"
+
+
+def test_record_vendor_event_llm_role_is_none_when_not_set(tmp_path):
+    path = tmp_path / "events.jsonl"
+    context.clear_llm_role()
+    events.record_vendor_event("xai", "grok-4-1-fast", 0.001, {"input_tokens": 10, "output_tokens": 5}, path=path)
+    entries = events.recent(path=path)
+    assert entries[0]["llm_role"] is None
 
 
 def test_record_tool_event_derives_nodo_and_agente_from_brain(tmp_path):

@@ -50,6 +50,12 @@ def _event(nodo, agente, skill, estado, modelo=None, tokens_in=None, tokens_out=
         "latencia_ms": latencia_ms,
         "estado": estado,
         "conversation_id": context.get_conversation_id(),
+        # Rol real de llm_routing.ROLES que disparó esta llamada (ver
+        # snarf/telemetry/context.py, ADR de esta ronda) — `None` en
+        # eventos que no vienen de una llamada real a un LLM (dispatch de
+        # tool puro, entrada de input_log) o de una llamada a un rol que
+        # todavía no setea el contexto.
+        "llm_role": context.get_llm_role(),
         # `detalle`: contenido real de qué se hizo (ver
         # snarf/telemetry/detail.py y ADR 0089) — a diferencia de `skill`
         # (identificador del tool), esto es el destinatario/título/query/etc.

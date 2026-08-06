@@ -77,8 +77,13 @@ DEFAULT_XAI_RATE = XAI_RATES_PER_MILLION_TOKENS["grok-4-1-fast"]
 GROQ_LLAMA_RATES_PER_MILLION_TOKENS = {
     "llama-4-maverick": (0.20, 0.60),
     "llama-4-scout": (0.08, 0.30),
+    # Precio real verificado por búsqueda web el 2026-08-06 (varias fuentes
+    # coinciden: $0.59/$0.79 el millón) — reemplaza a "llama-4-scout" como
+    # RECOMMENDED_MODEL de groq_llama (ese modelo ya no existe en la API
+    # real de Groq, confirmado con una llamada real este mismo día).
+    "llama-3.3-70b-versatile": (0.59, 0.79),
 }
-DEFAULT_GROQ_LLAMA_RATE = GROQ_LLAMA_RATES_PER_MILLION_TOKENS["llama-4-scout"]
+DEFAULT_GROQ_LLAMA_RATE = GROQ_LLAMA_RATES_PER_MILLION_TOKENS["llama-3.3-70b-versatile"]
 
 
 def estimate_generic_llm_cost(

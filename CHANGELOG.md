@@ -2,6 +2,24 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-06] El modelo local como motor suficiente para correr Snarf (ADR 0131)
+
+- Pedido real del fundador sin crédito en xAI/Anthropic: encontrado en vivo (mismo día) un crash real
+  de Metal (out-of-memory) recurrente en el server MLX local — mismo bug de ADR 0128, esta vez con un
+  prompt de 82.284 tokens, origen exacto sin identificar. 11 de 25 roles estaban atascados a mano en
+  xAI (sin crédito); 2 de los 3 servers MLX corrían 24/7 sin que ningún rol los usara.
+- Ruteo reseteado a los defaults locales (`llm_routing.save_routing({})`); `mlx-heavy`/`mlx-mid`
+  apagados (`bootout`+`disable`, reversibles); modelo de `groq_llama` corregido (`llama-4-scout` ya no
+  existe en la API real, reemplazado por `llama-3.3-70b-versatile`, precio real verificado).
+- Tope universal de tamaño de prompt para proveedores locales
+  (`openai_compatible_llm.MAX_LOCAL_PROMPT_CHARS`, re-chequeado en cada ronda del loop de
+  herramientas, no solo al inicio) — a diferencia del tope de ADR 0128 (acotado a un solo rol), este
+  corre para cualquier rol local.
+- Campo nuevo `llm_role` en `telemetry_events.jsonl` (mismo patrón que `conversation_id`) — para poder
+  diagnosticar el próximo incidente así sin quedarse a ciegas como esta vez.
+- 1058/1058 tests — corridos en 10.13s, contra 247s antes de apagar los servers sin uso en esta misma
+  sesión: evidencia real de que la contención de recursos era real. Ver ADR 0131.
+
 ## [2026-08-06] Skill Factory: motor de escritura local, en vez del CLI de Claude Code (ADR 0130)
 
 - Pedido real del fundador tras quedarse sin crédito de la API de Anthropic en un intento real de

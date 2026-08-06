@@ -69,6 +69,23 @@ def test_handle_stores_the_llm_speech_field_on_the_memory_entry(orchestrator, mo
     assert entry["speech"] == "versión hablada corta"
 
 
+def test_handle_tags_the_llm_role_as_orchestrator_during_the_real_call_and_clears_it_after(orchestrator, monkeypatch):
+    from snarf.telemetry import context
+
+    captured = {}
+
+    def fake_generate(**kwargs):
+        captured["role_during_call"] = context.get_llm_role()
+        return LLMResponse(text="respuesta", speech="")
+
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
+    orchestrator.handle("text", "hola", conversation_id="c1")
+
+    assert captured["role_during_call"] == "orchestrator"
+    assert context.get_llm_role() is None
+
+
 def test_generate_conversation_title_persists_a_short_title(orchestrator, monkeypatch):
     orchestrator.handle("text", "necesito un plan para mi marca de Instagram", conversation_id="c1")
     monkeypatch.setattr(orchestrator._title_llm, "_client", object())  # available=True
@@ -85,6 +102,24 @@ def test_generate_conversation_title_strips_quotes_and_trailing_period(orchestra
     monkeypatch.setattr(orchestrator._title_llm, "generate", lambda **kwargs: LLMResponse(text='"Saludo inicial."', speech=""))
     orchestrator.generate_conversation_title("c1")
     assert orchestrator.memory.get_title("c1") == "Saludo inicial"
+
+
+def test_generate_conversation_title_tags_the_llm_role_and_clears_it_after(orchestrator, monkeypatch):
+    from snarf.telemetry import context
+
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    captured = {}
+
+    def fake_generate(**kwargs):
+        captured["role_during_call"] = context.get_llm_role()
+        return LLMResponse(text="Título", speech="")
+
+    monkeypatch.setattr(orchestrator._title_llm, "_client", object())  # available=True
+    monkeypatch.setattr(orchestrator._title_llm, "generate", fake_generate)
+    orchestrator.generate_conversation_title("c1")
+
+    assert captured["role_during_call"] == "conversation_title"
+    assert context.get_llm_role() is None
 
 
 def test_generate_conversation_title_does_nothing_when_the_cheap_llm_is_unavailable(orchestrator):

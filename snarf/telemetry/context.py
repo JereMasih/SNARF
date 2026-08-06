@@ -13,7 +13,18 @@ en un `finally`, así que nunca sobrevive más allá del turno que lo generó.
 
 Eventos que no ocurren dentro de un turno de conversación real (digest de
 Gmail en segundo plano, resumen de proyecto, etc.) simplemente no tienen
-conversation_id seteado — el campo queda `None`, nunca inventado."""
+conversation_id seteado — el campo queda `None`, nunca inventado.
+
+`set_llm_role`/`get_llm_role`/`clear_llm_role` (ADR de esta ronda): mismo
+patrón exacto, para el rol real de `llm_routing.ROLES` (`"orchestrator"`,
+`"gmail_digest"`, `"dashboard_curator"`, etc.) que disparó una llamada real
+al LLM — `_ResilientLLM.generate()` (`llm_routing.py`) y los dos roles de
+instancia fija de Orchestrator (`handle()`/`generate_conversation_title()`)
+lo setean alrededor de su propia llamada real y lo limpian en un `finally`.
+Motivo real: un prompt de 82.284 tokens tumbó el server MLX local un día
+real (ver ADR de esta ronda) y no había forma de saber, mirando
+`usage_log.jsonl` después, qué ROL lo había generado — solo vendor/modelo/
+tokens, nunca de dónde vino."""
 
 import threading
 
@@ -30,3 +41,15 @@ def get_conversation_id() -> str | None:
 
 def clear_conversation_id() -> None:
     _local.conversation_id = None
+
+
+def set_llm_role(role: str | None) -> None:
+    _local.llm_role = role
+
+
+def get_llm_role() -> str | None:
+    return getattr(_local, "llm_role", None)
+
+
+def clear_llm_role() -> None:
+    _local.llm_role = None

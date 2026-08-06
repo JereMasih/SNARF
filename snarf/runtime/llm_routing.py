@@ -9,7 +9,8 @@ from google.genai import errors as genai_errors
 
 from snarf.capabilities.anthropic_llm import AnthropicLLM
 from snarf.capabilities.gemini_llm import GeminiLLM
-from snarf.capabilities.openai_compatible_llm import OpenAICompatibleLLM
+from snarf.capabilities.openai_compatible_llm import LocalPromptTooLargeError, OpenAICompatibleLLM
+from snarf.telemetry import context
 
 ROUTING_PATH = Path("data/llm_routing.json")
 # Registro trazable de cada fallback automático real (ver
@@ -369,12 +370,23 @@ VISION_FALLBACK_ORDER = ("anthropic", "gemini")
 # mismo modelo "barato" que ya ofrece la interfaz de Configuración → LLM por
 # rol para cada proveedor (ver LLM_PRESETS en web/index.html), nunca uno
 # elegido al azar.
+#
+# groq_llama corregido esta ronda: "llama-4-scout" ya no existe en la API
+# real de Groq (confirmado en vivo con GROQ_API_KEY real: 404 model_not_found
+# — cualquier fallback a este proveedor fallaba siempre, en silencio, desde
+# antes de esta ronda). "llama-3.3-70b-versatile" sí existe (confirmado
+# contra client.models.list() real) — OJO: el tier on-demand real de esta
+# cuenta tiene un límite de 12.000 tokens por minuto, y el prompt completo
+# de Snarf (system+tools del rol orchestrator) ya son ~16.000 tokens por sí
+# solo — este proveedor NUNCA es un fallback viable para el rol
+# "orchestrator" tal cual está, pero sí lo es para el resto de los roles
+# (prompts propios mucho más chicos, ej. gmail_digest/calendar_brief).
 RECOMMENDED_MODEL = {
     "anthropic": "claude-haiku-4-5",
     "gemini": "gemini-3.1-flash-lite",
     "openai": "gpt-5",
     "xai": "grok-4-1-fast",
-    "groq_llama": "llama-4-scout",
+    "groq_llama": "llama-3.3-70b-versatile",
 }
 
 
@@ -390,7 +402,13 @@ def _provider_error_status_code(exc: Exception) -> int | None:
 
 
 def is_provider_level_error(exc: Exception) -> bool:
-    if isinstance(exc, _PROVIDER_CONNECTION_ERROR_TYPES):
+    # LocalPromptTooLargeError (openai_compatible_llm.py, ADR de esta
+    # ronda): un prompt demasiado grande para el hardware local no es "el
+    # request está roto" (a diferencia de un 400 real) — es honestamente
+    # "este proveedor puntual no puede con esto ahora", el mismo criterio
+    # que ya justifica reintentar con otro proveedor para el resto de los
+    # casos de acá abajo.
+    if isinstance(exc, (LocalPromptTooLargeError, *_PROVIDER_CONNECTION_ERROR_TYPES)):
         return True
     code = _provider_error_status_code(exc)
     return code is not None and code in _PROVIDER_LEVEL_STATUS_CODES
@@ -530,25 +548,33 @@ class _ResilientLLM:
         return self._llm.available
 
     def generate(self, **generate_kwargs):
-        # Chequeo barato (un compare de timestamps, sin red) salvo que
-        # self._entry sea realmente un fallback vencido — ahí sí intenta
-        # volver al proveedor local antes de usar el de fallback (ver
-        # maybe_revert_expired_fallback).
-        reverted_response, reverted_entry = maybe_revert_expired_fallback(self._role, self._entry, **generate_kwargs)
-        if reverted_response is not None:
-            self._llm, self._entry = _build(reverted_entry["provider"], reverted_entry["model"]), reverted_entry
-            return reverted_response
+        # context.set_llm_role (ADR de esta ronda): para que usage_log/
+        # telemetry_events sepan qué ROL disparó esta llamada real — nunca
+        # sobrevive más allá de esta llamada (mismo criterio que
+        # conversation_id en Orchestrator.handle()).
+        context.set_llm_role(self._role)
         try:
-            return self._llm.generate(**generate_kwargs)
-        except Exception as first_exc:
-            response, new_entry = attempt_fallback(self._role, self._entry, first_exc, **generate_kwargs)
-            if response is None:
-                raise first_exc
-            # Este mismo objeto sigue viviendo entre llamadas (guardado como
-            # atributo fijo del Specialist dueño) — la próxima ya tiene que
-            # usar el proveedor que funcionó.
-            self._llm, self._entry = _build(new_entry["provider"], new_entry["model"]), new_entry
-            return response
+            # Chequeo barato (un compare de timestamps, sin red) salvo que
+            # self._entry sea realmente un fallback vencido — ahí sí intenta
+            # volver al proveedor local antes de usar el de fallback (ver
+            # maybe_revert_expired_fallback).
+            reverted_response, reverted_entry = maybe_revert_expired_fallback(self._role, self._entry, **generate_kwargs)
+            if reverted_response is not None:
+                self._llm, self._entry = _build(reverted_entry["provider"], reverted_entry["model"]), reverted_entry
+                return reverted_response
+            try:
+                return self._llm.generate(**generate_kwargs)
+            except Exception as first_exc:
+                response, new_entry = attempt_fallback(self._role, self._entry, first_exc, **generate_kwargs)
+                if response is None:
+                    raise first_exc
+                # Este mismo objeto sigue viviendo entre llamadas (guardado como
+                # atributo fijo del Specialist dueño) — la próxima ya tiene que
+                # usar el proveedor que funcionó.
+                self._llm, self._entry = _build(new_entry["provider"], new_entry["model"]), new_entry
+                return response
+        finally:
+            context.clear_llm_role()
 
 
 def build_resilient_llm(role: str) -> _ResilientLLM:
