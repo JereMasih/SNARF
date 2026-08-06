@@ -250,6 +250,19 @@ def _calendar_brief(i, r):
     return None
 
 
+# --- specialist_morning_routine -----------------------------------------
+
+
+def _morning_routine(i, r):
+    if isinstance(r, dict):
+        priority = len(r.get("priority_message_ids") or [])
+        return _truncate(
+            f"rutina: {r.get('message_count', 0)} correos, {r.get('event_count', 0)} eventos, "
+            f"{priority} prioritarios leídos"
+        )
+    return None
+
+
 # --- specialist_research -------------------------------------------------
 
 
@@ -477,6 +490,8 @@ DETAIL_EXTRACTORS = {
     "gmail_summarize_inbox": _gmail_summarize_inbox,
     # specialist_calendar
     "calendar_brief": _calendar_brief,
+    # specialist_morning_routine
+    "morning_routine": _morning_routine,
     # specialist_research
     "research_deep_dive": _research_topic,
     "research_trend_scan": _research_topic,

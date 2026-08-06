@@ -87,6 +87,11 @@ TOOL_TO_NODE: dict[str, str] = {
     # Fase I, rama Productivity — Especialista Cognitivo nuevo, mismo
     # criterio que specialist_gmail (una sola tool, tier "specialist").
     "calendar_brief": "specialist_calendar",
+    # Rutina matutina real (gmail+calendar compuestos, ver ADR de esta
+    # ronda) — un usuario mirando el grafo la reconocería como algo
+    # genuinamente distinto de gmail_summarize_inbox/calendar_brief (junta
+    # ambos Y lee cuerpos reales), no una operación más de esos dos nodos.
+    "morning_routine": "specialist_morning_routine",
     # Fase I, rama Research — una sola clase real, tres tools/modos (ver
     # snarf/specialists/research/specialist.py).
     "research_deep_dive": "specialist_research",
@@ -218,6 +223,7 @@ NODE_TIER: dict[str, str] = {
     "input_file": "input",
     "specialist_gmail": "specialist",
     "specialist_calendar": "specialist",
+    "specialist_morning_routine": "specialist",
     "specialist_research": "specialist",
     "specialist_content": "specialist",
     "specialist_sales": "specialist",

@@ -52,6 +52,10 @@ ROLES = (
     # Fase I, rama Productivity (ver plan de expansión) — mismo criterio de
     # gmail_digest: tarea acotada, modelo barato por default.
     "calendar_brief",
+    # Rutina matutina real (gmail+calendar compuestos, ver ADR de esta
+    # ronda) — mismo criterio que calendar_brief: dos llamadas LLM acotadas
+    # (clasificar, sintetizar), modelo barato por default.
+    "morning_routine",
     # Fase I, rama Research — un rol de ruteo por modo (ResearchSpecialist,
     # una sola clase con 3 configs, ver snarf/specialists/research/mode.py).
     "research_deep_research",
@@ -102,6 +106,7 @@ DEFAULT_ROUTING = {
     "executive_cmo": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
     "executive_creative": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
     "calendar_brief": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
+    "morning_routine": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
     "research_deep_research": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
     "research_trend_scan": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
     "research_competitor_watch": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},

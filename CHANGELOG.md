@@ -2,6 +2,25 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-06] `morning_routine`: Especialista nuevo para la rutina del día (ADR 0129)
+
+- **Causa raíz real, no solo el síntoma**: revisando la conversación real de esta misma jornada, el
+  Orchestrator (modelo local de 4B) identificó bien un correo urgente por su snippet pero nunca leyó
+  su cuerpo; al pedírselo después, inventó un `message_id` falso y una tool inexistente, agotó las
+  rondas de tool-calling del turno y terminó diciendo que no podía acceder al correo. El fix de tool
+  descriptions de esta misma jornada corrige el caso puntual — esta entrega ataca la causa
+  estructural: dejar de depender de que un modelo chico encadene bien varias tool calls en el orden
+  correcto para "qué tenemos hoy".
+- `MorningRoutineSpecialist` (`snarf/specialists/productivity/morning_routine.py`) resuelve en Python
+  determinístico qué correo leer y cuándo: clasifica por snippet (una llamada LLM acotada), valida
+  cualquier id que el modelo marque como prioritario contra el listado REAL de Gmail (un id inventado
+  se descarta en silencio, nunca llega a leerse), lee el cuerpo real de hasta 5 prioritarios, y
+  sintetiza una versión final con el detalle real ya adentro (segunda llamada LLM acotada). Tool
+  nuevo `morning_routine`; `gmail_summarize_inbox`/`calendar_brief` siguen para un pedido acotado a
+  solo correo o solo agenda. Deliberadamente fuera del allowlist MCP (mismo motivo que
+  `gmail_read_message`: devuelve contenido crudo personal).
+- 1034/1034 tests. Ver ADR 0129.
+
 ## [2026-08-06] Switch Vista clásica/HUD movido a #topChrome, y fix de un fallback a Grok que quedó pegado
 
 - El switch Vista clásica/HUD (antes una fila de texto solo visible parada en el home del dashboard) se

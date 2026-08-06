@@ -82,6 +82,16 @@ def test_gmail_summarize_inbox_detail_uses_real_message_count():
     assert result == "curando 7 correos"
 
 
+def test_morning_routine_detail_uses_real_counts():
+    result = detail.extract(
+        "morning_routine",
+        "ok",
+        {},
+        {"message_count": 5, "event_count": 2, "priority_message_ids": ["m1", "m2"], "routine_text": "..."},
+    )
+    assert result == "rutina: 5 correos, 2 eventos, 2 prioritarios leídos"
+
+
 def test_drive_move_file_detail_falls_back_to_short_id_when_no_name_available():
     # drive_move_file solo recibe IDs en su input real — no hay nombre
     # legible disponible, el detalle es honestamente genérico en vez de

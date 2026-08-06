@@ -845,6 +845,42 @@ def test_calendar_brief_force_refresh_ignores_cache(orchestrator, monkeypatch):
     assert orchestrator._handle_tool("calendar_brief", {"force_refresh": True}) == fresh
 
 
+def test_morning_routine_returns_cached_routine_when_present(orchestrator, monkeypatch):
+    cached = {"generated_at": 1.0, "message_count": 2, "event_count": 1, "routine_text": "ya interpretado"}
+    monkeypatch.setattr(orchestrator.morning_routine, "cached_routine", lambda: cached)
+    monkeypatch.setattr(orchestrator.morning_routine, "refresh", lambda **kw: (_ for _ in ()).throw(AssertionError("no debería refrescar")))
+    assert orchestrator._handle_tool("morning_routine", {}) == cached
+
+
+def test_morning_routine_refreshes_when_nothing_cached(orchestrator, monkeypatch):
+    fresh = {"generated_at": 2.0, "message_count": 1, "event_count": 0, "routine_text": "recién generado"}
+    monkeypatch.setattr(orchestrator.morning_routine, "cached_routine", lambda: None)
+    monkeypatch.setattr(orchestrator.morning_routine, "refresh", lambda **kw: fresh)
+    assert orchestrator._handle_tool("morning_routine", {}) == fresh
+
+
+def test_morning_routine_force_refresh_ignores_cache(orchestrator, monkeypatch):
+    cached = {"generated_at": 1.0, "message_count": 2, "event_count": 1, "routine_text": "viejo"}
+    fresh = {"generated_at": 2.0, "message_count": 3, "event_count": 2, "routine_text": "nuevo"}
+    monkeypatch.setattr(orchestrator.morning_routine, "cached_routine", lambda: cached)
+    monkeypatch.setattr(orchestrator.morning_routine, "refresh", lambda **kw: fresh)
+    assert orchestrator._handle_tool("morning_routine", {"force_refresh": True}) == fresh
+
+
+def test_morning_routine_passes_through_max_messages_and_max_events(orchestrator, monkeypatch):
+    fresh = {"generated_at": 2.0, "message_count": 3, "event_count": 2, "routine_text": "nuevo"}
+    captured = {}
+
+    def fake_refresh(**kw):
+        captured.update(kw)
+        return fresh
+
+    monkeypatch.setattr(orchestrator.morning_routine, "cached_routine", lambda: None)
+    monkeypatch.setattr(orchestrator.morning_routine, "refresh", fake_refresh)
+    orchestrator._handle_tool("morning_routine", {"max_messages": 5, "max_events": 3})
+    assert captured == {"max_messages": 5, "max_events": 3}
+
+
 def test_research_tools_route_to_the_correct_mode(orchestrator, monkeypatch):
     for tool_name, mode in (
         ("research_deep_dive", "deep_research"),

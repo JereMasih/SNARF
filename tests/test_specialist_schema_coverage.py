@@ -8,6 +8,7 @@ import snarf.executive.specialist  # noqa: F401
 import snarf.specialists.dashboard_curator  # noqa: F401
 import snarf.specialists.gmail_digest  # noqa: F401
 import snarf.specialists.productivity.calendar_brief  # noqa: F401
+import snarf.specialists.productivity.morning_routine  # noqa: F401
 import snarf.specialists.content.specialist  # noqa: F401
 import snarf.specialists.agency.client_status  # noqa: F401
 import snarf.specialists.community.pulse  # noqa: F401

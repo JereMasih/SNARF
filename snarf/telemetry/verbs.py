@@ -75,6 +75,8 @@ VERB_BY_SKILL: dict[str, str] = {
     "gmail_summarize_inbox": "curando la bandeja",
     # specialist_calendar
     "calendar_brief": "interpretando la agenda",
+    # specialist_morning_routine
+    "morning_routine": "armando la rutina de la mañana",
     # specialist_research
     "research_deep_dive": "investigando a fondo",
     "research_trend_scan": "rastreando tendencias",

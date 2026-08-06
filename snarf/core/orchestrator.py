@@ -44,6 +44,7 @@ from snarf.executive.specialist import ExecutiveBoardSpecialist
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
 from snarf.specialists.productivity.calendar_brief import CalendarBriefSpecialist
+from snarf.specialists.productivity.morning_routine import MorningRoutineSpecialist
 from snarf.specialists.sales.sponsor_inbox_triage import SponsorInboxTriageSpecialist
 from snarf.specialists.content.mode import BLOG_POST_CONFIG, NEWSLETTER_CONFIG, SOCIAL_POST_CONFIG
 from snarf.specialists.content.specialist import ContentSpecialist
@@ -443,7 +444,16 @@ TOOLS = [
     },
     {
         "name": "gmail_read_message",
-        "description": "Lee el contenido completo de un correo de Gmail dado su id.",
+        "description": (
+            "Lee el contenido completo de un correo de Gmail dado su id. El id SIEMPRE "
+            "tiene que salir de un resultado real de gmail_list_messages o de "
+            "gmail_summarize_inbox (campo 'messages'[].id de su resultado) — nunca lo "
+            "inventes ni lo derives del asunto/remitente/snippet. Si no tenés ese id a "
+            "mano (por ejemplo, el correo se mencionó en una respuesta anterior pero no "
+            "volviste a listar/resumir en este turno), llamá primero gmail_summarize_inbox "
+            "o gmail_list_messages para conseguirlo, no asumas que no podés acceder al "
+            "correo."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {"message_id": {"type": "string"}},
@@ -518,10 +528,21 @@ TOOLS = [
         "name": "gmail_summarize_inbox",
         "description": (
             "Interpreta los correos recientes de Gmail: los agrupa por categoría y señala cuáles "
-            "conviene revisar y por qué. Usala cuando el fundador pregunte algo como '¿qué tenemos "
-            "para hoy?', 'resumime el correo' o similar. Por defecto devuelve la última "
-            "interpretación disponible (no hace una llamada nueva cada vez); usá force_refresh=true "
-            "solo si el fundador pide explícitamente una versión actualizada ahora mismo."
+            "conviene revisar y por qué. Usala para un pedido acotado a SOLO el correo (ej. "
+            "'resumime el correo', 'qué tengo en la bandeja') — si el fundador pregunta por el "
+            "arranque del día en general (ej. '¿qué tenemos para hoy?', '¿cómo arranco el día?'), "
+            "usá morning_routine en su lugar, que ya combina esto con la agenda y con el detalle "
+            "real de lo urgente. Por defecto devuelve la última interpretación disponible (no hace "
+            "una llamada nueva cada vez); usá force_refresh=true solo si el fundador pide "
+            "explícitamente una versión actualizada ahora mismo. OJO: la categorización "
+            "(urgente/revisar/etc) se arma solo con remitente+asunto+fragmento corto de cada correo, "
+            "NUNCA con el cuerpo completo — si el fundador pide el detalle de un correo puntual que "
+            "salió acá como urgente/prioritario, o si vos mismo necesitás leerlo para poder "
+            "responder algo accionable, llamá gmail_read_message con el id real de ESE correo (está "
+            "en el campo 'messages' del resultado de esta misma tool, un array con "
+            "id/subject/from/date por mensaje) antes de responder — nunca showear la categorización "
+            "como si fuera el contenido, y nunca digas que no podés acceder al correo sin haber "
+            "llamado gmail_read_message primero."
         ),
         "input_schema": {
             "type": "object",
@@ -532,14 +553,41 @@ TOOLS = [
         "name": "calendar_brief",
         "description": (
             "Interpreta los próximos eventos reales del Google Calendar del fundador en un resumen "
-            "accionable — agrupa por día, señala conflictos de horario reales. Usala cuando el "
-            "fundador pregunte algo como '¿qué tengo para hoy?', 'resumime la agenda' o similar. "
-            "Por defecto devuelve la última interpretación disponible; usá force_refresh=true solo "
-            "si el fundador pide explícitamente una versión actualizada ahora mismo."
+            "accionable — agrupa por día, señala conflictos de horario reales. Usala para un pedido "
+            "acotado a SOLO la agenda (ej. 'resumime la agenda', 'qué tengo agendado') — si el "
+            "fundador pregunta por el arranque del día en general (ej. '¿qué tenemos para hoy?', "
+            "'¿cómo arranco el día?'), usá morning_routine en su lugar, que ya combina esto con el "
+            "correo. Por defecto devuelve la última interpretación disponible; usá force_refresh=true "
+            "solo si el fundador pide explícitamente una versión actualizada ahora mismo."
         ),
         "input_schema": {
             "type": "object",
             "properties": {"force_refresh": {"type": "boolean"}},
+        },
+    },
+    {
+        "name": "morning_routine",
+        "description": (
+            "Arma la rutina matutina completa del fundador en UNA sola llamada: agenda del día + "
+            "correos agrupados por categoría, y ya viene con el cuerpo real leído (no solo el "
+            "fragmento) de los correos que la propia interpretación marcó como urgentes o que "
+            "requieren una acción concreta — nunca hace falta encadenar gmail_read_message a mano "
+            "después de esta tool para los prioritarios, ya está resuelto adentro. Usala cuando el "
+            "fundador pregunte algo como '¿qué tenemos para hoy?', '¿cómo arranco el día?', 'dame el "
+            "pantallazo de la mañana' o similar — para un pedido acotado a solo correo o solo agenda, "
+            "usá gmail_summarize_inbox o calendar_brief en su lugar. Por defecto devuelve la última "
+            "interpretación disponible (no hace una llamada nueva cada vez); usá force_refresh=true "
+            "solo si el fundador pide explícitamente una versión actualizada ahora mismo. Si igual "
+            "necesitás el detalle de un correo que esta tool NO marcó como prioritario, llamá "
+            "gmail_read_message con su id real (está en el campo 'messages' del resultado)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "force_refresh": {"type": "boolean"},
+                "max_messages": {"type": "integer"},
+                "max_events": {"type": "integer"},
+            },
         },
     },
     {
@@ -1616,6 +1664,15 @@ class Orchestrator:
         self._calendar_brief = CalendarBriefSpecialist(
             self._calendar, lambda: llm_routing.build_resilient_llm("calendar_brief"), user_id
         )
+        # Compone gmail+calendar en una sola rutina, con el cuerpo real ya
+        # leído para los correos prioritarios (ver ADR de esta ronda) — no
+        # reemplaza gmail_digest/calendar_brief (siguen sirviendo un pedido
+        # acotado a solo correo o solo agenda), es la respuesta al "qué
+        # tenemos hoy" combinado sin depender de que el Orchestrator
+        # encadene bien varias tool calls en el mismo turno.
+        self._morning_routine = MorningRoutineSpecialist(
+            self._gmail, self._calendar, lambda: llm_routing.build_resilient_llm("morning_routine"), user_id
+        )
         # Fase I, rama Sales — mismo patrón cache-first, búsqueda de Gmail
         # acotada a oportunidades reales de sponsor/partnership.
         self._sponsor_inbox_triage = SponsorInboxTriageSpecialist(
@@ -1797,6 +1854,7 @@ class Orchestrator:
             "drive_delete_file": self._tool_drive_delete_file,
             "gmail_summarize_inbox": self._tool_gmail_summarize_inbox,
             "calendar_brief": self._tool_calendar_brief,
+            "morning_routine": self._tool_morning_routine,
             "research_deep_dive": lambda i: self._research_specialists["deep_research"].research(
                 i["topic"], i.get("video_urls")
             ),
@@ -1923,6 +1981,10 @@ class Orchestrator:
     @property
     def calendar_brief(self) -> CalendarBriefSpecialist:
         return self._calendar_brief
+
+    @property
+    def morning_routine(self) -> MorningRoutineSpecialist:
+        return self._morning_routine
 
     @property
     def executive_board(self) -> ExecutiveBoardSpecialist:
@@ -2147,6 +2209,16 @@ class Orchestrator:
         if i.get("force_refresh"):
             return self._calendar_brief.refresh()
         return self._calendar_brief.cached_brief() or self._calendar_brief.refresh()
+
+    def _tool_morning_routine(self, i: dict) -> dict:
+        kwargs = {}
+        if "max_messages" in i:
+            kwargs["max_messages"] = i["max_messages"]
+        if "max_events" in i:
+            kwargs["max_events"] = i["max_events"]
+        if i.get("force_refresh"):
+            return self._morning_routine.refresh(**kwargs)
+        return self._morning_routine.cached_routine() or self._morning_routine.refresh(**kwargs)
 
     def _tool_sales_sponsor_inbox_triage(self, i: dict) -> dict:
         if i.get("force_refresh"):
