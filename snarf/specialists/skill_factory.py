@@ -51,6 +51,20 @@ _ALWAYS_ALLOWED_FILES = {
 }
 _NEVER_ALLOWED_FILES = {"FOUNDATION.md", "CONSTITUTION.md", "CHARACTER.md", "COGNITION.md", "MASTER_MAP.md"}
 
+# snake_case estricto: mismo estilo que toda rama/nombre real ya existente
+# (research/deep_research, finance/receipts_tracker). Rechaza de entrada
+# cualquier '/', '..' o path absoluto ANTES de construir ningún path — sin
+# esto, un branch/skill_name adversarial define su propio "allowed_write_paths"
+# (ver LocalCodeWriter._write_file: el gateo es por membresía exacta de set,
+# no por estar bajo snarf/specialists/), pudiendo escapar el repo entero.
+_IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _validate_identifier(value: str, field: str) -> str | None:
+    if not isinstance(value, str) or not _IDENTIFIER_RE.match(value):
+        return f"'{field}' inválido: '{value}' — solo se permite snake_case (letras minúsculas, dígitos, '_'), sin '/' ni '..'."
+    return None
+
 
 def _slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
@@ -58,7 +72,16 @@ def _slugify(name: str) -> str:
 
 
 def _default_git_dirty_files(repo_root: Path) -> set[str]:
-    result = subprocess.run(["git", "status", "--porcelain"], cwd=str(repo_root), capture_output=True, text=True)
+    # --untracked-files=all: sin esto, git colapsa un directorio NUEVO
+    # entero (ej. la primera skill de una rama que todavía no existía) en
+    # una sola línea "?? snarf/specialists/knowledge/" en vez de listar los
+    # archivos reales uno por uno — eso nunca matchea _expected_files()
+    # (que son paths de archivo exactos) y aborta builds válidos con un
+    # falso "tocó algo fuera del alcance". Confirmado reproduciendo el bug
+    # real con un repo git de prueba antes de este fix.
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"], cwd=str(repo_root), capture_output=True, text=True
+    )
     files = set()
     for line in result.stdout.splitlines():
         path = line[3:].strip()
@@ -162,7 +185,10 @@ class SkillFactorySpecialist:
             "(brain.py), VERB_BY_SKILL (verbs.py) y DETAIL_EXTRACTORS (detail.py) — los tests de "
             "cobertura ya existentes fallan si falta alguno.\n"
             "4. Corré la suite completa real con run_tests y confirmá que pasa entera, no solo los "
-            "tests nuevos.\n\n"
+            "tests nuevos. Si falla por un error en el módulo o el test que escribiste en los pasos "
+            "1-2, corregilo volviendo a llamar write_file sobre ese MISMO path (nunca necesitás "
+            "edit_file para tus propios archivos nuevos, y nunca toques un archivo distinto para "
+            "arreglar un error que está en el tuyo) — repetí corregir-y-testear hasta que pase.\n\n"
             "Alcance estricto, NUNCA lo excedas: nunca toques FOUNDATION.md, CONSTITUTION.md, "
             "CHARACTER.md, COGNITION.md, ni MASTER_MAP.md, ni ningún otro archivo de código fuera de "
             "los nombrados arriba (write_file/edit_file van a rechazar cualquier otro path). No "
@@ -182,6 +208,17 @@ class SkillFactorySpecialist:
 
     def build_skill(self, branch: str, skill_name: str, description: str, clarifying_answers: list[dict] | None = None) -> dict:
         clarifying_answers = clarifying_answers or []
+
+        # Validación de identificadores ANTES de calcular ningún path o
+        # invocar el motor — rechazo explícito y temprano (nunca dejamos que
+        # el motor local llegue a generar código con un path ya inválido de
+        # entrada). No se crea manifest ni proposal_id para un pedido
+        # inválido: no hubo intento real de build.
+        for field, value in (("branch", branch), ("skill_name", skill_name)):
+            error = _validate_identifier(value, field)
+            if error:
+                return {"status": "rejected", "reason": error}
+
         proposal_id = f"{_slugify(skill_name)}-{uuid.uuid4().hex[:8]}"
         manifest = {
             "id": proposal_id,

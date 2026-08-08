@@ -63,6 +63,28 @@ def test_write_file_within_scope_writes_the_real_file_and_succeeds(tmp_path):
     assert (tmp_path / "snarf/specialists/research/x.py").read_text(encoding="utf-8") == "contenido real"
 
 
+def test_write_file_can_be_called_again_on_the_same_path_to_self_correct(tmp_path):
+    # El motor descubre un error de sintaxis en el propio Specialist que
+    # escribió y lo corrige volviendo a llamar write_file sobre el mismo
+    # path — nunca necesita (ni tiene) edit_file para sus propios archivos
+    # nuevos. Antes de este fix, la descripción de write_file decía "nunca
+    # para un archivo que ya existe", lo que hacía que el motor se
+    # autobloqueara y abandonara con NO PUDE en vez de corregirse.
+    writer, _ = make_writer(
+        tmp_path,
+        tool_calls=[
+            ("write_file", {"path": "snarf/specialists/research/x.py", "content": "contenido con bug"}),
+            ("write_file", {"path": "snarf/specialists/research/x.py", "content": "contenido corregido"}),
+            ("run_tests", {}),
+        ],
+    )
+    result = writer.run(
+        "prompt", allowed_write_paths={"snarf/specialists/research/x.py"}, allowed_edit_paths=set()
+    )
+    assert result.ok is True
+    assert (tmp_path / "snarf/specialists/research/x.py").read_text(encoding="utf-8") == "contenido corregido"
+
+
 def test_write_file_outside_scope_never_touches_disk(tmp_path):
     writer, llm = make_writer(
         tmp_path,

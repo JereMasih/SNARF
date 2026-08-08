@@ -1,5 +1,7 @@
+import subprocess
+
 from snarf.capabilities.local_code_writer import LocalCodeWriterResult
-from snarf.specialists.skill_factory import SkillFactorySpecialist
+from snarf.specialists.skill_factory import SkillFactorySpecialist, _default_git_dirty_files
 
 
 class _FakeCodeWriter:
@@ -270,6 +272,83 @@ def test_status_returns_the_persisted_manifest(tmp_path):
 
     assert status["branch"] == "research"
     assert status["skill_name"] == "x"
+
+
+def test_build_skill_rejects_a_skill_name_with_path_traversal_before_touching_anything(tmp_path):
+    # skill_name adversarial que intenta escapar snarf/specialists/ — tiene
+    # que rechazarse ANTES de tocar git o invocar el motor local, nunca
+    # dejar que LocalCodeWriter llegue a evaluarlo.
+    writer = _FakeCodeWriter(_ok_result())
+    factory = _factory(tmp_path, code_writer=writer, dirty_files_sequence=[set(), set()])
+
+    result = factory.build_skill("research", "../../../tmp/evil", "algo")
+
+    assert result["status"] == "rejected"
+    assert "skill_name" in result["reason"]
+    assert writer.calls == []
+
+
+def test_build_skill_rejects_a_branch_with_a_slash(tmp_path):
+    writer = _FakeCodeWriter(_ok_result())
+    factory = _factory(tmp_path, code_writer=writer, dirty_files_sequence=[set(), set()])
+
+    result = factory.build_skill("research/../../etc", "x", "algo")
+
+    assert result["status"] == "rejected"
+    assert "branch" in result["reason"]
+    assert writer.calls == []
+
+
+def test_build_skill_rejects_names_outside_snake_case(tmp_path):
+    writer = _FakeCodeWriter(_ok_result())
+    factory = _factory(tmp_path, code_writer=writer, dirty_files_sequence=[set(), set()])
+
+    result = factory.build_skill("research", "Skill Con Espacios", "algo")
+
+    assert result["status"] == "rejected"
+    assert writer.calls == []
+
+
+def test_build_skill_accepts_a_valid_snake_case_branch_and_skill_name(tmp_path):
+    before = set()
+    after = {
+        "snarf/specialists/research/deep_research_v2.py",
+        "tests/test_deep_research_v2.py",
+        "snarf/core/orchestrator.py",
+        "snarf/telemetry/brain.py",
+        "snarf/telemetry/verbs.py",
+        "snarf/telemetry/detail.py",
+    }
+    factory = _factory(tmp_path, dirty_files_sequence=[before, after])
+
+    result = factory.build_skill("research", "deep_research_v2", "algo")
+
+    assert result["status"] == "built"
+
+
+def test_default_git_dirty_files_lists_files_inside_a_brand_new_directory_individually(tmp_path):
+    # Reproduce el bug real: git status --porcelain (sin --untracked-files=all)
+    # colapsa un directorio nuevo entero en una sola línea "?? dir/", lo que
+    # hacía que la primera skill de una rama nueva siempre pareciera "fuera
+    # de alcance" aunque los archivos generados fueran exactamente los
+    # esperados.
+    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "config", "user.email", "a@b.c"], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "config", "user.name", "test"], cwd=str(tmp_path), check=True)
+    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    subprocess.run(["git", "add", "a.txt"], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
+
+    new_dir = tmp_path / "snarf" / "specialists" / "knowledge"
+    new_dir.mkdir(parents=True)
+    (new_dir / "drive_incremental_indexer.py").write_text("contenido", encoding="utf-8")
+    (new_dir / "__init__.py").write_text("", encoding="utf-8")
+
+    dirty = _default_git_dirty_files(tmp_path)
+
+    assert "snarf/specialists/knowledge/drive_incremental_indexer.py" in dirty
+    assert "snarf/specialists/knowledge/__init__.py" in dirty
+    assert "snarf/specialists/knowledge/" not in dirty
 
 
 def test_list_proposals_reflects_the_index(tmp_path):

@@ -61,10 +61,16 @@ SYSTEM_PROMPT = (
     "sumá su wiring (tool en TOOLS/_tool_handlers del Orchestrator, nodo en brain.py, verbo en "
     "verbs.py, extractor en detail.py) con edit_file, una edición quirúrgica a la vez sobre archivos "
     "que YA EXISTEN — nunca los reescribas enteros; (4) corré run_tests. Si falla, leé el error real "
-    "en la salida, corregí con edit_file, y volvé a correr los tests — repetí hasta que pase la suite "
-    "ENTERA, no solo los tests nuevos. Terminá tu respuesta con la palabra LISTO cuando la suite "
-    "completa haya pasado de verdad, o con NO PUDE: <motivo real> si te quedaste sin forma de "
-    "resolverlo — nunca digas LISTO sin haber corrido run_tests y visto pasar la suite."
+    "en la salida y corregí SIEMPRE en el archivo donde está el error real, nunca en otro lado: si el "
+    "bug está en el Specialist o el test que vos mismo escribiste, volvé a llamar write_file sobre ese "
+    "mismo path para reescribirlo completo con la corrección — dentro de tu propio alcance de "
+    "escritura no hay diferencia entre 'crear' y 'corregir', siempre es tu propio archivo nuevo, y "
+    "podés llamarla las veces que haga falta. edit_file es solo para los 4 archivos de wiring que YA "
+    "EXISTÍAN antes de que empezaras (nunca la uses ni la necesitás para tu propio Specialist/test). "
+    "Repetí el ciclo corregir-y-testear hasta que pase la suite ENTERA, no solo los tests nuevos. "
+    "Terminá tu respuesta con la palabra LISTO cuando la suite completa haya pasado de verdad, o con "
+    "NO PUDE: <motivo real> si te quedaste sin forma de resolverlo — nunca digas LISTO sin haber "
+    "corrido run_tests y visto pasar la suite."
 )
 
 
@@ -178,9 +184,14 @@ class LocalCodeWriter(Capability):
             {
                 "name": "write_file",
                 "description": (
-                    "Crea un archivo NUEVO con contenido completo. Solo funciona dentro del alcance "
-                    "de archivos nuevos permitido para esta construcción — nunca para tocar un "
-                    "archivo que ya existe."
+                    "Escribe contenido completo en un archivo NUEVO tuyo (el módulo del Specialist o "
+                    "su test) — solo funciona dentro del alcance de archivos nuevos permitido para "
+                    "esta construcción. Podés llamarla más de una vez sobre el MISMO path para "
+                    "corregir un error tuyo (sintaxis, lógica, lo que sea): dentro de tu propio "
+                    "alcance de escritura, cada llamada reescribe el archivo entero con tu versión "
+                    "más reciente — no hace falta (ni existe) un 'edit_file' para tus propios "
+                    "archivos nuevos. edit_file es una herramienta aparte, solo para los 4 archivos "
+                    "de wiring que YA EXISTÍAN antes de que arrancaras."
                 ),
                 "input_schema": {
                     "type": "object",
