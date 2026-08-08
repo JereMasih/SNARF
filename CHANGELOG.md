@@ -2,6 +2,87 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-08] Rediseño de chat: boot robusto, sidebar/proyectos/foco, cerebro de "pensando", feed legible, id de mensaje real y responder-a-mensaje (ADR 0134)
+
+- Dos bugs reales reportados en vivo: el cerebro del arranque dependía enteramente de JS ejecutando
+  sin errores (nunca aparecía si algo fallaba antes, sobre todo en mobile) — ahora hay un placeholder
+  ghost estático embebido en el HTML crudo, visible desde el primer paint, más `textInput` con
+  `disabled` también estático. Y clickear una conversación del historial a veces no cargaba nada — un
+  doble render (cache + revalidación de red) podía destruir el ítem que el usuario estaba tocando a
+  mitad de un click; ahora no se reconstruye la lista si los datos no cambiaron.
+- Barra lateral de Proyectos: header fijo con "PROYECTOS" en el listado general, o "← todos los
+  proyectos" → nombre del proyecto → "+ nueva conversación" al entrar a uno (antes no había ningún
+  título). El título del chat ahora refleja el proyecto cuando no hay conversación abierta. Botón de
+  modo foco sin el fondo claro nativo del navegador; su título ya no queda tapado por la barra lateral
+  acoplada; el panel es más grande (1440px) y las burbujas ocupan todo el ancho real disponible.
+- Burbuja de "pensando": sin los tres puntitos — el cerebro mini-animado (68px, antes 30px) ocupa el
+  globo, clickeable para ver el cerebro completo mientras trabaja; el botón "■ frenar" queda como
+  contraparte a la derecha. De paso, corregido un nodo real (`specialist_morning_routine`) que faltaba
+  en 6 listas del frontend y nunca se dibujaba pese a tener actividad real registrada en el backend.
+- Feed del cerebro: banner en vivo con el tiempo real transcurrido del pedido activo (`Date.now()` del
+  navegador — nunca un "% completado" inventado, el backend no tiene ese concepto) y la fila más
+  reciente resaltada, para ver de un vistazo qué proceso está activo ahora.
+- Consolidación de audio: una sola versión (antes "escuchar"/"escuchar completo"/"escuchar entregable"
+  convivían sobre el mismo mecanismo de `POST /tts`, solo cambiaba qué texto se sintetizaba) — ahora
+  siempre lee la respuesta completa. Botones de escuchar/copiar/responder pasan a ser solo ícono.
+- Id real y persistente por turno (`EpisodicMemory.append(id=...)`, reusa el mismo `request_id` que ya
+  generaba el frontend para la cancelación, ver ADR 0132) — base de la función nueva "responder a un
+  mensaje": cita el texto real de una respuesta anterior de Snarf (resuelto contra la memoria, nunca
+  lo que el frontend diga), inyectada solo en el turno actual que ve el LLM, nunca en lo persistido.
+- 12 tests nuevos (`test_episodic_memory.py`, `test_orchestrator.py`, `test_app.py`). 1094/1094 tests.
+  Verificado con Playwright contra una instancia de prueba en el puerto 8000 (nunca el LaunchAgent de
+  producción): los 5 flujos completos, cero errores de consola. Ver ADR 0134.
+
+## [2026-08-08] Skill Factory: fix de falsos abortos en construcciones válidas (ADR 0133)
+
+- Tres intentos reales de construir la skill `drive_incremental_indexer` (rama `knowledge`)
+  terminaron en `status='failed'`. Dos fueron por falta de crédito de la API de Anthropic (ya
+  cubierto por ADR 0131); el tercero reveló dos bugs reales del propio Skill Framework —
+  `diff_files` del manifest confirma que el motor **nunca tocó** ningún archivo fuera de alcance.
+- Bug A: el motor no tenía ninguna forma sancionada de corregir un error de sintaxis en el módulo
+  del Specialist que él mismo acababa de escribir (`write_file` decía "nunca para un archivo que ya
+  existe"; `edit_file` está restringido a los 4 archivos de wiring) — se autobloqueaba y abandonaba
+  con `NO PUDE` aunque el gateo real ya permitía reescribir su propio path. Redacción de
+  `write_file`/`SYSTEM_PROMPT` corregida en `local_code_writer.py`: ahora puede reescribirse el
+  mismo path las veces que haga falta.
+- Bug B, más serio: `_default_git_dirty_files()` corría `git status --porcelain` sin
+  `--untracked-files=all` — git colapsa un directorio NUEVO entero (la primera skill de una rama que
+  todavía no existía, como `knowledge/`) en una sola línea, que nunca matchea contra los paths
+  exactos de `_expected_files()`. Cualquier build válida que estrenara una rama nueva se habría
+  abortado sola con un falso "tocó algo fuera de alcance". Reproducido con un repo git de prueba
+  antes del fix.
+- `branch`/`skill_name` ahora se validan como snake_case estricto al principio de `build_skill()`,
+  antes de tocar git o invocar el motor — cierra un gap real (nunca explotado) donde un
+  `skill_name` con `../` podía definir su propio path de escape del repo.
+- 7 tests nuevos (`test_skill_factory.py`, `test_local_code_writer.py`). Restos rotos del intento
+  fallido eliminados con confirmación del fundador (nunca trackeados en git). 1094/1094 tests. Ver
+  ADR 0133.
+
+## [2026-08-07] Pantalla de boot "Jarvis-style", cache SWR del cliente, y cancelación real de un pedido en curso (ADR 0132)
+
+- Pedido real del fundador: no era claro si Snarf ya estaba listo para escribir (el overlay de
+  arranque solo esperaba `/status`, no conversaciones/dashboard), cada F5 repetía todos los fetches de
+  arranque sin ningún cacheo, y no había forma de frenar un pedido en curso.
+- Pantalla de boot: reusa `brainMiniSvgMarkup()` (mismo cerebro del widget de dashboard/indicador de
+  "pensando") en estado "ghost" honesto hasta tener datos reales; recién oculta el overlay y rehabilita
+  el input cuando conversaciones/proyectos (y dashboard, en desktop) terminaron de cargar, con timeout
+  de 15s como red de seguridad.
+- Cache cliente stale-while-revalidate (`localStorage`, `freshMs` por tipo de dato) para conversaciones,
+  proyectos, preferencias/resumen del dashboard, y widgets — un reload dentro de la ventana fresca no
+  repite el pedido de red.
+- Cancelación real de un pedido en curso (no solo visual — decisión confirmada explícitamente con el
+  fundador): botón "■ frenar" en la burbuja de "pensando", `AbortController` del lado del navegador +
+  `POST /cancel/{request_id}` nuevo que corta el streaming de Anthropic a mitad de camino (ahorra los
+  tokens de output que faltaban generar). Reusa el panel de revisión ya existente (voz transcripta)
+  para editar y reenviar o cancelar. La respuesta cancelada queda en el historial, marcada, nunca
+  desaparece.
+- 18 tests nuevos (`test_cancellation.py`, `test_context.py`, `test_anthropic_llm.py`,
+  `test_orchestrator.py`, `test_app.py` — incluida una carrera real con `threading.Thread`, no
+  simulada). 1076/1076 tests. Verificado con Playwright contra una instancia de prueba en el puerto
+  8000 (nunca el LaunchAgent de producción): input deshabilitado durante el boot, cero requests
+  redundantes en un reload inmediato, y el flujo completo de frenar/editar/marcar-cancelado sin
+  errores de consola. Ver ADR 0132.
+
 ## [2026-08-06] El modelo local como motor suficiente para correr Snarf (ADR 0131)
 
 - Pedido real del fundador sin crédito en xAI/Anthropic: encontrado en vivo (mismo día) un crash real

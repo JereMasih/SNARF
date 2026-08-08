@@ -86,6 +86,100 @@ def test_handle_tags_the_llm_role_as_orchestrator_during_the_real_call_and_clear
     assert context.get_llm_role() is None
 
 
+def test_handle_tags_the_request_id_during_the_real_call_and_clears_it_after(orchestrator, monkeypatch):
+    from snarf.telemetry import context
+
+    captured = {}
+
+    def fake_generate(**kwargs):
+        captured["request_id_during_call"] = context.get_request_id()
+        return LLMResponse(text="respuesta", speech="")
+
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
+    orchestrator.handle("text", "hola", conversation_id="c1", request_id="req-abc")
+
+    assert captured["request_id_during_call"] == "req-abc"
+    assert context.get_request_id() is None
+
+
+def test_handle_without_request_id_leaves_context_unset(orchestrator, monkeypatch):
+    from snarf.telemetry import context
+
+    captured = {}
+
+    def fake_generate(**kwargs):
+        captured["request_id_during_call"] = context.get_request_id()
+        return LLMResponse(text="respuesta", speech="")
+
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
+    orchestrator.handle("text", "hola", conversation_id="c1")
+
+    assert captured["request_id_during_call"] is None
+
+
+def test_a_cancelled_response_is_persisted_to_memory_marked_as_cancelled(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(
+        orchestrator._llm,
+        "generate",
+        lambda **kwargs: LLMResponse(text="lo que alcanzó a decir", speech="", cancelled=True),
+    )
+    result = orchestrator.handle("text", "hola", conversation_id="c1", request_id="req-cancelado")
+    assert result.cancelled is True
+    entry = orchestrator.memory.get_conversation("c1")[0]
+    assert entry["response"] == "lo que alcanzó a decir"
+    assert entry["cancelled"] is True
+
+
+def test_handle_persists_the_turn_with_its_request_id_as_the_entry_id(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(orchestrator._llm, "generate", lambda **kwargs: LLMResponse(text="respuesta", speech=""))
+    orchestrator.handle("text", "hola", conversation_id="c1", request_id="req-abc")
+    entry = orchestrator.memory.get_conversation("c1")[0]
+    assert entry["id"] == "req-abc"
+
+
+def test_handle_with_reply_to_id_injects_the_quoted_text_for_the_llm_but_not_into_stored_input(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(orchestrator._llm, "generate", lambda **kwargs: LLMResponse(text="primera respuesta", speech=""))
+    orchestrator.handle("text", "primer mensaje", conversation_id="c1", request_id="req-1")
+
+    captured = {}
+
+    def fake_generate(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return LLMResponse(text="segunda respuesta", speech="")
+
+    monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
+    orchestrator.handle("text", "y eso qué significa", conversation_id="c1", request_id="req-2", reply_to_id="req-1")
+
+    last_user_message = captured["messages"][-1]
+    assert last_user_message["role"] == "user"
+    assert "primera respuesta" in last_user_message["content"]
+    assert "y eso qué significa" in last_user_message["content"]
+    # Lo persistido nunca lleva la cita envuelta — solo lo que el fundador escribió de verdad.
+    entry = orchestrator.memory.get_conversation("c1")[1]
+    assert entry["input"] == "y eso qué significa"
+    assert entry["reply_to_id"] == "req-1"
+
+
+def test_handle_with_unknown_reply_to_id_degrades_silently(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    captured = {}
+
+    def fake_generate(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return LLMResponse(text="respuesta", speech="")
+
+    monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
+    orchestrator.handle("text", "hola", conversation_id="c1", request_id="req-1", reply_to_id="nunca-existio")
+
+    last_user_message = captured["messages"][-1]
+    assert last_user_message["content"] == "hola"  # sin cita agregada
+
+
 def test_generate_conversation_title_persists_a_short_title(orchestrator, monkeypatch):
     orchestrator.handle("text", "necesito un plan para mi marca de Instagram", conversation_id="c1")
     monkeypatch.setattr(orchestrator._title_llm, "_client", object())  # available=True

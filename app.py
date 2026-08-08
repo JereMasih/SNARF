@@ -30,6 +30,7 @@ from snarf.specialists.dashboard_curator import DashboardCuratorSpecialist
 from snarf.telemetry import (
     activity_log,
     brain,
+    cancellation,
     cost_history,
     detail,
     events,
@@ -161,6 +162,16 @@ class SendRequest(BaseModel):
     text: str
     conversation_id: str | None = None
     input_audio_id: str | None = None
+    # Generado en el frontend (crypto.randomUUID()) para poder frenar este
+    # pedido puntual a mitad de generación — ver POST /cancel/{request_id} y
+    # snarf/runtime/cancellation.py. None en llamadas que no vienen del chat
+    # en vivo (no hay nada que cancelar ahí). Mismo id se reusa como
+    # identidad persistente del turno (ver EpisodicMemory.append id=), así
+    # "responder a este mensaje" tiene siempre algo real a lo que apuntar.
+    request_id: str | None = None
+    # id real (EpisodicMemory) del turno de Snarf al que este mensaje
+    # responde puntualmente — ver ADR de esta ronda.
+    reply_to_id: str | None = None
 
 
 class SendResponse(BaseModel):
@@ -168,6 +179,7 @@ class SendResponse(BaseModel):
     speech: str
     deliverable: str | None = None
     thinking: str | None = None
+    cancelled: bool = False
 
 
 class TTSRequest(BaseModel):
@@ -304,17 +316,40 @@ def send(payload: SendRequest, background_tasks: BackgroundTasks, user_id: str =
     # turno) si esta conversación todavía no tenía ningún mensaje — así se
     # sabe si este es el primer intercambio real, sin ambigüedad.
     is_first_turn = bool(payload.conversation_id) and not orchestrator.memory.get_conversation(payload.conversation_id)
-    # El proyecto de la conversación (si tiene uno asignado) se resuelve solo
-    # dentro de orchestrator.handle() por conversation_id — ver Proyectos
-    # Mark II. Ya no viaja como parámetro por mensaje.
-    result = orchestrator.handle(
-        "visual", payload.text, conversation_id=payload.conversation_id, input_audio_id=payload.input_audio_id
-    )
-    if is_first_turn:
+    if payload.request_id:
+        cancellation.register(payload.request_id)
+    try:
+        # El proyecto de la conversación (si tiene uno asignado) se resuelve
+        # solo dentro de orchestrator.handle() por conversation_id — ver
+        # Proyectos Mark II. Ya no viaja como parámetro por mensaje.
+        result = orchestrator.handle(
+            "visual", payload.text, conversation_id=payload.conversation_id,
+            input_audio_id=payload.input_audio_id, request_id=payload.request_id,
+            reply_to_id=payload.reply_to_id,
+        )
+    finally:
+        if payload.request_id:
+            cancellation.finish(payload.request_id)
+    if is_first_turn and not result.cancelled:
         # En background: nombrar la conversación es un nice-to-have, no debe
-        # sumarle latencia a la respuesta que el fundador está esperando.
+        # sumarle latencia a la respuesta que el fundador está esperando. Un
+        # turno cancelado no alcanzó a decir nada real — no vale la pena
+        # gastar una llamada de título sobre eso.
         background_tasks.add_task(orchestrator.generate_conversation_title, payload.conversation_id)
-    return SendResponse(response=result.text, speech=result.speech, deliverable=result.deliverable, thinking=result.thinking)
+    return SendResponse(
+        response=result.text, speech=result.speech, deliverable=result.deliverable,
+        thinking=result.thinking, cancelled=result.cancelled,
+    )
+
+
+@app.post("/cancel/{request_id}")
+def cancel_request(request_id: str, user_id: str = Depends(require_user)):
+    # 404 si el pedido ya terminó o nunca existió — nunca finge éxito (ver
+    # snarf/runtime/cancellation.py). El frontend trata ese 404 como no-error:
+    # es una carrera esperable entre "frenar" y una respuesta que ya llegó.
+    if not cancellation.cancel(request_id):
+        raise HTTPException(404, "pedido no encontrado o ya terminado")
+    return {"status": "cancelling"}
 
 
 @app.post("/tts", response_model=TTSResponse)

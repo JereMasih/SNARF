@@ -297,3 +297,52 @@ def test_stats_activity_by_day_counts_todays_messages(tmp_path):
     stats = memory.stats()
     today_bucket = stats["activity_by_day"][-1]
     assert today_bucket["count"] == 1
+
+
+def test_append_uses_the_given_id(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "hola", "respuesta", conversation_id="c1", id="req-123")
+    entries = memory.recent(10, conversation_id="c1")
+    assert entries[0]["id"] == "req-123"
+
+
+def test_append_generates_an_id_when_none_given(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "hola", "respuesta", conversation_id="c1")
+    entries = memory.recent(10, conversation_id="c1")
+    assert entries[0]["id"]  # nunca None ni vacío
+
+
+def test_append_persists_reply_to_id(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "hola", "respuesta", conversation_id="c1", reply_to_id="req-anterior")
+    entries = memory.recent(10, conversation_id="c1")
+    assert entries[0]["reply_to_id"] == "req-anterior"
+
+
+def test_append_defaults_reply_to_id_to_none(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "hola", "respuesta", conversation_id="c1")
+    entries = memory.recent(10, conversation_id="c1")
+    assert entries[0]["reply_to_id"] is None
+
+
+def test_get_entry_finds_the_matching_entry(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "primero", "respuesta uno", conversation_id="c1", id="req-1")
+    memory.append("text", "segundo", "respuesta dos", conversation_id="c1", id="req-2")
+    entry = memory.get_entry("c1", "req-1")
+    assert entry is not None
+    assert entry["response"] == "respuesta uno"
+
+
+def test_get_entry_returns_none_for_unknown_id(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "hola", "respuesta", conversation_id="c1", id="req-1")
+    assert memory.get_entry("c1", "nunca-existio") is None
+
+
+def test_get_entry_scoped_to_the_right_conversation(tmp_path, monkeypatch):
+    memory = make_memory(tmp_path, monkeypatch)
+    memory.append("text", "hola", "respuesta", conversation_id="c1", id="req-1")
+    assert memory.get_entry("c2", "req-1") is None

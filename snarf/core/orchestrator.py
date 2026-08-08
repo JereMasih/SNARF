@@ -2350,6 +2350,8 @@ class Orchestrator:
         user_input: str,
         conversation_id: str | None = None,
         input_audio_id: str | None = None,
+        request_id: str | None = None,
+        reply_to_id: str | None = None,
     ) -> LLMResponse:
         # project_id ya no viaja como parámetro por mensaje (eso no alcanzaba:
         # una conversación recién creada sin mensajes no tenía nada que
@@ -2361,6 +2363,17 @@ class Orchestrator:
         # para quedar disponible también en modo eco (memory.append de abajo
         # lo necesita en cualquier caso).
         project_id = self._memory.get_conversation_project(conversation_id) if conversation_id else None
+
+        # "Responder a este mensaje" (ver ADR de esta ronda): el texto citado
+        # se resuelve acá, contra la memoria real — nunca se confía en lo que
+        # el frontend diga que Snarf dijo. Si el id no existe (mensaje viejo
+        # sin id, carrera, id inválido), se degrada en silencio: el turno
+        # sigue sin la cita, nunca rompe por esto.
+        quoted_text = None
+        if reply_to_id and conversation_id:
+            quoted_entry = self._memory.get_entry(conversation_id, reply_to_id)
+            if quoted_entry:
+                quoted_text = quoted_entry.get("response")
 
         # Contexto por thread (snarf/telemetry/context.py, ver ADR 0079 y el
         # precedente de ADR 0041 sobre threading.local en un singleton
@@ -2376,6 +2389,12 @@ class Orchestrator:
         # rol de instancia fija (ver comentario de _ResilientLLM en
         # llm_routing.py sobre por qué no pasa por ahí).
         context.set_llm_role("orchestrator")
+        # request_id (ver snarf/runtime/cancellation.py y ADR de esta ronda):
+        # viaja por contexto, no por generate_kwargs, porque ese dict se pasa
+        # sin cambios a otras dos capacidades LLM (OpenAICompatible, Gemini)
+        # con firma estricta — solo AnthropicLLM._create() lo lee de acá para
+        # poder cortar el stream a mitad de camino.
+        context.set_request_id(request_id)
         try:
             if not self._llm.available:
                 echo_text = (
@@ -2411,7 +2430,18 @@ class Orchestrator:
                     messages.append({"role": "assistant", "content": self._capped_for_replay(entry["response"])})
                 history_chars = sum(len(m["content"]) for m in messages)
                 history_entries = len(messages) // 2
-                messages.append({"role": "user", "content": user_input})
+                # La cita solo se agrega al mensaje que el LLM ve ESTE turno
+                # — memory.append() más abajo sigue guardando user_input tal
+                # cual lo escribió el fundador, nunca envuelto. Si se
+                # guardara envuelto, un replay futuro de este mismo turno
+                # (ver el loop de arriba) repetiría la cita en cada mensaje
+                # posterior de la conversación, inflando tokens sin sentido.
+                effective_input = (
+                    f'[Respondiendo puntualmente a esto que dijiste antes: "{quoted_text}"]\n\n{user_input}'
+                    if quoted_text
+                    else user_input
+                )
+                messages.append({"role": "user", "content": effective_input})
                 # Fase 6 del plan de HUD: registro real de cuánto contexto
                 # viaja alrededor de lo que el fundador efectivamente
                 # escribió — nunca una llamada extra al modelo, solo
@@ -2458,11 +2488,14 @@ class Orchestrator:
         finally:
             context.clear_llm_role()
             context.clear_conversation_id()
+            context.clear_request_id()
 
         self._memory.append(
             channel_name, user_input, response.text,
             conversation_id=conversation_id, project_id=project_id, input_audio_id=input_audio_id,
             speech=response.speech, deliverable=response.deliverable,
+            cancelled=response.cancelled,
+            id=request_id, reply_to_id=reply_to_id,
         )
         return response
 

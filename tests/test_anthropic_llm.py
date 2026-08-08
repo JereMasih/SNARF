@@ -13,6 +13,7 @@ from snarf.capabilities.anthropic_llm import (
     fallback_speech,
     split_speech,
 )
+from snarf.telemetry import cancellation, context
 
 
 class FakeTextBlock:
@@ -418,3 +419,121 @@ def test_split_speech_tolerates_a_marker_split_across_a_newline():
     assert "---" not in result.text
     assert "HABLA" not in result.speech
     assert "ENTREGABLE" not in result.speech
+
+
+# --- Cancelación real a mitad de stream (ver ADR de esta ronda) ---
+#
+# FakeStream (arriba) solo implementa get_final_message() — nunca necesita
+# __iter__ porque _create() solo itera a mano cuando hay un request_id real
+# en contexto. Estos fakes sí implementan __iter__ + current_message_snapshot
+# para simular ese path.
+
+
+class FakeStreamWithEvents:
+    def __init__(self, response, partial_text_at_cancel="", cancel_on_event=1, request_id_to_cancel=None):
+        self._response = response
+        self._events = ["event"] * 3
+        self._emitted = 0
+        self._partial_text_at_cancel = partial_text_at_cancel
+        self._cancel_on_event = cancel_on_event
+        self._request_id_to_cancel = request_id_to_cancel
+        self.get_final_message_called = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._emitted >= len(self._events):
+            raise StopIteration
+        self._emitted += 1
+        if self._emitted == self._cancel_on_event and self._request_id_to_cancel:
+            cancellation.cancel(self._request_id_to_cancel)
+        return self._events[self._emitted - 1]
+
+    @property
+    def current_message_snapshot(self):
+        return SimpleNamespace(content=[FakeTextBlock(self._partial_text_at_cancel)])
+
+    def get_final_message(self):
+        self.get_final_message_called = True
+        return self._response
+
+
+class FakeMessagesStreams:
+    """Como FakeMessages, pero devuelve streams ya armados en vez de
+    construir un FakeStream a partir de una respuesta — necesario para
+    inyectar FakeStreamWithEvents."""
+
+    def __init__(self, streams):
+        self._streams = list(streams)
+        self.calls = []
+
+    def stream(self, **kwargs):
+        self.calls.append(kwargs)
+        return self._streams.pop(0)
+
+
+def make_llm_with_streams(streams):
+    llm = AnthropicLLM.__new__(AnthropicLLM)
+    llm.model = "claude-sonnet-5"
+    llm._api_key = "fake"
+    llm._client = SimpleNamespace(messages=FakeMessagesStreams(streams))
+    return llm
+
+
+def test_cancel_mid_stream_cuts_generation_and_preserves_partial_text():
+    request_id = "test-cancel-mid-stream"
+    cancellation.register(request_id)
+    context.set_request_id(request_id)
+    try:
+        stream = FakeStreamWithEvents(
+            response=fake_response("end_turn", "nunca debería usarse esto — se canceló antes"),
+            partial_text_at_cancel="esto es lo que Snarf alcanzó a escribir",
+            cancel_on_event=1,
+            request_id_to_cancel=request_id,
+        )
+        llm = make_llm_with_streams([stream])
+        result = llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+        assert result.cancelled is True
+        assert result.text == "esto es lo que Snarf alcanzó a escribir"
+        assert stream.get_final_message_called is False
+    finally:
+        context.clear_request_id()
+        cancellation.finish(request_id)
+
+
+def test_cancel_before_first_round_returns_cancelled_without_calling_stream():
+    """Cancelar entre rondas del tool-loop (acá, antes de la primera):
+    generate() debe cortar ANTES de armar la llamada — ni siquiera le pide un
+    stream al cliente falso (una lista vacía haría explotar el fake si se
+    llamara)."""
+    request_id = "test-cancel-before-round"
+    cancellation.register(request_id)
+    cancellation.cancel(request_id)
+    context.set_request_id(request_id)
+    try:
+        llm = make_llm_with_streams([])
+        result = llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+        assert result.cancelled is True
+        assert result.text == "[pedido cancelado antes de generar una respuesta]"
+    finally:
+        context.clear_request_id()
+        cancellation.finish(request_id)
+
+
+def test_generate_without_request_id_never_iterates_the_stream_manually():
+    """Sin request_id en contexto (llamadas internas: título de conversación,
+    compactación de historial, y este mismo test) _create() va directo a
+    get_final_message() — el path de cancelación no se activa nunca, cero
+    cambio de conducta respecto de antes de este feature."""
+    context.clear_request_id()
+    llm = make_llm([fake_response("end_turn", "respuesta normal, sin cancelación")])
+    result = llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+    assert result.cancelled is False
+    assert result.text == "respuesta normal, sin cancelación"

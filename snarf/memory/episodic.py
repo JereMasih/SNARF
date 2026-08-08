@@ -1,5 +1,6 @@
 import json
 import time
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -86,8 +87,19 @@ class EpisodicMemory:
         input_audio_id: str | None = None,
         speech: str | None = None,
         deliverable: str | None = None,
+        cancelled: bool = False,
+        id: str | None = None,
+        reply_to_id: str | None = None,
     ) -> None:
+        # id: identidad real y persistente de este turno (ver ADR de esta
+        # ronda) — reusa el mismo request_id ya generado por el frontend para
+        # este pedido (mismo patrón que ADR de cancelación: un solo uuid por
+        # turno, dos usos). Sin uno provisto (llamadas internas: digest de
+        # Gmail, resumen de proyecto, etc.), se genera acá — TODA entrada
+        # nueva tiene un id real, nunca None, para que "responder a este
+        # mensaje" tenga siempre algo estable a lo que apuntar.
         entry = {
+            "id": id or uuid.uuid4().hex,
             "timestamp": time.time(),
             "channel": channel,
             "conversation_id": conversation_id,
@@ -97,6 +109,8 @@ class EpisodicMemory:
             "input_audio_id": input_audio_id,
             "speech": speech,
             "deliverable": deliverable,
+            "cancelled": cancelled,
+            "reply_to_id": reply_to_id,
         }
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -180,6 +194,17 @@ class EpisodicMemory:
         if limit is None:
             return entries
         return entries[-limit:]
+
+    def get_entry(self, conversation_id: str, message_id: str) -> dict | None:
+        """Resuelve una entrada puntual por id — usado por "responder a este
+        mensaje" (ver Orchestrator.handle) para citar el texto real de un
+        turno anterior, nunca lo que el frontend diga que dijo. Entradas
+        viejas (de antes de que append() empezara a generar `id`) no tienen
+        este campo — devuelve None para esas, nunca inventa una coincidencia."""
+        for entry in self.get_conversation(conversation_id):
+            if entry.get("id") == message_id:
+                return entry
+        return None
 
     def search(self, query: str, limit: int = 10) -> list[dict]:
         query_lower = query.lower().strip()

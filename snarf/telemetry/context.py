@@ -53,3 +53,15 @@ def get_llm_role() -> str | None:
 
 def clear_llm_role() -> None:
     _local.llm_role = None
+
+
+def set_request_id(request_id: str | None) -> None:
+    _local.request_id = request_id
+
+
+def get_request_id() -> str | None:
+    return getattr(_local, "request_id", None)
+
+
+def clear_request_id() -> None:
+    _local.request_id = None

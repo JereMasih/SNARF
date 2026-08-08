@@ -2,11 +2,11 @@ import json
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable
 
 from snarf.capabilities.base import Capability
-from snarf.telemetry import detail, usage_tracker
+from snarf.telemetry import cancellation, context, detail, usage_tracker
 
 DEFAULT_MODEL = "claude-sonnet-5"
 MAX_TOOL_ROUNDS = 5
@@ -56,12 +56,17 @@ class LLMResponse:
     no-thinking como el default actual). Nunca se persiste a memoria
     episódica a propósito: es un artefacto de transparencia de ESTA
     respuesta puntual, no parte del historial de la conversación.
+    cancelled: True cuando el fundador frenó este pedido a mitad de
+    generación (ver snarf/runtime/cancellation.py y ADR de esta ronda) —
+    text/speech quedan con lo parcial ya generado hasta el corte, nunca
+    inventado más allá de eso.
     """
 
     text: str
     speech: str
     deliverable: str | None = None
     thinking: str | None = None
+    cancelled: bool = False
 
 
 def fallback_speech(text: str) -> str:
@@ -169,6 +174,16 @@ def _mark_cache_breakpoint(message: dict) -> dict:
     return {**message, "content": blocks}
 
 
+class GenerationCancelled(Exception):
+    """El fundador frenó este pedido a mitad de generación (ver
+    snarf/runtime/cancellation.py). Lleva el texto parcial ya generado hasta
+    el corte, para no perderlo — nunca se completa ni se inventa el resto."""
+
+    def __init__(self, request_id: str, partial_text: str = ""):
+        super().__init__(f"generación cancelada: {request_id}")
+        self.partial_text = partial_text
+
+
 class AnthropicLLM(Capability):
     name = "anthropic_llm"
 
@@ -201,9 +216,33 @@ class AnthropicLLM(Capability):
         con max_tokens alto (arriesgan timeout HTTP en una conexión larga) —
         con MAX_OUTPUT_TOKENS ya en 16000, streaming deja de ser opcional.
         Devuelve (response, duration_ms) — la duración real de ESTA ronda, para
-        el detalle al click del feed del cerebro (ver ADR de esta ronda)."""
+        el detalle al click del feed del cerebro (ver ADR de esta ronda).
+
+        Si hay un request_id real en contexto (turno de usuario vía /send,
+        ver ADR de esta ronda), itera el stream evento por evento para poder
+        chequear cancelación a mitad de camino — `MessageStreamManager.
+        __exit__` ya cierra la conexión a Anthropic al salir del `with`
+        (confirmado contra el SDK instalado), así que un `raise` acá adentro
+        corta la generación de verdad, no solo deja de mostrarla. Sin
+        request_id (título de conversación, compactación, todos los tests
+        actuales) el comportamiento es idéntico al de siempre: directo a
+        get_final_message(), sin iterar nada a mano."""
+        request_id = context.get_request_id()
         start = time.monotonic()
         with self._client.messages.stream(**kwargs) as stream:
+            if request_id:
+                for _event in stream:
+                    if cancellation.is_cancelled(request_id):
+                        partial = ""
+                        try:
+                            partial = "".join(
+                                block.text
+                                for block in stream.current_message_snapshot.content
+                                if getattr(block, "type", None) == "text"
+                            )
+                        except AssertionError:
+                            pass  # todavía no llegó ningún evento — no hay snapshot que leer
+                        raise GenerationCancelled(request_id, partial_text=partial)
             response = stream.get_final_message()
         return response, (time.monotonic() - start) * 1000
 
@@ -234,7 +273,10 @@ class AnthropicLLM(Capability):
         ]
 
         conversation = list(messages)
+        request_id = context.get_request_id()
         for _ in range(max_tool_rounds):
+            if request_id and cancellation.is_cancelled(request_id):
+                return self._cancelled_response()
             call_messages = list(conversation)
             if call_messages:
                 # Segundo punto de cacheo: el historial de la conversación
@@ -245,7 +287,10 @@ class AnthropicLLM(Capability):
             kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=call_messages)
             if tools:
                 kwargs["tools"] = tools
-            response, duration_ms = self._create(**kwargs)
+            try:
+                response, duration_ms = self._create(**kwargs)
+            except GenerationCancelled as exc:
+                return self._cancelled_response(exc.partial_text)
             self._record_usage(response, duration_ms)
 
             if response.stop_reason == "tool_use" and tool_handler:
@@ -288,9 +333,12 @@ class AnthropicLLM(Capability):
                 )
                 call_messages = list(conversation)
                 call_messages[-1] = _mark_cache_breakpoint(call_messages[-1])
-                response, duration_ms = self._create(
-                    model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=call_messages
-                )
+                try:
+                    response, duration_ms = self._create(
+                        model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=call_messages
+                    )
+                except GenerationCancelled as exc:
+                    return self._cancelled_response(text + exc.partial_text)
                 self._record_usage(response, duration_ms)
                 text += "".join(block.text for block in response.content if block.type == "text")
 
@@ -329,11 +377,26 @@ class AnthropicLLM(Capability):
             text = "".join(block.text for block in response.content if block.type == "text")
             if text.strip():
                 return split_speech(text)
+        except GenerationCancelled as exc:
+            return self._cancelled_response(exc.partial_text)
         except Exception:
             pass
 
         timeout_text = "[demasiadas consultas a herramientas, no llegué a una respuesta final]"
         return LLMResponse(text=timeout_text, speech=timeout_text)
+
+    def _cancelled_response(self, partial_text: str = "") -> LLMResponse:
+        """El fundador frenó el pedido (ver GenerationCancelled más arriba).
+        Con texto parcial real, se procesa igual que cualquier respuesta
+        (separa habla/entregable) y se marca cancelled=True; sin nada
+        generado todavía, un texto honesto de que no llegó a responder —
+        nunca se inventa contenido más allá de lo que el modelo alcanzó a
+        escribir antes del corte."""
+        text = partial_text.strip()
+        if not text:
+            text = "[pedido cancelado antes de generar una respuesta]"
+            return LLMResponse(text=text, speech=text, cancelled=True)
+        return replace(split_speech(text), cancelled=True)
 
     def _record_usage(self, response, duration_ms: float | None = None) -> None:
         usage = getattr(response, "usage", None)

@@ -239,6 +239,25 @@
     cursor: pointer;
     text-align: left;
   }
+  /* Header persistente del panel de Proyectos (pedido explícito): antes el
+     botón "← todos los proyectos" y "+ nueva conversación" vivían DENTRO de
+     `.conv-list` como ítems más de la lista (se perdían al hacer scroll, y
+     nunca había ningún título visible ni en el listado general de proyectos
+     ni al entrar a uno). Ahora es un header fijo, afuera de la lista —
+     `renderProjectPanelHeaderInto()` decide su contenido según el estado. */
+  .project-panel-header { padding: 0 14px 4px; flex: 0 0 auto; }
+  .project-panel-title {
+    font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-dim); margin: 6px 0 8px; font-weight: 600;
+  }
+  .project-back-btn {
+    display: flex; align-items: center; gap: 0.3rem;
+    background: none; border: none; color: var(--glow-soft);
+    font-family: inherit; font-size: 0.7rem; letter-spacing: 0.02em;
+    padding: 0.2rem 0; margin: 2px 0 4px; cursor: pointer;
+  }
+  .project-back-btn:hover { color: var(--glow); }
+  .project-panel-header .new-conv-btn { margin: 0 0 12px; }
   .conv-list { overflow-y: auto; overscroll-behavior: contain; flex: 1 1 auto; padding: 0 8px; }
   /* Swipe hacia abajo desde arriba del todo para refrescar el historial —
      crece de 0 a su alto real en vez de seguir el dedo 1:1 (más simple,
@@ -839,6 +858,11 @@
   .dash-resize-handle:hover { opacity: 1; color: var(--glow); }
   .dash-widget.resizing { border-color: var(--glow); }
   .dash-widget-expand-handle {
+    /* Es un <button> real (a diferencia de .dash-drag-handle, un <span>) —
+       sin esto hereda el chrome nativo del navegador (fondo claro, borde
+       gris), el "fondo claro" reportado. Mismo tratamiento que el resto de
+       los botones-ícono cian de la app (.icon-btn/.chat-dock-icon-btn). */
+    background: none; border: none; font-family: inherit;
     color: var(--text-dim); cursor: pointer; opacity: 0.55;
     display: flex; align-items: center; justify-content: center;
     min-width: 26px; min-height: 26px; margin: -6px -4px -6px 0.2rem;
@@ -1013,21 +1037,35 @@
   .brain-mini svg { width: 100%; max-width: 160px; height: auto; }
   .brain-mini-stat { font-size: 0.78rem; color: var(--text); text-align: center; }
   .brain-mini-stat-sub { font-size: 0.68rem; color: var(--text-dim); text-align: center; }
-  /* Mini-animación del cerebro dentro del indicador de "pensando" — chica,
-     clickeable, invita a mirar el cerebro completo mientras se espera.
-     Va al lado de los tres puntitos (mismo renglón, ver .thinking-row):
-     los puntitos siguen siendo la señal inmediata (aparecen sin esperar
-     red), el cerebro se materializa al lado apenas llegan sus datos reales
-     — la entrada en remolino (giro + escala desde chico) es lo que conecta
-     visualmente ambas señales como una sola idea de "pensando". */
-  .thinking-row { display: flex; align-items: center; gap: 0.55rem; }
+  /* Cerebro mini-animado dentro del indicador de "pensando" (pedido
+     explícito: nada de tres puntitos fijos — el cerebro ES la señal de
+     "pensando", ocupando el globo entero). Clickeable/tocable para ver el
+     cerebro completo mientras trabaja. Arranca en estado "ghost" (sin datos
+     todavía, ver loadThinkingBrainPreview) — la entrada en remolino (giro +
+     escala desde chico) es la señal inmediata, sin esperar red. El botón de
+     frenar queda como contraparte a la derecha (ver .thinking-row). */
+  .thinking-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; min-height: 68px; }
+  /* Frenar un pedido en curso (pedido explícito del fundador, ver ADR de
+     esta ronda): mismo lenguaje visual que .copy-msg-btn/.play-audio-btn,
+     pero en --brain-red para diferenciarlo como una acción de corte. Al
+     click, reusa el panel de "revisar y editar" que ya existía para notas
+     de voz (#review/#reviewText) — mismo flujo de editar/enviar/cancelar,
+     sin duplicar esa interfaz. */
+  .stop-request-btn {
+    display: flex; align-items: center; gap: 0.3rem; flex: 0 0 auto;
+    background: rgba(255,41,82,0.1); border: 1px solid rgba(255,41,82,0.35);
+    color: var(--brain-red); font-family: inherit; font-size: 0.65rem;
+    letter-spacing: 0.04em; padding: 0.22rem 0.55rem; border-radius: 999px;
+    cursor: pointer;
+  }
+  .stop-request-btn:hover { background: rgba(255,41,82,0.18); }
   .thinking-brain-preview {
-    width: 30px; height: 30px; cursor: pointer;
+    width: 68px; height: 68px; cursor: pointer; flex: 0 0 auto;
     border-radius: 50%; transition: transform 0.15s ease, filter 0.15s ease;
-    filter: drop-shadow(0 0 6px rgba(79,216,232,0.35));
+    filter: drop-shadow(0 0 10px rgba(79,216,232,0.4));
     animation: brain-swirl-in 0.7s cubic-bezier(0.32, 1.4, 0.5, 1) both;
   }
-  .thinking-brain-preview:hover { transform: scale(1.1); filter: drop-shadow(0 0 10px rgba(79,216,232,0.55)); }
+  .thinking-brain-preview:hover { transform: scale(1.06); filter: drop-shadow(0 0 16px rgba(79,216,232,0.6)); }
   .thinking-brain-preview svg { width: 100%; height: 100%; }
   @keyframes brain-swirl-in {
     0% { transform: scale(0.15) rotate(-200deg); opacity: 0; }
@@ -1114,6 +1152,25 @@
     color: var(--text-dim); font-size: 13px; letter-spacing: 0.02em;
     text-align: center; max-width: 80vw;
   }
+  /* Arranque "Jarvis-style" (pedido explícito, 2026-08-07): el cerebro de
+     Snarf reusa exactamente brainMiniSvgMarkup() (mismo SVG que el widget de
+     dashboard y el indicador de "pensando", ver ADR de esta ronda) en vez de
+     una animación decorativa aparte — con datos vacíos entra en estado
+     "ghost" real, honesto (nunca actividad inventada), y se actualiza con
+     datos reales de /dashboard/brain apenas están disponibles. El spinner
+     circular chico queda reservado al caso de reconexión (overlay liviano
+     tras un corte breve) — la primera carga real muestra el cerebro entero. */
+  .connecting-overlay:not(.reconnect) .connecting-spinner { display: none; }
+  .connecting-overlay.reconnect .boot-brain-slot { display: none; }
+  .boot-brain-slot {
+    width: 220px; max-width: 55vw;
+    filter: drop-shadow(0 0 22px rgba(161,36,255,0.35));
+    animation: brain-swirl-in 1.1s cubic-bezier(0.32, 1.4, 0.5, 1) both;
+  }
+  .boot-brain-slot svg { width: 100%; height: auto; display: block; }
+  @media (prefers-reduced-motion: reduce) {
+    .boot-brain-slot { animation: none; }
+  }
   .chat-focus-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 14;
     opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
@@ -1122,7 +1179,10 @@
   .chat-focus-panel {
     position: fixed; z-index: 15;
     left: 50%; top: 50%; transform: translate(-50%, -46%);
-    width: min(1100px, 96vw); height: min(860px, 94vh);
+    /* Agrandado (pedido explícito): el modo foco es justamente para leer
+       más contenido, más libre de distracciones — antes se quedaba corto,
+       casi del mismo orden que el chat normal. */
+    width: min(1440px, 97vw); height: min(920px, 95vh);
     background: rgba(5,10,12,0.98); border: 1px solid rgba(79,216,232,0.35);
     border-radius: 16px; overflow: hidden;
     display: flex; flex-direction: row;
@@ -1130,6 +1190,13 @@
   }
   .chat-focus-panel.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); }
   .chat-focus-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; position: relative; }
+  /* Los globos del chat normal tienen max-width:560px fijo (pensado para la
+     columna angosta del dashboard clásico) — en modo foco, con toda esta
+     caja disponible, deben ocupar el espacio real (mismo criterio que
+     .chat-dock .chat en la Vista HUD). El padding-top de base de .chat
+     (3.2rem) ya deja lugar de sobra para el título, ahora posicionado
+     dentro de esta misma caja — no hace falta tocarlo.*/
+  .chat-focus-main .chat { max-width: none; }
   .chat-focus-close {
     position: absolute; top: 10px; right: 10px; z-index: 2;
     background: none; border: 1px solid rgba(79,216,232,0.3); color: var(--text-dim);
@@ -1172,6 +1239,20 @@
   .brain-graph-inner { position: absolute; inset: 0; will-change: transform; }
   .brain-graph-inner svg { position: absolute; inset: 0; width: 100%; height: 100%; }
   #brainParticles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  /* Indicador en vivo de "cuánto tiempo lleva" el pedido activo — único dato
+     de progreso que es real (Date.now() del navegador, ver
+     activeRequestStartedAt), nunca un "% completado" o "paso N de M"
+     inventado: el backend no tiene ese concepto (ver ADR de esta ronda). */
+  .brain-live-status {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 1.2rem; font-size: 0.72rem; color: var(--glow-soft);
+    background: rgba(79,216,232,0.06); border-bottom: 1px solid rgba(79,216,232,0.15);
+  }
+  .brain-live-status[hidden] { display: none; }
+  .brain-live-status .brain-live-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--glow);
+    flex-shrink: 0; animation: brain-breathe 1.4s ease-in-out infinite;
+  }
   .brain-feed { flex: 1 1 0; min-width: 0; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid rgba(255,255,255,0.06); }
   @media (min-width: 900px) { .brain-feed { border-top: none; border-left: 1px solid rgba(255,255,255,0.06); padding-left: 0.8rem; } }
   .brain-feed-row {
@@ -1180,10 +1261,16 @@
     cursor: pointer;
   }
   .brain-feed-row:hover { background: rgba(79,216,232,0.06); }
+  /* Fila más reciente (pedido explícito: "qué proceso específico está
+     activo" de un vistazo) — mismo criterio visual que brain-node-active:
+     un solo pulso suave, nunca el "tac-tac" descartado antes. */
+  .brain-feed-row.fresh { background: rgba(79,216,232,0.05); }
+  .brain-feed-row.fresh .dash-dot.ok { animation: brain-icon-glow 1.6s ease-in-out infinite; }
   .brain-feed-row .dash-dot { align-self: center; }
   .brain-feed-icon { align-self: center; flex-shrink: 0; opacity: 0.9; }
   .brain-feed-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .brain-feed-time { flex-shrink: 0; font-size: 0.68rem; color: var(--text-dim); }
+  .brain-feed-row.fresh .brain-feed-time { color: var(--glow-soft); font-weight: 600; }
 
   /* Opacidad baja a propósito: la línea recta centro-nodo tiene que existir
      (el pulso puntual viaja por ella, animateMotion/mpath) pero en reposo no
@@ -1424,6 +1511,15 @@
     -webkit-backdrop-filter: blur(4px) saturate(1.15);
     border: 1px solid rgba(255,255,255,0.16); border-bottom-left-radius: 4px;
   }
+  /* Pedido frenado a mitad de generación (ver ADR de esta ronda) — nunca
+     desaparece del historial, solo queda marcado: opacidad reducida + borde
+     de acento en --brain-red (mismo color ya usado para "error"/"cancelar"
+     en el resto de la interfaz) y un badge chico arriba del texto. */
+  .msg.snarf.cancelled { opacity: 0.72; border-color: rgba(255,41,82,0.4); }
+  .msg-cancelled-badge {
+    font-size: 0.68rem; color: var(--brain-red); opacity: 0.85;
+    letter-spacing: 0.02em; margin-bottom: 0.3rem;
+  }
   .msg.snarf h1, .msg.snarf h2, .msg.snarf h3 {
     margin: 0.2rem 0 0.4rem; line-height: 1.3; color: var(--glow-soft);
   }
@@ -1458,20 +1554,22 @@
     padding: 0.2rem 0.5rem; border-radius: 999px; cursor: pointer;
   }
   .copy-code-btn:hover { background: rgba(79,216,232,0.15); }
-  .msg-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
-  .msg-actions .play-audio-btn, .msg-actions .copy-msg-btn { margin-top: 0; }
-  .copy-msg-btn {
-    display: flex; width: fit-content; align-items: center; gap: 0.3rem;
+  .msg-actions { display: flex; gap: 0.4rem; margin-top: 0.5rem; flex-wrap: wrap; }
+  .msg-actions .play-audio-btn, .msg-actions .copy-msg-btn, .msg-actions .reply-to-msg-btn { margin-top: 0; }
+  /* Solo ícono (pedido explícito, ver ADR de esta ronda: nada de texto en
+     estos botones, coherente con el resto del branding) — cuadrado chico en
+     vez de píldora con texto, el nombre completo queda como tooltip nativo
+     (title="..."). */
+  .copy-msg-btn, .reply-to-msg-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px;
     background: rgba(79,216,232,0.1);
     border: 1px solid rgba(79,216,232,0.3);
     color: var(--glow-soft);
-    font-family: inherit;
-    font-size: 0.65rem;
-    letter-spacing: 0.04em;
-    padding: 0.3rem 0.6rem;
     border-radius: 999px;
     cursor: pointer;
   }
+  .copy-msg-btn:hover, .reply-to-msg-btn:hover { background: rgba(79,216,232,0.18); }
   .msg.snarf strong { color: var(--text); }
   .msg.snarf table {
     width: 100%; border-collapse: collapse; margin: 0 0 0.5rem; font-size: 0.8rem;
@@ -1482,26 +1580,15 @@
   }
   .msg.snarf th { color: var(--glow-soft); background: rgba(79,216,232,0.08); }
   .play-audio-btn {
-    display: flex; width: fit-content; align-items: center; gap: 0.3rem;
-    margin-top: 0.5rem;
+    display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px;
     background: rgba(79,216,232,0.1);
     border: 1px solid rgba(79,216,232,0.3);
     color: var(--glow-soft);
-    font-family: inherit;
-    font-size: 0.65rem;
-    letter-spacing: 0.04em;
-    padding: 0.3rem 0.6rem;
     border-radius: 999px;
     cursor: pointer;
   }
-  /* Botón "escuchar entregable" — más discreto que "escuchar": es la opción
-     secundaria, solo visible cuando la respuesta trae un entregable real. */
-  .play-audio-btn-full {
-    background: transparent;
-    border-color: rgba(79,216,232,0.15);
-    opacity: 0.75;
-  }
-  .play-audio-btn-full:hover { opacity: 1; }
+  .play-audio-btn:hover { background: rgba(79,216,232,0.18); }
   /* Placeholder mientras se genera automáticamente el audio de "escuchar"
      (turnos que llegaron por voz) — nunca hay botón que tocar acá, el
      player lo reemplaza solo cuando está listo. */
@@ -1558,15 +1645,6 @@
     padding: 0.2rem 0.4rem; border-radius: 999px; cursor: pointer;
   }
   .vn-menu .conv-item-menu-btn { color: var(--text-dim); }
-
-  .typing { display: flex; gap: 4px; align-items: center; padding: 0.3rem 0; }
-  .typing span {
-    width: 5px; height: 5px; border-radius: 50%; background: var(--glow);
-    animation: typing-bounce 1.2s infinite ease-in-out;
-  }
-  .typing span:nth-child(2) { animation-delay: 0.15s; }
-  .typing span:nth-child(3) { animation-delay: 0.3s; }
-  @keyframes typing-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-4px); opacity: 1; } }
 
   /* --- bottom control cluster --- */
   .control-bar {
@@ -1671,6 +1749,36 @@
   }
   .orb-wrap.error .wire { border-color: rgba(232,90,90,0.35); }
 
+  /* "Responder a este mensaje" (pedido explícito, ver ADR de esta ronda) —
+     banner arriba del renglón de escritura, mismo ancho que .text-row para
+     quedar alineado. [hidden] pisa el display:flex propio (mismo gotcha ya
+     documentado en este archivo, ver .retry-btn[hidden]). */
+  .reply-context {
+    display: flex; align-items: center; gap: 0.4rem;
+    width: 100%; max-width: 480px; margin: 0 auto 0.4rem;
+    padding: 0.35rem 0.6rem; border-radius: 10px;
+    background: rgba(79,216,232,0.08); border: 1px solid rgba(79,216,232,0.25);
+    color: var(--glow-soft); font-size: 0.68rem;
+  }
+  .reply-context[hidden] { display: none; }
+  .reply-context-text {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; opacity: 0.85;
+  }
+  .reply-context-cancel {
+    flex: 0 0 auto; background: none; border: none; color: var(--text-dim);
+    cursor: pointer; font-size: 0.75rem; padding: 0.1rem 0.2rem;
+  }
+  .reply-context-cancel:hover { color: var(--text); }
+  /* Vínculo persistente en la burbuja ya enviada — misma cita, sin el botón
+     de cancelar (ya no aplica, el mensaje ya se mandó). */
+  .msg-reply-ref {
+    display: flex; align-items: center; gap: 0.35rem;
+    font-size: 0.66rem; color: rgba(255,255,255,0.55);
+    margin-bottom: 0.3rem; opacity: 0.85;
+  }
+  .msg-reply-ref span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   /* --- text mode --- */
   .text-row {
     position: relative;
@@ -1765,6 +1873,33 @@
 <body>
   <div class="connecting-overlay" id="connectingOverlay">
     <div class="connecting-spinner"></div>
+    <!-- Placeholder ghost estático, sin depender de ningún JS (bug real
+         reportado en mobile: si algo más adelante en el script tira, el
+         cerebro nunca aparecía porque solo se pintaba vía JS al final del
+         archivo) — bootSequence() lo reemplaza por brainMiniSvgMarkup() con
+         el layout real apenas corre, pero esto ya está visible desde el
+         primer paint del HTML, sin ninguna dependencia de JS. -->
+    <div class="boot-brain-slot" id="bootBrainSlot">
+      <svg viewBox="0 0 160 160">
+        <line x1="80" y1="80" x2="80" y2="16" class="brain-edge brain-color-grey" />
+        <line x1="80" y1="80" x2="125.25" y2="34.75" class="brain-edge brain-color-grey" />
+        <line x1="80" y1="80" x2="144" y2="80" class="brain-edge brain-color-grey" />
+        <line x1="80" y1="80" x2="125.25" y2="125.25" class="brain-edge brain-color-grey" />
+        <line x1="80" y1="80" x2="80" y2="144" class="brain-edge brain-color-grey" />
+        <line x1="80" y1="80" x2="34.75" y2="125.25" class="brain-edge brain-color-grey" />
+        <line x1="80" y1="80" x2="16" y2="80" class="brain-edge brain-color-grey" />
+        <line x1="80" y1="80" x2="34.75" y2="34.75" class="brain-edge brain-color-grey" />
+        <circle class="brain-node brain-node-ghost brain-color-grey" cx="80" cy="16" r="4" />
+        <circle class="brain-node brain-node-ghost brain-color-grey" cx="125.25" cy="34.75" r="4" />
+        <circle class="brain-node brain-node-ghost brain-color-grey" cx="144" cy="80" r="4" />
+        <circle class="brain-node brain-node-ghost brain-color-grey" cx="125.25" cy="125.25" r="4" />
+        <circle class="brain-node brain-node-ghost brain-color-grey" cx="80" cy="144" r="4" />
+        <circle class="brain-node brain-node-ghost brain-color-grey" cx="34.75" cy="125.25" r="4" />
+        <circle class="brain-node brain-node-ghost brain-color-grey" cx="16" cy="80" r="4" />
+        <circle class="brain-node brain-node-ghost brain-color-grey" cx="34.75" cy="34.75" r="4" />
+        <circle class="brain-node-center brain-mini-center brain-color-white brain-node-ghost" cx="80" cy="80" r="10" />
+      </svg>
+    </div>
     <div class="connecting-text" id="connectingText">Snarf se está conectando, un momento por favor...</div>
   </div>
   <div class="bg-glow"></div>
@@ -1816,7 +1951,7 @@
       <div class="conv-list" id="convList"></div>
     </div>
     <div class="sidebar-tab-panel" data-tab-panel="projects">
-      <button class="new-conv-btn" id="newProjectBtn">+ nuevo proyecto</button>
+      <div class="project-panel-header" id="projectPanelHeader"></div>
       <div class="conv-list" id="projectList"></div>
     </div>
     <div class="user-menu" id="userMenu">
@@ -1835,9 +1970,16 @@
 
   <div class="chat-focus-overlay" id="chatFocusOverlay"></div>
   <div class="chat-focus-panel" id="chatFocusPanel">
-    <span class="chat-focus-title" id="chatFocusTitle"></span>
     <button class="chat-focus-close" id="chatFocusCloseBtn">✕</button>
-    <div class="chat-focus-main" id="chatFocusMain"></div>
+    <!-- Antes vivía como hermano de .chat-focus-main, posicionado absoluto
+         contra TODO el panel — bug real: con la barra lateral acoplada
+         (.sidebar.docked, 260px) ocupando ese mismo rincón superior
+         izquierdo, el título quedaba tapado/invisible detrás de ella. Ahora
+         vive DENTRO de .chat-focus-main (posicionado relativo a esa caja,
+         que ya arranca después de la barra lateral en el layout flex). -->
+    <div class="chat-focus-main" id="chatFocusMain">
+      <span class="chat-focus-title" id="chatFocusTitle"></span>
+    </div>
   </div>
 
   <div class="settings-overlay" id="settingsOverlay"></div>
@@ -1885,6 +2027,12 @@
       <h3>Cerebro de Snarf</h3>
       <button class="settings-close" id="brainCloseBtn">✕</button>
     </div>
+    <!-- Indicador en vivo (pedido explícito): tiempo real transcurrido desde
+         que arrancó el pedido activo — dato honesto (Date.now() del propio
+         navegador), nunca un "% completado" inventado, ver
+         updateBrainLiveStatus más abajo. Oculto cuando no hay ningún pedido
+         en curso. -->
+    <div class="brain-live-status" id="brainLiveStatus" hidden></div>
     <div class="brain-layout" id="brainLayoutClassic">
       <div class="brain-graph">
         <div class="brain-graph-inner" id="brainGraphInner">
@@ -1915,10 +2063,19 @@
           <button id="sendBtn" class="primary">enviar</button>
         </div>
       </div>
+      <!-- "Responder a este mensaje" (pedido explícito, ver ADR de esta
+           ronda): banner arriba del renglón de escritura, con la cita y un
+           botón para cancelar la referencia — nunca oculta el mensaje
+           original, solo lo resume. -->
+      <div class="reply-context" id="replyContext" hidden>
+        <svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5 3 10l5 5"/><path d="M3 10h8a5 5 0 0 1 5 5v1"/></svg>
+        <span class="reply-context-text" id="replyContextText"></span>
+        <button class="reply-context-cancel" id="replyContextCancel" title="cancelar referencia">✕</button>
+      </div>
       <div class="text-row" id="textRow">
         <input type="file" id="fileInput" hidden>
         <button class="icon-btn" id="attachBtn" title="Adjuntar archivo"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 6.5l-6 6a2.5 2.5 0 0 0 3.5 3.5l6.5-6.5a4 4 0 0 0-5.5-5.5l-7 7a5.5 5.5 0 0 0 7.5 7.5"/></svg></button>
-        <textarea id="textInput" placeholder="Escribile a Snarf..." rows="1"></textarea>
+        <textarea id="textInput" placeholder="Escribile a Snarf..." rows="1" disabled></textarea>
         <div class="record-overlay" id="recordOverlay">
           <span class="record-dot"></span>
           <span class="record-timer" id="recordTimer">0:00</span>
@@ -1926,8 +2083,8 @@
           <span class="record-wave" id="recordWave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
           <button class="record-cancel-btn" id="recordCancelBtn" title="cancelar grabación" hidden>🗑</button>
         </div>
-        <button class="icon-btn" id="micBtn" title="Tocá para grabar"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg></button>
-        <button class="icon-btn" id="textSendBtn" title="Enviar"><svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="16" x2="10" y2="4"/><path d="M5 9l5-5 5 5"/></svg></button>
+        <button class="icon-btn" id="micBtn" title="Tocá para grabar" disabled><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg></button>
+        <button class="icon-btn" id="textSendBtn" title="Enviar" disabled><svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="16" x2="10" y2="4"/><path d="M5 9l5-5 5 5"/></svg></button>
       </div>
       <div class="orb-wrap" id="orbWrap">
         <div class="rays"></div>
@@ -2015,7 +2172,7 @@
       <div class="conv-list" id="dashConvList"></div>
     </div>
     <div class="sidebar-tab-panel" data-tab-panel="projects">
-      <button class="new-conv-btn" id="dashNewProjectBtn">+ nuevo proyecto</button>
+      <div class="project-panel-header" id="dashProjectPanelHeader"></div>
       <div class="conv-list" id="dashProjectList"></div>
     </div>
   </div>
@@ -2034,6 +2191,7 @@
 // terminó de calentar.
 const connectingOverlayEl = document.getElementById("connectingOverlay");
 const connectingTextEl = document.getElementById("connectingText");
+const bootBrainSlotEl = document.getElementById("bootBrainSlot");
 let _watchingForDisconnect = false;
 
 async function isServerUp() {
@@ -2063,11 +2221,17 @@ function pollUntilUp(intervalMs, onUp) {
 // distinto según de dónde vino. `onReconnected` corre una sola vez, apenas
 // /status vuelve a responder.
 function showReconnectingOverlay(message, onReconnected) {
+  // .reconnect oculta el cerebro épico del arranque (ver .boot-brain-slot) —
+  // un corte de red a mitad de sesión vuelve a mostrar solo el spinner
+  // simple de siempre, la animación completa queda reservada a la primera
+  // carga real (ver bootSequence más abajo).
+  connectingOverlayEl.classList.add("reconnect");
   connectingTextEl.textContent = message;
   connectingOverlayEl.classList.remove("hidden");
   pollUntilUp(1500, () => {
     connectingTextEl.textContent = "Snarf se está conectando, un momento por favor...";
     connectingOverlayEl.classList.add("hidden");
+    connectingOverlayEl.classList.remove("reconnect");
     if (onReconnected) onReconnected();
   });
 }
@@ -2082,10 +2246,76 @@ function watchForDisconnect() {
   }, 15000);
 }
 
-pollUntilUp(1000, () => {
+// Arranque real "Jarvis-style" (pedido explícito del fundador, 2026-08-07):
+// antes este bloque solo esperaba /status (servidor arriba) y ocultaba el
+// overlay — la interfaz quedaba "lista" mientras conversaciones/dashboard
+// seguían cargando en paralelo, sin que el fundador supiera si ya podía
+// escribir (y si escribía en esa ventana, el pedido tardaba mucho sin
+// explicación). Ahora la pantalla de boot cubre TODA la carga real: recién
+// se oculta cuando /status respondió Y los datos iniciales (conversaciones/
+// proyectos, y el dashboard en desktop) terminaron de cargar — o, como red
+// de seguridad honesta, tras BOOT_TIMEOUT_MS si algo nunca resuelve (nunca
+// spinner infinito fingiendo que sigue cargando). Se define acá (mismo lugar
+// que el resto de la lógica de conexión) pero se invoca al final del
+// archivo, después de que textInput/textSendBtn/micBtn y
+// _bootDashboardPromise ya existen.
+const BOOT_TIMEOUT_MS = 15000;
+async function bootSequence() {
+  // textInput/textSendBtn/micBtn ya arrancan `disabled` desde el HTML
+  // estático (no dependen de que este script llegue a correr) — acá solo
+  // reemplaza el placeholder ghost estático (también ya en el HTML) por la
+  // versión con el layout real calculado por JS. Mismo estado "ghost"
+  // (nodes vacío) — mismo criterio que brainStateClass: nunca tuvo actividad
+  // registrada TODAVÍA, no una animación inventada.
+  bootBrainSlotEl.innerHTML = brainMiniSvgMarkup({ nodes: {}, events: [] });
+  connectingTextEl.textContent = "Conectando con Snarf...";
+  // Bug real reportado (iPhone con Tailscale caído en el momento, 20+ min
+  // sin ninguna señal): esperar /status no tenía tope — correcto (no hay
+  // nada honesto que desbloquear si el server de verdad no responde), pero
+  // el texto se quedaba fijo en "Conectando..." sin indicar que seguía
+  // intentando de verdad, indistinguible de estar colgado. Ahora suma
+  // segundos transcurridos y, pasado un umbral, un aviso explícito de que
+  // puede ser la red — sigue reintentando solo, nunca se rinde en silencio.
+  const connectStartedAt = Date.now();
+  const connectStatusTimer = setInterval(() => {
+    const elapsedS = Math.round((Date.now() - connectStartedAt) / 1000);
+    connectingTextEl.textContent = elapsedS < 10
+      ? "Conectando con Snarf..."
+      : `Conectando con Snarf... (${elapsedS}s — revisá tu conexión de red si esto sigue así)`;
+  }, 1000);
+  await new Promise((resolve) => pollUntilUp(1000, resolve));
+  clearInterval(connectStatusTimer);
+
+  connectingTextEl.textContent = "Cargando tus conversaciones...";
+  const tasks = [refreshConvLists(), refreshProjectList()];
+  if (isDesktopDashboard()) {
+    connectingTextEl.textContent = "Cargando tu dashboard...";
+    tasks.push(_bootDashboardPromise);
+  }
+  const settled = await Promise.race([
+    Promise.allSettled(tasks),
+    new Promise((resolve) => setTimeout(() => resolve("timeout"), BOOT_TIMEOUT_MS)),
+  ]);
+  const failed = settled === "timeout" || settled.some((r) => r.status === "rejected");
+
+  // Best-effort: si hay datos reales de actividad, el cerebro entra ya con
+  // ellos en vez de arrancar el chat con el cerebro todavía en estado ghost.
+  // Nunca bloquea el boot si esto falla.
+  try {
+    const res = await apiFetch("/dashboard/brain");
+    const data = await res.json();
+    bootBrainSlotEl.innerHTML = brainMiniSvgMarkup(data);
+  } catch (e) {}
+
+  connectingTextEl.textContent = failed
+    ? "Snarf está listo (algunos datos no cargaron — reintentando en segundo plano)"
+    : "Snarf está listo.";
+  textInput.disabled = false;
+  textSendBtn.disabled = false;
+  micBtn.disabled = false;
   connectingOverlayEl.classList.add("hidden");
   watchForDisconnect();
-});
+}
 
 const ICONS = {
   menu: '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>',
@@ -2102,6 +2332,10 @@ const ICONS = {
   speaker: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8v4h3l4 3.5V4.5L6 8H3Z"/><path d="M13.3 7.2a4 4 0 0 1 0 5.6"/><path d="M15.6 5a7.2 7.2 0 0 1 0 10"/></svg>',
   play: '<svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor" stroke="none"><path d="M6 4.2a1 1 0 0 1 1.53-.85l8 4.8a1 1 0 0 1 0 1.7l-8 4.8A1 1 0 0 1 6 13.8V4.2Z"/></svg>',
   pause: '<svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor" stroke="none"><rect x="5.5" y="4" width="3.2" height="12" rx="1"/><rect x="11.3" y="4" width="3.2" height="12" rx="1"/></svg>',
+  arrowLeft: '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 4.5 6 10l6.5 5.5"/></svg>',
+  copy: '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="7.5" width="9" height="10" rx="1.3"/><path d="M13 7.5V5.5A1.5 1.5 0 0 0 11.5 4h-7A1.5 1.5 0 0 0 3 5.5v9A1.5 1.5 0 0 0 4.5 16H6"/></svg>',
+  check: '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5l3.5 3.5L16 5"/></svg>',
+  reply: '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5 3 10l5 5"/><path d="M3 10h8a5 5 0 0 1 5 5v1"/></svg>',
 };
 
 const orbWrap = document.getElementById("orbWrap");
@@ -2120,14 +2354,17 @@ const sidebarOverlay = document.getElementById("sidebarOverlay");
 const newConvBtn = document.getElementById("newConvBtn");
 const convList = document.getElementById("convList");
 const convListPullIndicator = document.getElementById("convListPullIndicator");
-const newProjectBtn = document.getElementById("newProjectBtn");
 const projectList = document.getElementById("projectList");
 const dashProjectList = document.getElementById("dashProjectList");
-const dashNewProjectBtn = document.getElementById("dashNewProjectBtn");
+const projectPanelHeader = document.getElementById("projectPanelHeader");
+const dashProjectPanelHeader = document.getElementById("dashProjectPanelHeader");
 const logoutBtn = document.getElementById("logoutBtn");
 const textRow = document.getElementById("textRow");
 const textInput = document.getElementById("textInput");
 const textSendBtn = document.getElementById("textSendBtn");
+const replyContext = document.getElementById("replyContext");
+const replyContextText = document.getElementById("replyContextText");
+const replyContextCancel = document.getElementById("replyContextCancel");
 const recordTimerEl = document.getElementById("recordTimer");
 const recordHint = document.getElementById("recordHint");
 const recordCancelBtn = document.getElementById("recordCancelBtn");
@@ -2198,6 +2435,7 @@ const brainPanel = document.getElementById("brainPanel");
 const brainCloseBtn = document.getElementById("brainCloseBtn");
 const brainSvg = document.getElementById("brainSvg");
 const brainFeedList = document.getElementById("brainFeedList");
+const brainLiveStatus = document.getElementById("brainLiveStatus");
 const brainGraphInner = document.getElementById("brainGraphInner");
 const brainParticlesCanvas = document.getElementById("brainParticles");
 
@@ -2221,6 +2459,24 @@ let stream = null;
 let recordedMimeType = "audio/webm";
 let conversationId = crypto.randomUUID();
 let typingBubble = null;
+// Pedido /send en curso — permite frenarlo de verdad (AbortController del
+// lado del navegador + POST /cancel/{id} para cortar la generación real en
+// el backend, ver ADR de esta ronda). null cuando no hay ningún pedido
+// esperando respuesta.
+let activeRequestId = null;
+let activeAbortController = null;
+let lastSentText = null;
+// Timestamp real (Date.now(), no estimado) de cuándo arrancó el pedido
+// activo — alimenta el indicador en vivo "pensando desde hace Xs" del panel
+// del cerebro (ver brainLiveStatus). null cuando no hay ningún pedido en curso.
+let activeRequestStartedAt = null;
+// "Responder a este mensaje" (ver ADR de esta ronda): id real del turno de
+// Snarf al que el próximo mensaje va a responder, y el texto ya truncado
+// para mostrar en el banner del composer — ambos null cuando no hay ninguna
+// referencia activa. Se limpian apenas se manda el mensaje (o al cancelar
+// la referencia a mano).
+let replyingToId = null;
+let replyingToPreview = null;
 
 async function apiFetch(url, opts) {
   const res = await fetch(url, opts);
@@ -2229,6 +2485,34 @@ async function apiFetch(url, opts) {
     throw new Error("no autenticado");
   }
   return res;
+}
+
+// --- Cache cliente con stale-while-revalidate (pedido explícito del
+// fundador: cada F5 repetía TODOS los fetches de arranque —conversaciones,
+// proyectos, dashboard, widgets— sin ningún cacheo, aunque los datos no
+// hubieran cambiado. Ver ADR de esta ronda). Solo para lecturas (GET) que
+// alimentan listas/paneles — nunca envuelve una mutación (PUT/POST), esas
+// siguen yendo directo por apiFetch. `readCache`/`writeCache` son los
+// primitivos; cada call site decide su propio freshMs según cuán seguido
+// cambia ese dato en la práctica (ver comentarios puntuales en cada uno).
+const CACHE_PREFIX = "snarf_cache_v1:";
+// Techo de seguridad: más viejo que esto, ni siquiera se usa como
+// placeholder instantáneo — mejor una carga real que un dato de hace días.
+const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function readCache(key) {
+  try {
+    const entry = JSON.parse(localStorage.getItem(CACHE_PREFIX + key) || "null");
+    if (!entry || Date.now() - entry.ts > CACHE_MAX_AGE_MS) return null;
+    return entry;
+  } catch (e) {
+    return null;
+  }
+}
+function writeCache(key, data) {
+  try {
+    localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ ts: Date.now(), data }));
+  } catch (e) {}
 }
 
 // Muestra la barra de desplazamiento de CUALQUIER elemento solo mientras se
@@ -2357,14 +2641,17 @@ async function generateVoiceNoteAndPlay(text, btn, downloadName, playersContaine
   }
 }
 async function copyTextToClipboard(text, btn) {
-  const original = btn.textContent;
+  // innerHTML (no textContent): el botón de copiar de la burbuja ahora es
+  // solo ícono (pedido explícito, ver ADR de esta ronda) — textContent
+  // vaciaría el SVG al confirmar la copia.
+  const original = btn.innerHTML;
   try {
     await navigator.clipboard.writeText(text);
-    btn.textContent = "✓ copiado";
+    btn.innerHTML = ICONS.check;
   } catch (e) {
-    btn.textContent = "no se pudo copiar";
+    btn.innerHTML = "no se pudo copiar";
   }
-  setTimeout(() => { btn.textContent = original; }, 1600);
+  setTimeout(() => { btn.innerHTML = original; }, 1600);
 }
 
 // Botón de copiar propio por cada bloque ```código``` — para pedir un texto,
@@ -2392,10 +2679,21 @@ function reindexChatDepth() {
   msgs.forEach((el, i) => el.style.setProperty("--depth", Math.min(total - 1 - i, CHAT_DEPTH_MAX)));
 }
 
-function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliverable, thinking, insertBeforeNode, timestamp) {
+function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliverable, thinking, insertBeforeNode, timestamp, cancelled, messageId, replyToPreview) {
   const div = document.createElement("div");
   div.className = "msg " + who;
   if (timestamp) div.dataset.timestamp = timestamp;
+  if (messageId) div.dataset.messageId = messageId;
+  if (cancelled) div.classList.add("cancelled");
+  // "Responder a este mensaje" (ver ADR de esta ronda): si este turno citó
+  // a otro, el vínculo queda visible arriba del texto — nunca desaparece al
+  // recargar (replyToPreview viaja siempre que el backend lo tenga).
+  if (replyToPreview) {
+    const replyRef = document.createElement("div");
+    replyRef.className = "msg-reply-ref";
+    replyRef.innerHTML = `${ICONS.reply}<span>${escapeHtml(replyToPreview)}</span>`;
+    div.appendChild(replyRef);
+  }
   if (who === "snarf") {
     // Los reproductores de audio van SIEMPRE arriba del texto — la
     // comunicación primaria cuando hay audio es el audio, la respuesta
@@ -2404,6 +2702,17 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliv
     const playersContainer = document.createElement("div");
     playersContainer.className = "voice-note-players";
     div.appendChild(playersContainer);
+
+    // Pedido frenado a mitad de generación (ver ADR de esta ronda): la
+    // burbuja queda en el historial (nunca desaparece), marcada — no un
+    // mensaje inventado nuevo, el mismo texto parcial que Snarf alcanzó a
+    // escribir antes del corte.
+    if (cancelled) {
+      const badge = document.createElement("div");
+      badge.className = "msg-cancelled-badge";
+      badge.textContent = "⏹ pedido cancelado";
+      div.appendChild(badge);
+    }
 
     const textEl = document.createElement("div");
     textEl.className = "msg-text";
@@ -2436,63 +2745,51 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliv
     const actions = document.createElement("div");
     actions.className = "msg-actions";
     if (withAudio) {
-      // "Escuchar": narración hablada de la MISMA respuesta completa que ya
-      // está en pantalla (speech) — ya no es un resumen acortado, ver ADR de
-      // esta ronda. Si el turno llegó por voz, se sintetiza sola, sin tocar
-      // nada — es gratis (tier local) y es lo esperable cuando ya le
-      // hablaste a Snarf. No se reproduce sola (no autoplay): aparece lista
-      // para tocar. Si el turno llegó por texto, sigue siendo un botón
-      // manual — al tocarlo sí arranca solo (ya es una confirmación
-      // explícita). Mensajes viejos sin speech propio se degradan al texto.
-      if (autoSpeak && speech) {
+      // Una sola versión de audio (pedido explícito, ver ADR de esta ronda:
+      // antes convivían "escuchar"/"escuchar completo"/"escuchar entregable"
+      // — tres variantes para elegir, con el mismo mecanismo de backend
+      // detrás (POST /tts), solo cambiaba qué texto se sintetizaba). Ahora
+      // siempre se lee `text` completo, la versión más completa posible —
+      // nunca el resumen corto de `speech`. Si el turno llegó por voz, se
+      // sintetiza y reproduce sola (gratis, tier local, es lo esperable
+      // cuando ya le hablaste a Snarf); si llegó por texto, un solo botón
+      // manual.
+      if (autoSpeak) {
         const summarySlot = document.createElement("span");
         summarySlot.className = "voice-note-slot";
         summarySlot.textContent = "generando audio...";
         playersContainer.appendChild(summarySlot);
-        synthesizeVoiceNote(speech).then((audioId) => {
+        synthesizeVoiceNote(text).then((audioId) => {
           if (audioId) summarySlot.replaceWith(buildVoiceNotePlayer(audioId, "respuesta-de-snarf"));
           else summarySlot.remove();
         });
       } else {
         const listenBtn = document.createElement("button");
         listenBtn.className = "play-audio-btn";
-        listenBtn.innerHTML = `${ICONS.mic} escuchar`;
-        listenBtn.addEventListener("click", () => generateVoiceNoteAndPlay(speech || text, listenBtn, "respuesta-de-snarf", playersContainer));
+        listenBtn.title = "escuchar respuesta completa";
+        listenBtn.innerHTML = ICONS.speaker;
+        listenBtn.addEventListener("click", () => generateVoiceNoteAndPlay(text, listenBtn, "respuesta-de-snarf", playersContainer));
         actions.appendChild(listenBtn);
-      }
-
-      // "Escuchar completo": lee la respuesta ENTERA tal cual está en
-      // pantalla (text) — a pedido, siempre disponible, sin depender de la
-      // narración hablada (speech, que puede degradarse a un resumen
-      // mecánico corto si el modelo no cerró el marcador ---HABLA---) ni del
-      // criterio del modelo sobre si hay o no un "entregable" puntual que
-      // aislar. El botón "escuchar completa" original (ADR 0056) se había
-      // retirado en ADR 0063 en favor de "escuchar"/"escuchar entregable" —
-      // se restaura acá porque ninguno de esos dos garantiza el audio
-      // completo en todos los casos.
-      const fullBtn = document.createElement("button");
-      fullBtn.className = "play-audio-btn play-audio-btn-full";
-      fullBtn.innerHTML = `${ICONS.speaker} escuchar completo`;
-      fullBtn.addEventListener("click", () => generateVoiceNoteAndPlay(text, fullBtn, "respuesta-completa", playersContainer));
-      actions.appendChild(fullBtn);
-
-      // "Escuchar entregable": solo aparece cuando ESTA respuesta trae un
-      // entregable puntual (un plan, un documento, una copia pedida)
-      // distinto de la charla alrededor — lee solo eso, completo, sin lo
-      // que Snarf dijo antes o después. Siempre manual, nunca automático.
-      if (deliverable) {
-        const deliverableBtn = document.createElement("button");
-        deliverableBtn.className = "play-audio-btn play-audio-btn-full";
-        deliverableBtn.innerHTML = `${ICONS.speaker} escuchar entregable`;
-        deliverableBtn.addEventListener("click", () => generateVoiceNoteAndPlay(deliverable, deliverableBtn, "entregable", playersContainer));
-        actions.appendChild(deliverableBtn);
       }
     }
     const copyBtn = document.createElement("button");
     copyBtn.className = "copy-msg-btn";
-    copyBtn.textContent = "📋 copiar respuesta";
+    copyBtn.title = "copiar respuesta";
+    copyBtn.innerHTML = ICONS.copy;
     copyBtn.addEventListener("click", () => copyTextToClipboard(text, copyBtn));
     actions.appendChild(copyBtn);
+    // "Responder a este mensaje" (pedido explícito, ver ADR de esta ronda):
+    // solo si hay un id real y persistente para referenciar — nunca sobre
+    // un mensaje viejo sin id (de antes de esta ronda) ni sobre una
+    // respuesta cancelada/no persistida de verdad todavía.
+    if (messageId) {
+      const replyBtn = document.createElement("button");
+      replyBtn.className = "reply-to-msg-btn";
+      replyBtn.title = "responder a este mensaje";
+      replyBtn.innerHTML = ICONS.reply;
+      replyBtn.addEventListener("click", () => startReplyingTo(messageId, text));
+      actions.appendChild(replyBtn);
+    }
     div.appendChild(actions);
   } else if (inputAudioId) {
     // Nota de voz real, estilo WhatsApp: reproducible las veces que haga
@@ -2516,7 +2813,11 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliv
     div.appendChild(toggleBtn);
     div.appendChild(transcriptEl);
   } else {
-    div.textContent = text;
+    // appendChild de un text node, NO div.textContent = text — eso pisaría
+    // (vaciaría) el .msg-reply-ref ya insertado arriba para este mensaje
+    // (bug real encontrado al verificar "responder a este mensaje": la cita
+    // desaparecía apenas se pintaba el texto plano del usuario).
+    div.appendChild(document.createTextNode(text));
   }
   if (timestamp && dashboardPrefs && dashboardPrefs.show_message_timestamps) {
     const timeEl = document.createElement("span");
@@ -2537,28 +2838,22 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliv
   reindexChatDepth();
   return div;
 }
-// Mientras Snarf piensa, el indicador de "..." suma una mini-animación del
-// cerebro real (mismo SVG chico del widget del dashboard, con datos reales
-// de /dashboard/brain) — clickeable, para asomarse al cerebro completo
-// mientras se espera en vez de mirar tres puntitos fijos. Se pide sola,
-// sin bloquear los tres puntitos (que aparecen ya, sin esperar la red).
+// Mientras Snarf piensa, el cerebro mini-animado ocupa el globo entero
+// (pedido explícito: nada de tres puntitos fijos al lado — el cerebro ES la
+// señal de "pensando", clickeable/tocable para verlo en pantalla completa
+// mientras trabaja). Arranca en estado "ghost" real (sin datos todavía,
+// mismo criterio que brainStateClass — nunca actividad inventada) para que
+// haya algo visible YA, sin esperar la red; esta función solo lo ACTUALIZA
+// con la actividad real apenas /dashboard/brain responde.
 async function loadThinkingBrainPreview(bubble) {
   try {
     const res = await apiFetch("/dashboard/brain");
     const data = await res.json();
     if (bubble !== typingBubble || !bubble.isConnected) return; // la respuesta ya llegó — no insertar nada obsoleto
-    const preview = document.createElement("div");
-    preview.className = "thinking-brain-preview";
-    preview.title = "ver el cerebro de Snarf";
-    preview.innerHTML = brainMiniSvgMarkup(data);
-    preview.addEventListener("click", () => {
-      brainOpenedFromThinking = true;
-      openBrainFullscreen();
-    });
-    const row = bubble.querySelector(".thinking-row");
-    if (row) row.appendChild(preview);
+    const preview = bubble.querySelector(".thinking-brain-preview");
+    if (preview) preview.innerHTML = brainMiniSvgMarkup(data);
   } catch (e) {
-    // silencioso: el indicador de tres puntitos ya está solo, no hace falta más
+    // silencioso: el ghost ya está mostrado, no hace falta más
   }
 }
 // true mientras el cerebro está abierto porque se tocó ESTA mini-animación
@@ -2568,11 +2863,26 @@ let brainOpenedFromThinking = false;
 function showTyping() {
   typingBubble = document.createElement("div");
   typingBubble.className = "msg snarf";
-  typingBubble.innerHTML = '<div class="thinking-row"><div class="typing"><span></span><span></span><span></span></div></div>';
+  typingBubble.innerHTML =
+    '<div class="thinking-row">' +
+    `<div class="thinking-brain-preview" title="tocá para ver el cerebro en pantalla completa mientras trabaja">${brainMiniSvgMarkup({ nodes: {}, events: [] })}</div>` +
+    '<button class="stop-request-btn" title="frenar este pedido">■ frenar</button></div>';
   chatInner.appendChild(typingBubble);
   chat.scrollTop = chat.scrollHeight;
   reindexChatDepth();
+  typingBubble.querySelector(".thinking-brain-preview").addEventListener("click", () => {
+    brainOpenedFromThinking = true;
+    openBrainFullscreen();
+  });
   loadThinkingBrainPreview(typingBubble);
+  // Frenar de verdad (AbortController + POST /cancel, ver ADR de esta ronda)
+  // y reusar el panel de revisión ya existente (#review) con el texto
+  // original, para editar y reenviar o cancelar sin construir una interfaz
+  // nueva — mismo flujo que ya existía para notas de voz transcriptas.
+  typingBubble.querySelector(".stop-request-btn").addEventListener("click", () => {
+    stopActiveRequest();
+    showTranscriptForReview(lastSentText || "");
+  });
 }
 function hideTyping() {
   if (typingBubble) { typingBubble.remove(); typingBubble = null; reindexChatDepth(); }
@@ -2873,15 +3183,33 @@ function renderConvListInto(container, convs) {
     container.appendChild(div);
   });
 }
+// Cambia con cada mensaje nuevo — ventana chica, solo para no repetir el
+// mismo pedido en un F5 doble sin sentido (ver cache SWR más arriba).
+const CONV_LIST_FRESH_MS = 15000;
 async function refreshConvLists() {
   const targets = [convList, dashConvList].filter((el) => el && el.isConnected);
   if (!targets.length) return;
+  const cached = readCache("conversations");
+  if (cached) targets.forEach((t) => renderConvListInto(t, cached.data));
+  if (cached && Date.now() - cached.ts < CONV_LIST_FRESH_MS) return;
   try {
     const res = await apiFetch("/conversations");
     const convs = await res.json();
-    targets.forEach((t) => renderConvListInto(t, convs));
+    // Bug real reportado: clickear una conversación a veces no cargaba nada
+    // — reconstruir la lista entera (innerHTML="") destruye el nodo que el
+    // usuario está tocando a mitad de un click si esto corre en el medio
+    // (cache pintada + esta revalidación, las dos casi juntas). Si los datos
+    // no cambiaron desde lo ya pintado, no hay motivo para reconstruir de
+    // nuevo — evita la ventana de la carrera en el caso común.
+    if (!cached || JSON.stringify(convs) !== JSON.stringify(cached.data)) {
+      targets.forEach((t) => renderConvListInto(t, convs));
+    }
+    writeCache("conversations", convs);
   } catch (e) {
-    targets.forEach((t) => { t.innerHTML = '<div class="conv-empty">error cargando conversaciones</div>'; });
+    // Con algo en cache ya mostrado, un fallo de red no lo pisa con un
+    // error — mejor mostrar la última lista real conocida que romper la
+    // vista por un corte pasajero.
+    if (!cached) targets.forEach((t) => { t.innerHTML = '<div class="conv-empty">error cargando conversaciones</div>'; });
   }
 }
 
@@ -3007,7 +3335,11 @@ function refreshDateSeparators() {
 }
 
 function updateChatTitleDisplays() {
-  const title = currentConversationTitle() || WIDGET_LABELS.chat;
+  // Parado en un proyecto sin ninguna conversación abierta (home del
+  // proyecto): el título es el del proyecto, no el genérico — pedido
+  // explícito. Una conversación real abierta (currentConversationTitle) le
+  // gana siempre, esté o no dentro de un proyecto.
+  const title = currentConversationTitle() || (currentProjectId ? (currentProjectName || "Proyecto") : null) || WIDGET_LABELS.chat;
   const classicChatTitle = document.querySelector('.dash-widget[data-widget-id="chat"] .dash-widget-head h3');
   if (classicChatTitle) classicChatTitle.textContent = title;
   if (chatDockTitle) chatDockTitle.textContent = title;
@@ -3028,8 +3360,8 @@ async function loadConversation(id) {
     const res = await apiFetch("/conversations/" + id);
     const body = await res.json();
     body.entries.forEach(e => {
-      addMessage(e.input, "user", false, e.input_audio_id, null, false, null, null, null, e.timestamp);
-      addMessage(e.response, "snarf", ttsAvailable, null, e.speech, false, e.deliverable, null, null, e.timestamp);
+      addMessage(e.input, "user", false, e.input_audio_id, null, false, null, null, null, e.timestamp, false, e.id, replyPreviewFor(body.entries, e.reply_to_id));
+      addMessage(e.response, "snarf", ttsAvailable, null, e.speech, false, e.deliverable, null, null, e.timestamp, e.cancelled, e.id);
     });
     refreshDateSeparators();
     hasMoreOlderMessages = body.has_more;
@@ -3056,8 +3388,8 @@ async function loadOlderMessages() {
       const previousScrollHeight = chat.scrollHeight;
       const previousScrollTop = chat.scrollTop;
       body.entries.forEach(e => {
-        addMessage(e.input, "user", false, e.input_audio_id, null, false, null, null, anchor, e.timestamp);
-        addMessage(e.response, "snarf", ttsAvailable, null, e.speech, false, e.deliverable, null, anchor, e.timestamp);
+        addMessage(e.input, "user", false, e.input_audio_id, null, false, null, null, anchor, e.timestamp, false, e.id, replyPreviewFor(body.entries, e.reply_to_id));
+        addMessage(e.response, "snarf", ttsAvailable, null, e.speech, false, e.deliverable, null, anchor, e.timestamp, e.cancelled, e.id);
       });
       // Antes de medir el alto final para compensar el scroll — los
       // separadores también suman alto, y tienen que estar insertados para
@@ -3119,7 +3451,33 @@ let currentProjectName = null; // para la etiqueta de #projectContextBar; se fij
 // fantasma solo por mirar un proyecto.
 let pendingProjectHomeId = null;
 
-function renderProjectListInto(container, projects) {
+// Header persistente del panel de Proyectos (pedido explícito): título
+// arriba de todo ("Proyectos" en el listado general, el nombre del proyecto
+// al entrar a uno), con "← todos los proyectos" arriba del título y el botón
+// de "nuevo" debajo — afuera de `.conv-list`, así no se reconstruye ni se
+// pierde al hacer scroll de la lista.
+function renderProjectPanelHeaderInto(header, { title, showBack, newLabel, onNew }) {
+  header.innerHTML = "";
+  if (showBack) {
+    const back = document.createElement("button");
+    back.className = "project-back-btn";
+    back.innerHTML = `${ICONS.arrowLeft} todos los proyectos`;
+    back.addEventListener("click", () => exitProject());
+    header.appendChild(back);
+  }
+  const titleEl = document.createElement("div");
+  titleEl.className = "project-panel-title";
+  titleEl.textContent = title;
+  header.appendChild(titleEl);
+  const newBtn = document.createElement("button");
+  newBtn.className = "new-conv-btn";
+  newBtn.textContent = newLabel;
+  newBtn.addEventListener("click", onNew);
+  header.appendChild(newBtn);
+}
+
+function renderProjectListInto(container, header, projects) {
+  renderProjectPanelHeaderInto(header, { title: "Proyectos", showBack: false, newLabel: "+ nuevo proyecto", onNew: createProject });
   container.innerHTML = "";
   if (!projects.length) {
     container.innerHTML = '<div class="conv-empty">sin proyectos todavía</div>';
@@ -3134,25 +3492,18 @@ function renderProjectListInto(container, projects) {
   });
 }
 
-function renderProjectConversationsInto(container, conversations) {
-  container.innerHTML = "";
+function renderProjectConversationsInto(container, header, conversations) {
   conversations.forEach((c) => conversationTitleCache.set(c.conversation_id, c.title || null));
   updateChatTitleDisplays();
-  const back = document.createElement("div");
-  back.className = "conv-item";
-  back.textContent = "← todos los proyectos";
-  back.addEventListener("click", () => exitProject());
-  container.appendChild(back);
-  // Antes solo se podía arrancar una conversación nueva del proyecto desde
-  // el home — acá también, mismo lugar donde vive "+ nuevo proyecto" en la
-  // lista general.
-  const newConvForProject = document.createElement("button");
-  newConvForProject.className = "new-conv-btn";
-  newConvForProject.textContent = "+ nueva conversación";
-  newConvForProject.addEventListener("click", () => startNewProjectConversation(currentProjectId));
-  container.appendChild(newConvForProject);
+  renderProjectPanelHeaderInto(header, {
+    title: currentProjectName || "Proyecto",
+    showBack: true,
+    newLabel: "+ nueva conversación",
+    onNew: () => startNewProjectConversation(currentProjectId),
+  });
+  container.innerHTML = "";
   if (!conversations.length) {
-    container.insertAdjacentHTML("beforeend", '<div class="conv-empty">sin conversaciones todavía en este proyecto</div>');
+    container.innerHTML = '<div class="conv-empty">sin conversaciones todavía en este proyecto</div>';
     return;
   }
   conversations.forEach((c) => {
@@ -3178,22 +3529,42 @@ function renderProjectConversationsInto(container, conversations) {
   });
 }
 
+// Cambia poco a poco (crear/renombrar un proyecto no es frecuente) — ventana
+// más generosa que la de conversaciones.
+const PROJECT_LIST_FRESH_MS = 60000;
 async function refreshProjectList() {
-  const targets = [projectList, dashProjectList].filter((el) => el && el.isConnected);
+  // Lista y header siempre van de a pares (mismo índice) — projectList con
+  // projectPanelHeader, dashProjectList con dashProjectPanelHeader.
+  const pairs = [
+    [projectList, projectPanelHeader],
+    [dashProjectList, dashProjectPanelHeader],
+  ].filter(([list]) => list && list.isConnected);
+  const targets = pairs.map(([list]) => list);
   if (!targets.length) return;
+  const cacheKey = currentProjectId ? `project_conversations:${currentProjectId}` : "projects";
+  const render = currentProjectId
+    ? (data) => pairs.forEach(([list, header]) => renderProjectConversationsInto(list, header, data))
+    : (data) => pairs.forEach(([list, header]) => renderProjectListInto(list, header, data));
+  const cached = readCache(cacheKey);
+  if (cached) render(cached.data);
+  if (cached && Date.now() - cached.ts < PROJECT_LIST_FRESH_MS) return;
   try {
     if (currentProjectId) {
       const res = await apiFetch(`/projects/${currentProjectId}/conversations`);
       if (!res.ok) throw new Error("proyecto no encontrado");
       const conversations = await res.json();
-      targets.forEach((t) => renderProjectConversationsInto(t, conversations));
+      // Mismo criterio que refreshConvLists: no reconstruir si no cambió
+      // nada, para no perder un click en curso sobre un ítem de la lista.
+      if (!cached || JSON.stringify(conversations) !== JSON.stringify(cached.data)) render(conversations);
+      writeCache(cacheKey, conversations);
     } else {
       const res = await apiFetch("/projects");
       const projects = await res.json();
-      targets.forEach((t) => renderProjectListInto(t, projects));
+      if (!cached || JSON.stringify(projects) !== JSON.stringify(cached.data)) render(projects);
+      writeCache(cacheKey, projects);
     }
   } catch (e) {
-    targets.forEach((t) => { t.innerHTML = '<div class="conv-empty">error cargando proyectos</div>'; });
+    if (!cached) targets.forEach((t) => { t.innerHTML = '<div class="conv-empty">error cargando proyectos</div>'; });
   }
 }
 
@@ -3373,8 +3744,21 @@ async function enterProject(id) {
   if (!isDesktopDashboard()) showChat();
   closeSidebar();
   setState("idle", idleLabel());
-  await refreshProjectList();
-  await showProjectHome(id);
+  // Un solo fetch de /projects/{id} (antes showProjectHome lo pedía de
+  // nuevo): currentProjectName tiene que estar resuelto ANTES de
+  // refreshProjectList (el header del panel de Proyectos lo necesita), y
+  // acá se lo pasa directo a renderProjectHome en vez de duplicar la
+  // llamada de red.
+  try {
+    const res = await apiFetch(`/projects/${id}`);
+    if (!res.ok) throw new Error("no encontrado");
+    const project = await res.json();
+    currentProjectName = project.name;
+    await refreshProjectList();
+    renderProjectHome(project);
+  } catch (e) {
+    chatInner.innerHTML = `<div class="conv-empty">no se pudo abrir el proyecto: ${escapeHtml(e.message || String(e))}</div>`;
+  }
   updateProjectHomeBtnVisibility();
 }
 
@@ -3433,8 +3817,9 @@ async function createProject() {
     await enterProject(project.id);
   }
 }
-newProjectBtn.addEventListener("click", createProject);
-dashNewProjectBtn.addEventListener("click", createProject);
+// El botón "+ nuevo proyecto" ya no es un elemento estático del HTML — vive
+// dentro del header dinámico del panel (ver renderProjectPanelHeaderInto),
+// que le engancha este mismo createProject como handler de "onNew".
 
 // Switcher Conversaciones/Proyectos: hay dos instancias independientes (el
 // #sidebar de siempre, y el widget de historial separado del dashboard de
@@ -3579,7 +3964,10 @@ function showDashboard() {
   viewChat.classList.remove("active");
   dashBtn.innerHTML = ICONS.chat;
   applyJarvisMode();
-  refreshDashboard();
+  // Devuelve la promesa (antes se ignoraba) para que bootSequence() pueda
+  // esperar esta MISMA carga en vez de disparar un refreshDashboard()
+  // duplicado — ver invocación al final del archivo.
+  return refreshDashboard();
 }
 dashBtn.addEventListener("click", () => (currentView === "chat" ? showDashboard() : showChat()));
 desktopMedia.addEventListener("change", () => {
@@ -3892,16 +4280,26 @@ async function checkGmailForNewMail() {
   }
 }
 
+// Los widgets ya tienen su propio polling una vez montados (ver
+// startGmailDigestPolling/startBrainMiniPolling más abajo) — este freshMs
+// solo ayuda al primer paint tras un F5, no reemplaza ese polling.
+const WIDGET_FRESH_MS = 30000;
 async function loadGmailWidgetInto(root) {
   const body = root.querySelector('[data-widget-id="gmail"] .dash-widget-body');
   if (!body) return;
   const maxResults = dashboardPrefs.widget_options.gmail.max_results;
-  try {
-    const res = await apiFetch(`/dashboard/widgets/gmail?max_results=${maxResults}`);
-    const data = await res.json();
-    body.innerHTML = gmailBodyHTML(data, maxResults);
-  } catch (e) {
-    body.innerHTML = gmailBodyHTML({ connected: true, error: e.message || String(e) }, maxResults);
+  const cacheKey = `widget_gmail:${maxResults}`;
+  const cached = readCache(cacheKey);
+  if (cached) body.innerHTML = gmailBodyHTML(cached.data, maxResults);
+  if (!cached || Date.now() - cached.ts >= WIDGET_FRESH_MS) {
+    try {
+      const res = await apiFetch(`/dashboard/widgets/gmail?max_results=${maxResults}`);
+      const data = await res.json();
+      body.innerHTML = gmailBodyHTML(data, maxResults);
+      writeCache(cacheKey, data);
+    } catch (e) {
+      if (!cached) body.innerHTML = gmailBodyHTML({ connected: true, error: e.message || String(e) }, maxResults);
+    }
   }
   const select = body.querySelector("#gmailMaxResults");
   if (select) {
@@ -3972,14 +4370,18 @@ async function loadGoogleWidgetsInto(root, visibleIds) {
   const targets = GOOGLE_WIDGETS.filter((id) => visibleIds.includes(id));
   targets.forEach(async (id) => {
     if (id === "gmail") { loadGmailWidgetInto(root); return; }
+    const cacheKey = `widget_${id}`;
+    const cached = readCache(cacheKey);
+    const body = root.querySelector(`[data-widget-id="${id}"] .dash-widget-body`);
+    if (cached && body) body.innerHTML = GOOGLE_WIDGET_FETCH[id](cached.data);
+    if (cached && Date.now() - cached.ts < WIDGET_FRESH_MS) return;
     try {
       const res = await apiFetch(`/dashboard/widgets/${id}`);
       const data = await res.json();
-      const body = root.querySelector(`[data-widget-id="${id}"] .dash-widget-body`);
       if (body) body.innerHTML = GOOGLE_WIDGET_FETCH[id](data);
+      writeCache(cacheKey, data);
     } catch (e) {
-      const body = root.querySelector(`[data-widget-id="${id}"] .dash-widget-body`);
-      if (body) body.innerHTML = errorBody(e.message || e);
+      if (body && !cached) body.innerHTML = errorBody(e.message || e);
     }
   });
 }
@@ -3987,12 +4389,16 @@ async function loadGoogleWidgetsInto(root, visibleIds) {
 async function loadUsageWidgetInto(root) {
   const body = root.querySelector('[data-widget-id="usage"] .dash-widget-body');
   if (!body) return;
+  const cached = readCache("widget_usage");
+  if (cached) body.innerHTML = usageBodyHTML(cached.data);
+  if (cached && Date.now() - cached.ts < WIDGET_FRESH_MS) return;
   try {
     const res = await apiFetch("/dashboard/widgets/usage");
     const data = await res.json();
     body.innerHTML = usageBodyHTML(data);
+    writeCache("widget_usage", data);
   } catch (e) {
-    body.innerHTML = errorBody(e.message || e);
+    if (!cached) body.innerHTML = errorBody(e.message || e);
   }
 }
 
@@ -4007,7 +4413,7 @@ async function loadUsageWidgetInto(root) {
 // ElevenLabs.
 const BRAIN_INPUT_ORDER = ["input_text", "input_voice", "input_file"];
 const BRAIN_SPECIALIST_ORDER = [
-  "specialist_gmail", "specialist_calendar",
+  "specialist_gmail", "specialist_calendar", "specialist_morning_routine",
   "specialist_research", "specialist_content", "specialist_sales", "specialist_finance", "specialist_community", "specialist_agency",
   "specialist_projects_manage", "specialist_projects_tasks", "specialist_projects_conversations",
   "specialist_executive_board", "specialist_skill_factory",
@@ -4019,6 +4425,7 @@ const BRAIN_NODE_LABELS = {
   input_file: "Archivo",
   specialist_gmail: "Especialista Gmail",
   specialist_calendar: "Agenda: resumen",
+  specialist_morning_routine: "Rutina matutina",
   specialist_research: "Investigación",
   specialist_content: "Contenido",
   specialist_sales: "Ventas: sponsors",
@@ -4065,6 +4472,7 @@ const BRAIN_NODE_ICON_PATHS = {
   specialist_projects_tasks: '<line x1="7.5" y1="5.5" x2="16" y2="5.5"/><line x1="7.5" y1="10" x2="16" y2="10"/><line x1="7.5" y1="14.5" x2="16" y2="14.5"/><path d="M2.8 5.5l1 1 2-2.2"/><path d="M2.8 10l1 1 2-2.2"/><path d="M2.8 14.5l1 1 2-2.2"/>',
   specialist_projects_conversations: '<path d="M3 5.5a1.5 1.5 0 0 1 1.5-1.5h11A1.5 1.5 0 0 1 17 5.5v6A1.5 1.5 0 0 1 15.5 13H8l-3.5 3v-3H4.5A1.5 1.5 0 0 1 3 11.5v-6Z"/>',
   specialist_calendar: '<rect x="2.8" y="4" width="14.4" height="13" rx="1.5"/><line x1="2.8" y1="8" x2="17.2" y2="8"/><line x1="6.5" y1="2.3" x2="6.5" y2="5.5"/><line x1="13.5" y1="2.3" x2="13.5" y2="5.5"/><path d="M10 10.3l.85 1.7 1.9.28-1.38 1.35.33 1.9-1.7-.9-1.7.9.33-1.9-1.38-1.35 1.9-.28Z"/>',
+  specialist_morning_routine: '<circle cx="10" cy="12" r="4"/><line x1="10" y1="3" x2="10" y2="5.5"/><line x1="3.5" y1="12" x2="5.5" y2="12"/><line x1="14.5" y1="12" x2="16.5" y2="12"/><line x1="5.3" y1="7.3" x2="6.9" y2="8.9"/><line x1="14.7" y1="7.3" x2="13.1" y2="8.9"/><line x1="3" y1="16" x2="17" y2="16"/>',
   specialist_research: '<circle cx="8.3" cy="8.3" r="5"/><line x1="12.2" y1="12.2" x2="17" y2="17"/>',
   specialist_content: '<path d="M12.5 3.5l4 4L6 18l-4.5 1L2.5 14.5Z"/><line x1="10.5" y1="5.5" x2="14.5" y2="9.5"/>',
   specialist_sales: '<rect x="2.5" y="5" width="15" height="10" rx="1.5"/><path d="M3 6l7 5.5L17 6"/><path d="M16.5 2l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6Z" fill="currentColor" stroke="none"/>',
@@ -4123,6 +4531,7 @@ const BRAIN_NODE_COLOR_CLASS = {
   specialist_projects_tasks: "brain-color-magenta",
   specialist_projects_conversations: "brain-color-magenta",
   specialist_calendar: "brain-color-magenta",
+  specialist_morning_routine: "brain-color-magenta",
   specialist_research: "brain-color-magenta",
   specialist_content: "brain-color-magenta",
   specialist_sales: "brain-color-magenta",
@@ -4242,12 +4651,20 @@ function brainMiniBodyHTML(data) {
 async function loadBrainWidgetInto(root) {
   const body = root.querySelector('[data-widget-id="brain"] .dash-widget-body');
   if (!body) return;
+  // El cerebro ya arranca su propio polling cada 4s apenas se monta (ver
+  // startBrainMiniPolling más abajo) — acá el cache solo ahorra el parpadeo
+  // en blanco del primer paint, nunca reemplaza ese refresh real: siempre
+  // se pide la actividad fresca, nunca se salta la red como en los otros
+  // widgets (freshMs).
+  const cached = readCache("widget_brain");
+  if (cached) body.innerHTML = brainMiniBodyHTML(cached.data);
   try {
     const res = await apiFetch("/dashboard/brain");
     const data = await res.json();
     body.innerHTML = brainMiniBodyHTML(data);
+    writeCache("widget_brain", data);
   } catch (e) {
-    body.innerHTML = errorBody(e.message || e);
+    if (!cached) body.innerHTML = errorBody(e.message || e);
   }
   // En el body, no en el head — así el asa de arrastre (que vive en el head)
   // nunca dispara la apertura de pantalla completa al reordenar el widget.
@@ -4414,25 +4831,29 @@ function brainFeedIconHTML(id) {
   const colorCls = brainColorClassFor(id);
   return `<svg class="brain-feed-icon ${colorCls}" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${BRAIN_NODE_ICON_PATHS[id] || ""}</svg>`;
 }
-function brainFeedRowHTML(ev) {
+function brainFeedRowHTML(ev, isFresh) {
   const isError = ev.status !== "ok";
   const label = BRAIN_NODE_LABELS[ev.node] || ev.node;
   // data-node: pedido explícito ("al hacer click nos puede mostrar el
   // detalle del proceso, tiempos, data útil") — reusa el panel de
   // drill-down por nodo ya existente (mismos datos reales de
   // /dashboard/node_activity/{node}) en vez de construir un panel nuevo.
-  return `<div class="brain-feed-row" data-node="${escapeHtml(ev.node)}">
+  return `<div class="brain-feed-row${isFresh ? " fresh" : ""}" data-node="${escapeHtml(ev.node)}">
     <span class="dash-dot ${isError ? "off" : "ok"}"></span>
     ${brainFeedIconHTML(ev.node)}
     <span class="brain-feed-label">${escapeHtml(label)} · ${escapeHtml(ev.label || "")}</span>
     <span class="brain-feed-time">${relativeTime(ev.timestamp)}</span>
   </div>`;
 }
+// Umbral real (no estético) para marcar la fila más nueva como "en curso
+// ahora" — un evento real de hace más de esto ya es historia, no actividad
+// presente (ver .brain-feed-row.fresh en el CSS: pulso suave + fila resaltada,
+// para responder "qué proceso específico está activo" de un vistazo).
+const FRESH_BRAIN_EVENT_MAX_AGE_S = 10;
 function renderBrainFeed(events, replace) {
-  const rowsHtml = events
-    .slice()
-    .reverse()
-    .map(brainFeedRowHTML)
+  const ordered = events.slice().reverse();
+  const rowsHtml = ordered
+    .map((ev, i) => brainFeedRowHTML(ev, i === 0 && Date.now() / 1000 - ev.timestamp < FRESH_BRAIN_EVENT_MAX_AGE_S))
     .join("");
   if (replace) brainFeedList.innerHTML = rowsHtml;
   else brainFeedList.insertAdjacentHTML("afterbegin", rowsHtml);
@@ -4456,6 +4877,7 @@ const HUD_MINI_NODE_META = {
   input_file: { label: "archivo", icon: "ARC" },
   specialist_gmail: { label: "gmail digest", icon: "SPG" },
   specialist_calendar: { label: "agenda", icon: "CBR" },
+  specialist_morning_routine: { label: "rutina matutina", icon: "MRN" },
   specialist_research: { label: "investigación", icon: "RSC" },
   specialist_content: { label: "contenido", icon: "CNT" },
   specialist_sales: { label: "ventas", icon: "SLS" },
@@ -4497,7 +4919,7 @@ const HUD_BUBBLE_FAMILY = {
   gmail_send: "dispatch", calendar_edit: "dispatch",
   stt: "voice", tts: "voice",
   llm: "think", specialist_executive_board: "think",
-  personality: "admin", utility: "admin", specialist_finance: "admin", specialist_skill_factory: "admin",
+  personality: "admin", utility: "admin", specialist_finance: "admin", specialist_skill_factory: "admin", specialist_morning_routine: "admin",
   specialist_projects_manage: "admin", specialist_projects_tasks: "admin", specialist_projects_conversations: "admin",
   orchestrator: "system", cost: "system",
   input_text: "input", input_voice: "input", input_file: "input"
@@ -5164,6 +5586,22 @@ async function pollBrain() {
   }
 }
 
+// Único dato de "progreso" que es real: cuánto tiempo real lleva el pedido
+// activo (Date.now() del propio navegador, ver activeRequestStartedAt) —
+// nunca un "% completado" ni "paso N de M", el backend no tiene ese
+// concepto (ver ADR de esta ronda). Se oculta apenas no hay ningún pedido
+// en curso — nunca queda un dato viejo mostrado como si fuera actual.
+let brainLiveStatusTimer = null;
+function updateBrainLiveStatus() {
+  if (!activeRequestId || !activeRequestStartedAt) {
+    brainLiveStatus.hidden = true;
+    return;
+  }
+  const elapsedS = Math.max(0, Math.round((Date.now() - activeRequestStartedAt) / 1000));
+  brainLiveStatus.innerHTML = `<span class="brain-live-dot"></span>Snarf está pensando desde hace ${elapsedS}s`;
+  brainLiveStatus.hidden = false;
+}
+
 async function openBrainFullscreen() {
   stopBrainMiniPolling(); // pantalla completa tiene su propio poll, más rico — no pedir el mismo snapshot dos veces
   brainOverlay.classList.add("open");
@@ -5177,12 +5615,17 @@ async function openBrainFullscreen() {
   brainSince = null;
   await pollBrain(); // primera carga: historia completa, sin animar pulsos
   startBrainPolling();
+  updateBrainLiveStatus();
+  clearInterval(brainLiveStatusTimer);
+  brainLiveStatusTimer = setInterval(updateBrainLiveStatus, 1000);
 }
 function closeBrainFullscreen() {
   brainOverlay.classList.remove("open");
   brainPanel.classList.remove("open");
   stopBrainPolling();
   stopBrainAnimationLoop();
+  clearInterval(brainLiveStatusTimer);
+  brainLiveStatusTimer = null;
   document.getElementById("pulseLayer").innerHTML = "";
   // Frena las animaciones de latido/flujo mientras el panel está oculto —
   // sin esto siguen corriendo en un elemento invisible sin motivo.
@@ -5350,7 +5793,29 @@ async function persistPrefs() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(dashboardPrefs),
     });
+    // Sin esto, un F5 inmediato después de cambiar una preferencia podía
+    // seguir sirviendo el valor viejo desde el cache hasta que venciera
+    // DASHBOARD_PREFS_FRESH_MS (ver ensureDashboardPrefs más abajo).
+    writeCache("dashboard_preferences", dashboardPrefs);
   } catch (e) {}
+}
+
+// Solo cambia por acción explícita en Configuración — ventana generosa.
+// dashboardPrefs ya es un singleton en memoria durante toda la sesión (una
+// vez cargado, los 4 call sites de abajo lo reusan sin volver a pedirlo);
+// esto solo evita el primer round-trip real de cada F5 si el cache todavía
+// es reciente.
+const DASHBOARD_PREFS_FRESH_MS = 5 * 60 * 1000;
+async function ensureDashboardPrefs() {
+  if (dashboardPrefs) return dashboardPrefs;
+  const cached = readCache("dashboard_preferences");
+  if (cached && Date.now() - cached.ts < DASHBOARD_PREFS_FRESH_MS) {
+    dashboardPrefs = cached.data;
+    return dashboardPrefs;
+  }
+  dashboardPrefs = await (await apiFetch("/dashboard/preferences")).json();
+  writeCache("dashboard_preferences", dashboardPrefs);
+  return dashboardPrefs;
 }
 
 let personalityPrefs = null;
@@ -5605,10 +6070,20 @@ function renderDesktopDashboard(summary) {
   refreshProjectList();
 }
 
+// Números de actividad — cambian seguido, ventana chica (mismo criterio que
+// CONV_LIST_FRESH_MS: solo evita repetir el pedido en un F5 muy seguido).
+const DASHBOARD_SUMMARY_FRESH_MS = 20000;
 async function refreshDashboard() {
   try {
-    if (!dashboardPrefs) dashboardPrefs = await (await apiFetch("/dashboard/preferences")).json();
-    const summary = await (await apiFetch("/dashboard/summary")).json();
+    await ensureDashboardPrefs();
+    const cachedSummary = readCache("dashboard_summary");
+    let summary;
+    if (cachedSummary && Date.now() - cachedSummary.ts < DASHBOARD_SUMMARY_FRESH_MS) {
+      summary = cachedSummary.data;
+    } else {
+      summary = await (await apiFetch("/dashboard/summary")).json();
+      writeCache("dashboard_summary", summary);
+    }
     lastSummary = summary;
     setUserLabel(summary.user_id);
     if (isDesktopDashboard()) {
@@ -5886,7 +6361,7 @@ function packHudWidgets(widgets, sizeById, stageWidth, stageHeight, bottomReserv
 
 // Mismas tablas ya construidas para el dock de globos del panel Cerebro
 // (ADR 0089) — label/ícono por nodo y familia visual, sin duplicar acá:
-// HUD_MINI_NODE_META y HUD_BUBBLE_FAMILY ya cubren los 24 nodos reales +
+// HUD_MINI_NODE_META y HUD_BUBBLE_FAMILY ya cubren los 25 nodos reales +
 // el pseudo-nodo "cost".
 function dashHudMetaFor(nodeId) {
   return HUD_MINI_NODE_META[nodeId] || { label: nodeId, icon: "" };
@@ -6278,7 +6753,7 @@ function closeSettings() {
   settingsPanel.classList.remove("open");
 }
 async function renderSettingsList() {
-  if (!dashboardPrefs) dashboardPrefs = await (await apiFetch("/dashboard/preferences")).json();
+  await ensureDashboardPrefs();
   settingsList.innerHTML = WIDGET_IDS.map((id) => `
     <div class="settings-row">
       <span>${WIDGET_LABELS[id]}</span>
@@ -6304,7 +6779,7 @@ const HUD_CHAT_POSITIONS = [
   { value: "right", label: "Derecha" },
 ];
 async function renderHudChatPositionSection() {
-  if (!dashboardPrefs) dashboardPrefs = await (await apiFetch("/dashboard/preferences")).json();
+  await ensureDashboardPrefs();
   hudChatPositionList.innerHTML = HUD_CHAT_POSITIONS.map(({ value, label }) => `
     <div class="settings-row">
       <span>${escapeHtml(label)}</span>
@@ -6326,7 +6801,7 @@ async function renderHudChatPositionSection() {
 // activarse, loadConversation()/loadOlderMessages() insertan separadores de
 // fecha y addMessage() muestra la hora dimeada por burbuja (ver más abajo).
 async function renderShowTimestampsToggle() {
-  if (!dashboardPrefs) dashboardPrefs = await (await apiFetch("/dashboard/preferences")).json();
+  await ensureDashboardPrefs();
   showTimestampsToggle.classList.toggle("on", dashboardPrefs.show_message_timestamps);
 }
 showTimestampsToggle.addEventListener("click", async () => {
@@ -6455,19 +6930,47 @@ async function attemptTranscribe(blob, onSuccess) {
 // para poder reintentarlo (bug real reportado: "Load failed" de Safari en
 // una nota de voz) sin volver a agregar la burbuja del usuario, que ya
 // quedó en pantalla desde el primer intento.
-async function postAndHandleSend(text, inputAudioId) {
+// Frena de verdad el pedido activo (ver ADR de esta ronda): aborta el fetch
+// del lado del navegador Y avisa al backend con POST /cancel/{id} para que
+// corte la generación real en curso (ahorra los tokens de output que
+// todavía faltaban) — no es solo dejar de mostrar la respuesta. Fire-and-
+// forget a propósito: un 404 (carrera real — la respuesta ya había
+// terminado cuando llegó el cancel) es un caso esperable, nunca un error
+// que mostrarle al fundador.
+async function stopActiveRequest() {
+  if (!activeRequestId) return;
+  const requestId = activeRequestId;
+  if (activeAbortController) activeAbortController.abort();
+  try {
+    await apiFetch(`/cancel/${requestId}`, { method: "POST" });
+  } catch (e) {}
+}
+
+async function postAndHandleSend(text, inputAudioId, replyToId) {
+  const requestId = crypto.randomUUID();
+  activeRequestId = requestId;
+  activeRequestStartedAt = Date.now();
+  activeAbortController = new AbortController();
+  lastSentText = text;
   setState("thinking", "pensando...");
   showTyping();
   try {
     const res = await apiFetch("/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, conversation_id: conversationId, input_audio_id: inputAudioId || null }),
+      body: JSON.stringify({
+        text, conversation_id: conversationId, input_audio_id: inputAudioId || null,
+        request_id: requestId, reply_to_id: replyToId || null,
+      }),
+      signal: activeAbortController.signal,
     });
     if (!res.ok) throw new Error("send HTTP " + res.status);
     const data = await res.json();
     hideTyping();
-    addMessage(data.response, "snarf", ttsAvailable, null, data.speech, Boolean(inputAudioId), data.deliverable, data.thinking, null, Date.now() / 1000);
+    // messageId = el mismo requestId (ver ADR de esta ronda: el backend lo
+    // reusa como id persistente del turno) — así se puede responder a ESTA
+    // respuesta ya en la misma sesión, sin esperar un reload.
+    addMessage(data.response, "snarf", ttsAvailable, null, data.speech, Boolean(inputAudioId), data.deliverable, data.thinking, null, Date.now() / 1000, data.cancelled, requestId);
     refreshDateSeparators();
     setState("idle", idleLabel());
     // Sin esto, una conversación nueva se queda mostrando el placeholder
@@ -6479,6 +6982,21 @@ async function postAndHandleSend(text, inputAudioId) {
     updateProjectHomeBtnVisibility();
   } catch (e) {
     hideTyping();
+    if (e.name === "AbortError") {
+      // Cancelación intencional (botón "frenar" — ver stopActiveRequest),
+      // nunca un fallo de red: no dispara el overlay de reconexión. El
+      // fetch se abortó del lado del navegador, así que la respuesta real
+      // (con el texto parcial exacto que Snarf alcanzó a generar antes del
+      // corte) nunca llega acá — igual queda persistida en el backend
+      // marcada como cancelada (ver ADR de esta ronda) y aparece completa
+      // la próxima vez que se recargue esta conversación. Acá, sin esa
+      // respuesta todavía, se muestra un marcador genérico en el momento.
+      // El estado ("revisá y enviá") ya lo dejó showTranscriptForReview(),
+      // llamada sincrónicamente antes de que esto corra — no se toca acá.
+      addMessage("[pedido cancelado]", "snarf", false, null, null, false, null, null, null, Date.now() / 1000, true);
+      refreshDateSeparators();
+      return;
+    }
     // Bug real visto en producción (2026-08-05): un fallo de red acá no
     // significa necesariamente "no se envió" — el server puede haber
     // recibido y procesado el mensaje antes de caerse, y solo se perdió la
@@ -6498,9 +7016,42 @@ async function postAndHandleSend(text, inputAudioId) {
       }
     );
     setState("error", "se perdió la conexión — reconectando");
-    setRetry(() => postAndHandleSend(text, inputAudioId));
+    setRetry(() => postAndHandleSend(text, inputAudioId, replyToId));
+  } finally {
+    activeRequestId = null;
+    activeRequestStartedAt = null;
+    activeAbortController = null;
   }
 }
+
+// "Responder a este mensaje" (pedido explícito, ver ADR de esta ronda).
+function truncateForPreview(text, maxLen) {
+  const clean = (text || "").replace(/\s+/g, " ").trim();
+  return clean.length > maxLen ? clean.slice(0, maxLen).trimEnd() + "…" : clean;
+}
+// Resuelve el texto citado al recargar una conversación — busca DENTRO del
+// mismo tramo ya cargado (nunca pide un fetch aparte solo para esto). Si el
+// mensaje referenciado quedó en una página más vieja todavía no cargada (o
+// es de antes de que append() generara `id`), se degrada a un texto
+// genérico honesto, nunca inventa el contenido citado.
+function replyPreviewFor(entries, replyToId) {
+  if (!replyToId) return null;
+  const target = entries.find((e) => e.id === replyToId);
+  return target ? truncateForPreview(target.response, 80) : "(mensaje anterior)";
+}
+function startReplyingTo(messageId, text) {
+  replyingToId = messageId;
+  replyingToPreview = truncateForPreview(text, 80);
+  replyContextText.textContent = replyingToPreview;
+  replyContext.hidden = false;
+  textInput.focus();
+}
+function clearReplyState() {
+  replyingToId = null;
+  replyingToPreview = null;
+  replyContext.hidden = true;
+}
+replyContextCancel.addEventListener("click", clearReplyState);
 
 async function sendText(text, inputAudioId) {
   if (!text.trim()) { setState("idle", idleLabel()); return; }
@@ -6518,9 +7069,15 @@ async function sendText(text, inputAudioId) {
     refreshProjectList();
   }
   clearRetry();
-  addMessage(text, "user", false, inputAudioId, null, false, null, null, null, Date.now() / 1000);
+  // Se captura ANTES de limpiar el estado (clearReplyState lo deja en null) —
+  // la burbuja recién agregada y el pedido real al backend tienen que llevar
+  // la MISMA referencia con la que se armó el banner del composer.
+  const replyToIdForThisTurn = replyingToId;
+  const replyPreviewForThisTurn = replyingToPreview;
+  clearReplyState();
+  addMessage(text, "user", false, inputAudioId, null, false, null, null, null, Date.now() / 1000, false, null, replyPreviewForThisTurn);
   refreshDateSeparators();
-  await postAndHandleSend(text, inputAudioId);
+  await postAndHandleSend(text, inputAudioId, replyToIdForThisTurn);
 }
 
 function showTranscriptForReview(transcript) {
@@ -6750,13 +7307,18 @@ fileInput.addEventListener("change", () => {
 // En desktop arrancamos siempre en el Dashboard (con la distribución que el
 // usuario haya guardado la última vez) — el chat vive ahí adentro como un
 // bloque más. Mobile sigue arrancando en "chat", sin tocar nada.
+// _bootDashboardPromise: la misma promesa de showDashboard() (que ya llama a
+// refreshDashboard() una sola vez) — bootSequence() la espera para saber
+// cuándo el dashboard real terminó de cargar, sin disparar un segundo fetch.
+let _bootDashboardPromise = Promise.resolve();
 if (isDesktopDashboard()) {
   reparentIntoDashboardOnce();
-  showDashboard();
+  _bootDashboardPromise = showDashboard();
 }
 
 setMode(mode, false);
 updateSendMicToggle();
+bootSequence();
 
 fetch("/status").then(r => r.json()).then(s => {
   ttsAvailable = !!s.tts_available;

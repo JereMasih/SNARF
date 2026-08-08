@@ -160,11 +160,105 @@ def test_send_tags_the_memory_entry_with_the_conversations_assigned_project(clie
     assert entry["project_id"] == "proj-1"
 
 
+def test_send_persists_the_entry_with_request_id_as_its_id(client):
+    client.post("/send", json={"text": "hola", "conversation_id": "conv-reply", "request_id": "req-xyz"})
+    entry = app_module.orchestrator.memory.get_conversation("conv-reply")[0]
+    assert entry["id"] == "req-xyz"
+
+
+def test_send_with_reply_to_id_persists_the_reference_and_reaches_the_llm(client, monkeypatch):
+    from snarf.capabilities.anthropic_llm import LLMResponse
+
+    client.post("/send", json={"text": "primer mensaje", "conversation_id": "conv-reply-2", "request_id": "req-1"})
+
+    captured = {}
+    monkeypatch.setattr(app_module.orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(
+        app_module.orchestrator._llm,
+        "generate",
+        lambda **kwargs: (captured.update(messages=kwargs["messages"]) or LLMResponse(text="segunda respuesta", speech="")),
+    )
+    client.post(
+        "/send",
+        json={"text": "y eso qué significa", "conversation_id": "conv-reply-2", "request_id": "req-2", "reply_to_id": "req-1"},
+    )
+    last_user_message = captured["messages"][-1]
+    assert "y eso qué significa" in last_user_message["content"]
+    entry = app_module.orchestrator.memory.get_conversation("conv-reply-2")[1]
+    assert entry["reply_to_id"] == "req-1"
+
+
 def test_send_records_a_text_input_log_entry(client):
     client.post("/send", json={"text": "hola", "conversation_id": "abc"})
     entries = input_log.recent()
     assert len(entries) == 1
     assert entries[0]["channel"] == "text"
+
+
+def test_cancel_an_unknown_request_id_returns_404(client):
+    res = client.post("/cancel/nunca-existio")
+    assert res.status_code == 404
+
+
+def test_cancel_reaches_a_send_blocked_in_a_slow_llm_call(client, monkeypatch):
+    """Prueba la carrera real (no simulada): un hilo aparte queda bloqueado
+    dentro de POST /send, con el LLM falso esperando activamente a que
+    is_cancelled() se vuelva True — exactamente lo que haría el streaming
+    real de Anthropic entre eventos. El hilo principal dispara POST /cancel
+    mientras tanto, igual que llegaría desde el navegador."""
+    import threading
+    import time as time_module
+
+    from snarf.capabilities.anthropic_llm import LLMResponse
+    from snarf.telemetry import cancellation, context
+
+    request_id = "race-test-request"
+    started = threading.Event()
+
+    def slow_generate(**kwargs):
+        started.set()
+        deadline = time_module.monotonic() + 5
+        while not cancellation.is_cancelled(context.get_request_id()) and time_module.monotonic() < deadline:
+            time_module.sleep(0.01)
+        return LLMResponse(text="alcanzó a decir esto antes de que lo frenaran", speech="", cancelled=True)
+
+    monkeypatch.setattr(app_module.orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(app_module.orchestrator._llm, "generate", slow_generate)
+
+    result_holder = {}
+
+    def do_send():
+        result_holder["response"] = client.post(
+            "/send", json={"text": "hola", "conversation_id": "conv-race", "request_id": request_id}
+        )
+
+    sender = threading.Thread(target=do_send)
+    sender.start()
+    assert started.wait(timeout=5), "el /send de fondo nunca llegó a llamar al LLM falso"
+    cancel_res = client.post(f"/cancel/{request_id}")
+    sender.join(timeout=5)
+
+    assert cancel_res.status_code == 200
+    assert not sender.is_alive(), "/send quedó colgado — la cancelación nunca llegó al hilo bloqueado"
+    assert result_holder["response"].status_code == 200
+    assert result_holder["response"].json()["cancelled"] is True
+    assert result_holder["response"].json()["response"] == "alcanzó a decir esto antes de que lo frenaran"
+
+
+def test_a_cancelled_turn_never_schedules_title_generation(client, monkeypatch):
+    from snarf.capabilities.anthropic_llm import LLMResponse
+
+    calls = []
+    monkeypatch.setattr(app_module.orchestrator, "generate_conversation_title", lambda cid: calls.append(cid))
+    monkeypatch.setattr(app_module.orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(
+        app_module.orchestrator._llm,
+        "generate",
+        lambda **kwargs: LLMResponse(text="cortado", speech="", cancelled=True),
+    )
+    res = client.post("/send", json={"text": "hola", "conversation_id": "conv-cancel-title", "request_id": "req-1"})
+    assert res.json()["cancelled"] is True
+    assert calls == []
 
 
 def test_conversations_list_reflects_appended_entries(client):
