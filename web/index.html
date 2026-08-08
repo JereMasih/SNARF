@@ -1589,6 +1589,15 @@
     cursor: pointer;
   }
   .play-audio-btn:hover { background: rgba(79,216,232,0.18); }
+  /* Generando audio (pedido explícito: antes ponía el texto "generando..."
+     directo en este círculo de 26px — nunca entraba, se veía roto en
+     vertical). Ahora el ícono se queda quieto, solo pulsa — mismo lenguaje
+     visual que un nodo activo del cerebro (brain-heartbeat), nunca texto
+     que no entra en la caja. */
+  .play-audio-btn.generating {
+    color: var(--glow); pointer-events: none;
+    animation: brain-heartbeat 1.1s ease-in-out infinite;
+  }
   /* Placeholder mientras se genera automáticamente el audio de "escuchar"
      (turnos que llegaron por voz) — nunca hay botón que tocar acá, el
      player lo reemplaza solo cuando está listo. */
@@ -2627,8 +2636,13 @@ async function synthesizeVoiceNote(text) {
 // estaba el botón) y arranca solo: tocar el botón ya es la confirmación de
 // que se quiere escuchar — si no, se le pone pausa.
 async function generateVoiceNoteAndPlay(text, btn, downloadName, playersContainer) {
+  // Bug real reportado: "generando..." como texto directo en un botón de
+  // 26px (solo ícono, ver ADR de esta ronda) no entraba y se veía roto en
+  // vertical. Ahora el ícono se queda quieto (sin tocar innerHTML) y solo
+  // pulsa vía la clase .generating — nunca texto que no entra en la caja.
   btn.disabled = true;
-  btn.textContent = "generando...";
+  btn.classList.add("generating");
+  btn.title = "generando audio...";
   const audioId = await synthesizeVoiceNote(text);
   if (audioId) {
     const player = buildVoiceNotePlayer(audioId, downloadName);
@@ -2636,7 +2650,8 @@ async function generateVoiceNoteAndPlay(text, btn, downloadName, playersContaine
     btn.remove();
     player.querySelector(".vn-play-btn").click();
   } else {
-    btn.textContent = "no disponible";
+    btn.classList.remove("generating");
+    btn.title = "no se pudo generar el audio";
     btn.disabled = false;
   }
 }
