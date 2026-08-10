@@ -244,7 +244,12 @@ class ConversationProjectRequest(BaseModel):
 def index(snarf_session: str | None = Cookie(default=None)):
     if not is_authenticated(snarf_session):
         return RedirectResponse("/login")
-    return FileResponse("web/index.html")
+    # Sin esto, el caching de navegación top-level de Safari/Chrome mobile
+    # (mucho más agresivo que el de un desktop con DevTools abierto) puede
+    # servir una copia vieja de index.html sin revalidar contra el server —
+    # cada deploy nuevo de UI no llegaba a esos dispositivos hasta un reload
+    # manual sin cache.
+    return FileResponse("web/index.html", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/login")

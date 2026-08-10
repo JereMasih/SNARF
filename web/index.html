@@ -1189,7 +1189,14 @@
     opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
   }
   .chat-focus-panel.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); }
-  .chat-focus-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; position: relative; }
+  /* z-index propio (crea su propio contexto de apilamiento): sin esto, el
+     z-index:2 de #chat (pensado para su contexto normal) se compara directo
+     contra .chat-focus-close en el contexto de .chat-focus-panel — mismo
+     valor, empate resuelto por orden en el DOM, y #chat (agregado después
+     por openChatFocus) terminaba ganando y tapando los clicks del botón de
+     cerrar aunque se viera perfectamente encima. Bug real reportado: la
+     cruz de cerrar se veía pero no respondía al click. */
+  .chat-focus-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; position: relative; z-index: 1; }
   /* Los globos del chat normal tienen max-width:560px fijo (pensado para la
      columna angosta del dashboard clásico) — en modo foco, con toda esta
      caja disponible, deben ocupar el espacio real (mismo criterio que
@@ -2060,7 +2067,7 @@
 
   <div id="appRoot">
   <div class="view-chat active" id="viewChat">
-    <div class="chat" id="chat"><div class="project-context-bar" id="projectContextBar"></div><div class="chat-inner" id="chatInner"></div><button class="jump-to-bottom-btn" id="jumpToBottomBtn" title="Ir al último mensaje" hidden><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5v12"/><path d="M5 11l5 5 5-5"/></svg></button></div>
+    <div class="chat" id="chat"><div class="project-context-bar" id="projectContextBar"></div><div class="chat-inner" id="chatInner"><div id="chatBottomSentinel"></div></div><button class="jump-to-bottom-btn" id="jumpToBottomBtn" title="Ir al último mensaje" hidden><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5v12"/><path d="M5 11l5 5 5-5"/></svg></button></div>
 
     <div class="control-bar">
       <div class="status" id="status">click para grabar</div>
@@ -2352,6 +2359,7 @@ const statusEl = document.getElementById("status");
 const retryBtn = document.getElementById("retryBtn");
 const chat = document.getElementById("chat");
 const chatInner = document.getElementById("chatInner");
+const chatBottomSentinel = document.getElementById("chatBottomSentinel");
 const jumpToBottomBtn = document.getElementById("jumpToBottomBtn");
 const controlBar = document.querySelector("#viewChat .control-bar");
 const review = document.getElementById("review");
@@ -2611,7 +2619,10 @@ function setState(next, label) {
   orbWrap.className = "orb-wrap " + next;
   statusEl.textContent = label;
 }
-function clearChat() { chatInner.innerHTML = ""; }
+// chatInner.innerHTML = "" también borra chatBottomSentinel — se reinserta
+// siempre después, para que el IntersectionObserver de "volver al final"
+// (ver más abajo) nunca se quede mirando un nodo ya desconectado del DOM.
+function clearChat() { chatInner.innerHTML = ""; chatInner.appendChild(chatBottomSentinel); }
 // Sintetiza voz para `text` y devuelve el audio_id, o null si no se pudo
 // (sin tocar ningún elemento del DOM — lo usan tanto el disparo automático
 // como el botón manual, cada uno decide qué hacer con el resultado).
@@ -2847,7 +2858,10 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliv
   if (insertBeforeNode) {
     chatInner.insertBefore(div, insertBeforeNode);
   } else {
-    chatInner.appendChild(div);
+    // Antes de chatBottomSentinel, nunca appendChild directo — el sentinel
+    // tiene que seguir siendo el ÚLTIMO hijo real de #chatInner siempre
+    // (ver IntersectionObserver más abajo).
+    chatInner.insertBefore(div, chatBottomSentinel);
     chat.scrollTop = chat.scrollHeight;
   }
   reindexChatDepth();
@@ -2882,7 +2896,7 @@ function showTyping() {
     '<div class="thinking-row">' +
     `<div class="thinking-brain-preview" title="tocá para ver el cerebro en pantalla completa mientras trabaja">${brainMiniSvgMarkup({ nodes: {}, events: [] })}</div>` +
     '<button class="stop-request-btn" title="frenar este pedido">■ frenar</button></div>';
-  chatInner.appendChild(typingBubble);
+  chatInner.insertBefore(typingBubble, chatBottomSentinel);
   chat.scrollTop = chat.scrollHeight;
   reindexChatDepth();
   typingBubble.querySelector(".thinking-brain-preview").addEventListener("click", () => {
@@ -3225,6 +3239,12 @@ async function refreshConvLists() {
     // error — mejor mostrar la última lista real conocida que romper la
     // vista por un corte pasajero.
     if (!cached) targets.forEach((t) => { t.innerHTML = '<div class="conv-empty">error cargando conversaciones</div>'; });
+    // Bug real reportado (mobile, primer intento del boot fallando por un
+    // corte pasajero de red): antes esto quedaba en silencio hasta la
+    // próxima acción del usuario — mandar un mensaje era la única forma de
+    // volver a intentarlo. Ahora si de verdad no había nada pintado
+    // (ni cache), reintenta solo una vez tras una pausa corta.
+    if (!cached) setTimeout(refreshConvLists, 3000);
   }
 }
 
@@ -3279,9 +3299,22 @@ let hasMoreOlderMessages = false;
 let oldestLoadedMessageTimestamp = null;
 let loadingOlderMessages = false;
 
-function isChatScrolledNearBottom() {
-  return chat.scrollTop + chat.clientHeight >= chat.scrollHeight - 80;
-}
+// Patrón estándar de la industria para "volver al último mensaje" en chats
+// (Slack/Discord/etc.): un sentinel invisible fijo como ÚLTIMO hijo real de
+// #chatInner (ver addMessage/showTyping/clearChat, que lo mantienen ahí) más
+// un IntersectionObserver mirando si ese sentinel sigue visible dentro del
+// viewport de #chat. Dos intentos previos (distancia fija en px, luego un
+// alto de pantalla completo) fueron aproximaciones peores del mismo hecho: ni
+// un número mágico de píxeles ni una pantalla entera son "el mensaje más
+// reciente sigue visible" — el sentinel SÍ lo es, exactamente, y el
+// IntersectionObserver ya re-evalúa solo ante cualquier cambio real de
+// geometría (scroll, resize, contenido que crece de forma asíncrona como una
+// imagen o el reproductor de una nota de voz) sin necesitar un
+// ResizeObserver aparte ni acordarse de llamar nada a mano en cada mutación.
+new IntersectionObserver(
+  (entries) => { jumpToBottomBtn.hidden = entries[entries.length - 1].isIntersecting; },
+  { root: chat }
+).observe(chatBottomSentinel);
 
 // Llamado junto a todo clearChat() que abre una conversación NUEVA (vacía) —
 // sin esto, el estado de paginación de la conversación anterior quedaba
@@ -3423,7 +3456,6 @@ async function loadOlderMessages() {
 }
 
 chat.addEventListener("scroll", () => {
-  jumpToBottomBtn.hidden = isChatScrolledNearBottom();
   if (chat.scrollTop < 120) loadOlderMessages();
 });
 jumpToBottomBtn.addEventListener("click", () => {
@@ -6236,7 +6268,13 @@ function openHudSidebarDrawer() {
   refreshProjectList();
 }
 function closeHudSidebarDrawer() {
-  if (dashboardPrefs.hud_sidebar_pinned) return;
+  // dashboardPrefs solo se carga para la vista HUD de escritorio — en mobile
+  // sigue null (nunca se pidió), y closeSidebar() llama a esta función
+  // incondicionalmente. Sin el guard, tocar una conversación en mobile
+  // tiraba un TypeError acá ANTES de llegar al fetch de loadConversation(),
+  // silenciándolo por completo (bug real reportado: tocar una conversación
+  // no cargaba nada).
+  if (dashboardPrefs && dashboardPrefs.hud_sidebar_pinned) return;
   forceCloseHudSidebarDrawer();
 }
 function forceCloseHudSidebarDrawer() {

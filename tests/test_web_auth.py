@@ -70,6 +70,10 @@ def test_login_with_correct_password_grants_full_access(raw_client):
     root_res = raw_client.get("/")
     assert root_res.status_code == 200
     assert "Snarf" in root_res.text
+    # Sin esto, Safari/Chrome mobile podían servir una copia vieja del
+    # index.html cacheada sin revalidar contra el server (bug real: la UI
+    # no reflejaba deploys nuevos en mobile). Ver app.py:index().
+    assert root_res.headers["cache-control"] == "no-store"
 
     send_res = raw_client.post("/send", json={"text": "hola"})
     assert send_res.status_code == 200
