@@ -20,6 +20,7 @@ def record(
     events_path: Path | None = None,
     detalle: str | None = None,
     preview: dict | None = None,
+    span=None,
 ) -> None:
     """Registro append-only de cada herramienta que ejecuta el Orchestrator —
     qué se ejecutó y cuándo, base real (no inventada) para el cerebro de
@@ -42,7 +43,8 @@ def record(
     with target.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     events.record_tool_event(
-        tool_name, status, duration_ms=duration_ms, timestamp=timestamp, path=events_path, detalle=detalle, preview=preview
+        tool_name, status, duration_ms=duration_ms, timestamp=timestamp, path=events_path, detalle=detalle, preview=preview,
+        span=span,
     )
 
 

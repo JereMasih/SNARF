@@ -1,10 +1,11 @@
 import base64
 import os
+import time
 from typing import Callable
 
 from snarf.capabilities.anthropic_llm import MAX_OUTPUT_TOKENS, LLMResponse, split_speech
 from snarf.capabilities.base import Capability
-from snarf.telemetry import detail, usage_tracker
+from snarf.telemetry import detail, spans, usage_tracker
 
 MAX_TOOL_ROUNDS = 5
 
@@ -93,10 +94,19 @@ class GeminiLLM(Capability):
             config_kwargs["tools"] = _translate_tools(tools)
 
         for _ in range(max_tool_rounds):
-            response = self._client.models.generate_content(
-                model=self.model, contents=contents, config=types.GenerateContentConfig(**config_kwargs)
-            )
-            self._record_usage(response)
+            # spans.start_llm (Fase 1 del plan de observabilidad): único
+            # punto real por el que pasa toda llamada a Gemini, mismo
+            # criterio que AnthropicLLM._create_and_record.
+            span = spans.start_llm("gemini", self.model)
+            start = time.monotonic()
+            try:
+                response = self._client.models.generate_content(
+                    model=self.model, contents=contents, config=types.GenerateContentConfig(**config_kwargs)
+                )
+            except Exception as exc:
+                spans.fail(span, reason=type(exc).__name__)
+                raise
+            self._record_usage(response, duration_ms=(time.monotonic() - start) * 1000, span=span)
             candidate = response.candidates[0]
             function_calls = [p.function_call for p in candidate.content.parts if p.function_call]
 
@@ -117,9 +127,14 @@ class GeminiLLM(Capability):
         timeout_text = "[demasiadas consultas a herramientas, no llegué a una respuesta final]"
         return LLMResponse(text=timeout_text, speech=timeout_text)
 
-    def _record_usage(self, response) -> None:
+    def _record_usage(self, response, duration_ms: float | None = None, span=None) -> None:
         usage = getattr(response, "usage_metadata", None)
         if usage is None:
+            # Edge case real solo en tests con fakes incompletos — cierra el
+            # span igual (ver mismo comentario en anthropic_llm.py) para no
+            # dejar un llm.started sin su llm.finished.
+            if span is not None:
+                spans.finish(span, estado="completo")
             return
         text = ""
         candidates = getattr(response, "candidates", None) or []
@@ -131,4 +146,6 @@ class GeminiLLM(Capability):
             getattr(usage, "prompt_token_count", 0) or 0,
             getattr(usage, "candidates_token_count", 0) or 0,
             detalle=detail.truncate_detalle(text),
+            duration_ms=duration_ms,
+            span=span,
         )

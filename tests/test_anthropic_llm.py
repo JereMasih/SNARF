@@ -295,6 +295,65 @@ def test_generate_does_not_record_usage_when_response_has_no_usage_info(monkeypa
     assert recorded == []
 
 
+# --- Fase 1 del plan de observabilidad: spans reales sobre _create_and_record ---
+
+
+def test_generate_emits_one_llm_started_and_one_llm_finished_sharing_event_id(monkeypatch, tmp_path):
+    from snarf.telemetry import events
+
+    monkeypatch.chdir(tmp_path)
+    usage = SimpleNamespace(input_tokens=100, output_tokens=50, cache_creation_input_tokens=0, cache_read_input_tokens=0)
+    llm = make_llm([fake_response("end_turn", "ok", usage=usage)])
+    llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+
+    rows = events.all_events(include_lifecycle=True)
+    llm_rows = [r for r in rows if r["skill"] == "anthropic:claude-sonnet-5"]
+    assert [r["event_type"] for r in llm_rows] == [events.LLM_STARTED, events.LLM_FINISHED]
+    assert llm_rows[0]["event_id"] == llm_rows[1]["event_id"]
+    assert llm_rows[1]["tokens_in"] == 100
+    assert llm_rows[1]["tokens_out"] == 50
+
+
+def test_generate_with_no_usage_info_still_closes_the_span(monkeypatch, tmp_path):
+    """Edge case real (ver anthropic_llm.py::_record_usage): sin `usage` no
+    se llama a usage_tracker (test ya cubierto arriba), pero el span
+    igual se cierra a mano — nunca queda un llm.started huérfano."""
+    from snarf.telemetry import events
+
+    monkeypatch.chdir(tmp_path)
+    llm = make_llm([fake_response("end_turn", "ok")])
+    llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+
+    rows = events.all_events(include_lifecycle=True)
+    llm_rows = [r for r in rows if r["skill"] == "anthropic:claude-sonnet-5"]
+    assert [r["event_type"] for r in llm_rows] == [events.LLM_STARTED, events.LLM_FINISHED]
+
+
+def test_generate_propagates_and_fails_the_span_on_a_real_client_error(monkeypatch, tmp_path):
+    from snarf.telemetry import events
+
+    monkeypatch.chdir(tmp_path)
+
+    class _ExplodingMessages:
+        def stream(self, **kwargs):
+            raise RuntimeError("proveedor caído")
+
+    llm = make_llm([])
+    llm._client.messages = _ExplodingMessages()
+
+    try:
+        llm.generate(system="sys", messages=[{"role": "user", "content": "hola"}])
+        raised = False
+    except RuntimeError:
+        raised = True
+    assert raised
+
+    rows = events.all_events(include_lifecycle=True)
+    llm_rows = [r for r in rows if r["skill"] == "anthropic:claude-sonnet-5"]
+    assert [r["event_type"] for r in llm_rows] == [events.LLM_STARTED, events.LLM_FAILED]
+    assert llm_rows[1]["estado"] == "error"
+
+
 def test_split_speech_extracts_the_delimited_block_and_strips_it_from_text():
     raw = f"Respuesta completa con detalle.\n{SPEECH_START}\nversión hablada corta\n{SPEECH_END}\n"
     result = split_speech(raw)

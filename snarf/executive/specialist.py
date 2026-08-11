@@ -1,4 +1,5 @@
 import concurrent.futures
+import contextvars
 import json
 import time
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Callable
 from snarf.executive.process import REPO_ROOT, consult_role
 from snarf.executive.roles import ROLE_CONFIGS
 from snarf.specialists.base import Specialist
+from snarf.telemetry import detail, spans
 
 CACHE_DIR = Path("data/executive_board")
 
@@ -81,26 +83,53 @@ class ExecutiveBoardSpecialist(Specialist):
             }
 
         results: dict[str, dict] = {}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(selected)) as pool:
-            futures = {
-                pool.submit(
-                    consult_role,
-                    ROLE_CONFIGS[role],
-                    question,
-                    self._llm_factory_for_role(role),
-                    self._repo_root,
-                ): role
-                for role in selected
-            }
-            for future in concurrent.futures.as_completed(futures):
-                role = futures[future]
-                try:
-                    results[role] = future.result()
-                except Exception as exc:
-                    results[role] = {"headline": f"No se pudo consultar a {role}: {exc}", "opinions": [], "raw": ""}
+        # spans.start_workflow (Fase 1 del plan de observabilidad): traza
+        # propia para esta consulta al board — cada rol cuelga de acá como
+        # agent.started/agent.finished (ver _consult_one), compartiendo el
+        # mismo trace_id.
+        board = spans.start_workflow("executive_board", detalle=detail.truncate_detalle(question))
+        failed_roles: list[str] = []
+        with spans.active(board):
+            # contextvars.copy_context() (Fase 1): ThreadPoolExecutor NO
+            # propaga contextvars por sí solo (a diferencia de anyio, que sí
+            # copia el context al pasar de un request async a un worker de
+            # threadpool) — sin esto, cada rol perdería tanto el
+            # trace_id/parent del board como conversation_id/user_id del
+            # turno que disparó la consulta. Un `Context` copiado solo puede
+            # correr en UN thread a la vez (`.run()` no es reentrante) — cada
+            # rol necesita su PROPIA copia, nunca una compartida entre los N
+            # submits (si no, el segundo rol en arrancar revienta con
+            # "cannot enter context: already entered").
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(selected)) as pool:
+                futures = {
+                    pool.submit(contextvars.copy_context().run, self._consult_one, role, question): role
+                    for role in selected
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    role = futures[future]
+                    try:
+                        results[role] = future.result()
+                    except Exception as exc:
+                        failed_roles.append(role)
+                        results[role] = {"headline": f"No se pudo consultar a {role}: {exc}", "opinions": [], "raw": ""}
+        spans.finish(board, estado="completo" if not failed_roles else "error")
         outcome = {"question": question, "roles": results, "generated_at": time.time()}
         self._persist(outcome)
         return outcome
+
+    def _consult_one(self, role: str, question: str) -> dict:
+        # spans.start_agent (Fase 1): el mejor precedente real de "agente"
+        # en el sentido multi-agente — cada rol es un subproceso MCP propio
+        # (ver executive/process.py), fan-out en paralelo desde consult().
+        span = spans.start_agent(role)
+        try:
+            with spans.active(span):
+                result = consult_role(ROLE_CONFIGS[role], question, self._llm_factory_for_role(role), self._repo_root)
+            spans.finish(span, estado="completo")
+            return result
+        except Exception as exc:
+            spans.fail(span, reason=type(exc).__name__)
+            raise
 
     def handle(self, task: str, context: dict) -> str:
         result = self.consult(task, context.get("roles"))

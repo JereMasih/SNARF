@@ -21,6 +21,7 @@ def record(
     events_path: Path | None = None,
     detalle: str | None = None,
     duration_ms: float | None = None,
+    span=None,
 ) -> None:
     target = _target(path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -30,7 +31,7 @@ def record(
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     events.record_vendor_event(
         vendor, model, cost_usd, metric, estado=estado, timestamp=timestamp, path=events_path,
-        detalle=detalle, duration_ms=duration_ms,
+        detalle=detalle, duration_ms=duration_ms, span=span,
     )
 
 
@@ -45,6 +46,7 @@ def record_anthropic_call(
     events_path: Path | None = None,
     detalle: str | None = None,
     duration_ms: float | None = None,
+    span=None,
 ) -> None:
     cost = pricing.estimate_anthropic_cost(model, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens)
     # stop_reason == "max_tokens" es la señal real ya detectada por
@@ -66,6 +68,7 @@ def record_anthropic_call(
         events_path=events_path,
         detalle=detalle,
         duration_ms=duration_ms,
+        span=span,
     )
 
 
@@ -88,6 +91,7 @@ def record_generic_llm_call(
     events_path: Path | None = None,
     detalle: str | None = None,
     duration_ms: float | None = None,
+    span=None,
 ) -> None:
     """Registra el uso real de un proveedor de LLM alternativo a Anthropic
     (Gemini, OpenAI, xAI, Llama vía Groq) — mismo criterio de costo real
@@ -96,7 +100,7 @@ def record_generic_llm_call(
     cost = pricing.estimate_generic_llm_cost(rates, default_rate, model, input_tokens, output_tokens)
     record(
         vendor, model, cost, {"input_tokens": input_tokens, "output_tokens": output_tokens},
-        path=path, events_path=events_path, detalle=detalle, duration_ms=duration_ms,
+        path=path, events_path=events_path, detalle=detalle, duration_ms=duration_ms, span=span,
     )
 
 

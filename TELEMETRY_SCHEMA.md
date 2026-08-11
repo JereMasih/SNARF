@@ -147,13 +147,59 @@ solo deja registrado que la fuente es texto real ya emitido, nunca una
 llamada adicional al modelo (cumple el pedido explícito de la Fase 1: "sin
 agregar llamadas extra al modelo").
 
-## Gaps honestos que Fase 1 tiene que resolver (no Fase 0)
+## Gaps honestos — estado real (Fase 1 del plan de observabilidad, ADR 0135)
 
-1. `latencia_ms` no existe hoy para llamadas de vendor puro (`usage_log`).
-2. `estado="truncado"` no se emite en ningún lado todavía — requiere pasar
-   `stop_reason` desde `anthropic_llm.py` hasta el punto de registro.
-3. Los tres logs actuales no comparten un `event_id` — si Fase 1 decide unir
-   eventos de `activity_log` y `usage_log` que corresponden al mismo turno
-   (ej. un tool call que internamente llama al LLM), va a necesitar un
-   identificador de correlación que hoy no existe. Documentado para que Fase
-   1 lo decida con el código real delante, no en abstracto acá.
+1. `latencia_ms` para llamadas de vendor puro: **cerrado para los tres
+   proveedores LLM** (Anthropic, OpenAI-compatible, Gemini — los tres ya
+   miden y registran `duration_ms` real por llamada). Sigue abierto para
+   STT/TTS/embeddings sin instrumentar a nivel de span (ElevenLabs, Groq,
+   local Whisper/Kokoro, Voyage) — quedan en `vendor.finished` sin
+   `.started`, mismo criterio de siempre.
+2. `estado="truncado"`: **cerrado**, ya se emite (`usage_tracker.
+   record_anthropic_call` mapea `stop_reason == "max_tokens"`).
+3. Correlación entre eventos (`event_id`): **cerrado**. Cada evento del
+   esquema v2 lleva `event_id`/`parent_event_id`/`trace_id` real —
+   `Orchestrator.handle()` abre la traza raíz de un turno
+   (`spans.start_workflow`), `_handle_tool` correlaciona cualquier llamada
+   LLM que un handler dispare adentro (`spans.active`), y la traza cruza
+   incluso el límite de proceso del subproceso MCP de cada rol de la
+   Inteligencia Ejecutiva (`context.env_for_child_process`/`adopt_from_env`).
+   Ver ADR 0135 y `snarf/telemetry/spans.py`/`context.py` para el diseño
+   completo. Eventos sin span explícito (emisores no instrumentados) siguen
+   recibiendo un `event_id` propio y heredan `parent_event_id`/`trace_id`
+   del span ambiente si lo hay — nunca quedan sin id, aunque no tengan un
+   `.started` correspondiente.
+
+## Transporte de eventos (Fase 2, ADR 0136)
+
+Cada evento emitido (`snarf/telemetry/events.py::_emit`) se escribe primero a
+`telemetry_events.jsonl` (síncrono, piso real de durabilidad, sin cambios) y
+recién después se publica al dispatcher in-process (`snarf/telemetry/
+dispatcher.py`, Fase 1) — que nunca bloquea ni levanta hacia el llamador.
+Dos subscribers reales cuelgan de ahí:
+
+- **`snarf/telemetry/event_buffer.py`** — `deque(maxlen=500)` in-process,
+  siempre activo. Fuente de `GET /events/stream` cuando Redis no está
+  configurado. Efímero: un reinicio de Snarf lo vacía.
+- **`snarf/telemetry/redis_sink.py`** — opcional, activo solo con
+  `SNARF_REDIS_URL` seteada Y el paquete `redis` instalado. Publica cada
+  evento a un único stream real, `snarf:events` (`XADD ... MAXLEN ~ 100000`),
+  con `event_type`/`trace_id`/`nodo`/`origin_pid` promovidos a campos planos
+  (filtrado barato del lado del consumidor) más `json` con el evento
+  completo. **Nunca una dependencia dura** — un fallo real de conexión se
+  traga y se cuenta en `redis_sink.health()` (visible en `ops_system_health`
+  vía `snarf/runtime/ops_health.py`), un turno real jamás se entera.
+
+**Regla de consumo, para no repetir el error estándar**: un consumidor de
+*trabajo compartido* (n8n, un futuro Control Center) debe leer con
+**consumer group** (`XGROUP CREATE` + `XREADGROUP` + `XACK`) — cada evento se
+procesa una vez entre todos los miembros del grupo. El propio
+`GET /events/stream` de Snarf usa **`XREAD` simple, sin grupo**: cada pestaña
+del navegador quiere ver TODO desde su propio cursor: un consumer group ahí
+partiría los eventos entre pestañas en vez de repetirlos en cada una.
+
+**Cursor real de `/events/stream`**: header estándar `Last-Event-ID` (lo
+manda `EventSource` solo al reconectar) o `?last_event_id=` explícito. Sin
+Redis, el cursor es el número de secuencia local del buffer (se reinicia en
+cada proceso); con Redis, es el ID real del stream (`<ms>-<seq>`,
+persistente entre reinicios de Snarf mientras Redis siga corriendo).

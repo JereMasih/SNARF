@@ -25,6 +25,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from snarf.executive.opinion import parse_opinions
 from snarf.executive.roles import ExecutiveRoleConfig
+from snarf.telemetry import context
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _BRIDGE_TIMEOUT_SECONDS = 30
@@ -33,8 +34,17 @@ _TOOL_CALL_TIMEOUT_SECONDS = 60
 
 class _MCPToolBridge:
     def __init__(self, repo_root: Path = REPO_ROOT):
+        # env=context.env_for_child_process() (Fase 1 del plan de
+        # observabilidad): único modo real de cruzar el límite de proceso —
+        # el subproceso MCP no hereda contextvars, solo lo que se le pase
+        # acá. `StdioServerParameters.env` se MERGEA (nunca reemplaza) con
+        # el allowlist de entorno por defecto del SDK de MCP
+        # (HOME/LOGNAME/PATH/SHELL/TERM/USER), así que esto es seguro: no
+        # pisa nada, solo agrega SNARF_TRACE_ID/SNARF_PARENT_EVENT_ID
+        # cuando hay una traza real activa (diccionario vacío si no).
         self._server_params = StdioServerParameters(
-            command=sys.executable, args=[str(repo_root / "mcp_server.py")], cwd=str(repo_root)
+            command=sys.executable, args=[str(repo_root / "mcp_server.py")], cwd=str(repo_root),
+            env=context.env_for_child_process(),
         )
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)

@@ -60,3 +60,64 @@ def test_record_input_event_with_unmapped_channel_emits_nothing(tmp_path):
 
 def test_recent_with_no_entries_is_empty(tmp_path):
     assert events.recent(path=tmp_path / "no_existe.jsonl") == []
+
+
+# --- Fase 1 del plan de observabilidad: schema v2, event_id, event_type ----
+
+
+def test_v2_row_has_schema_version_event_id_and_origin_pid(tmp_path):
+    import os
+
+    path = tmp_path / "events.jsonl"
+    events.record_tool_event("gmail_summarize_inbox", "ok", path=path)
+    entry = events.recent(path=path)[0]
+    assert entry["schema_version"] == 2
+    assert entry["event_id"]
+    assert entry["origin_pid"] == os.getpid()
+
+
+def test_record_tool_event_ok_emits_tool_finished(tmp_path):
+    path = tmp_path / "events.jsonl"
+    events.record_tool_event("gmail_summarize_inbox", "ok", path=path)
+    entry = events.recent(path=path)[0]
+    assert entry["event_type"] == events.TOOL_FINISHED
+
+
+def test_record_tool_event_error_emits_tool_failed(tmp_path):
+    path = tmp_path / "events.jsonl"
+    events.record_tool_event("gmail_summarize_inbox", "error", path=path)
+    entry = events.recent(path=path)[0]
+    assert entry["event_type"] == events.TOOL_FAILED
+
+
+def test_all_events_hides_lifecycle_events_by_default(tmp_path):
+    path = tmp_path / "events.jsonl"
+    events.record_tool_event("gmail_summarize_inbox", "ok", path=path)
+    events._write({"schema_version": 2, "event_type": events.TOOL_STARTED, "event_id": "x"}, path)
+    assert len(events.all_events(path=path)) == 1
+    assert len(events.all_events(path=path, include_lifecycle=True)) == 2
+
+
+def test_recent_hides_lifecycle_events_by_default(tmp_path):
+    path = tmp_path / "events.jsonl"
+    events.record_tool_event("gmail_summarize_inbox", "ok", path=path)
+    events._write({"schema_version": 2, "event_type": events.WORKFLOW_STARTED, "event_id": "y"}, path)
+    assert len(events.recent(path=path)) == 1
+    assert len(events.recent(path=path, include_lifecycle=True)) == 2
+
+
+def test_v1_row_without_event_type_counts_as_legacy():
+    assert events.is_legacy({"nodo": "drive"}) is True
+
+
+def test_record_tool_event_span_none_still_gets_correlated_to_ambient_parent(tmp_path):
+    path = tmp_path / "events.jsonl"
+    context.set_conversation_id("conv-1")
+    try:
+        with context.span("parent-event-id", trace_id="trace-1"):
+            events.record_tool_event("gmail_summarize_inbox", "ok", path=path)
+    finally:
+        context.clear_conversation_id()
+    entry = events.recent(path=path)[0]
+    assert entry["parent_event_id"] == "parent-event-id"
+    assert entry["trace_id"] == "trace-1"

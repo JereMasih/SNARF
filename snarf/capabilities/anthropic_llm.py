@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from typing import Callable
 
 from snarf.capabilities.base import Capability
-from snarf.telemetry import cancellation, context, detail, usage_tracker
+from snarf.telemetry import cancellation, context, detail, spans, usage_tracker
 
 DEFAULT_MODEL = "claude-sonnet-5"
 MAX_TOOL_ROUNDS = 5
@@ -246,6 +246,26 @@ class AnthropicLLM(Capability):
             response = stream.get_final_message()
         return response, (time.monotonic() - start) * 1000
 
+    def _create_and_record(self, **kwargs):
+        """Único punto real por el que pasa TODA llamada a Anthropic (Fase 1
+        del plan de observabilidad) — abre el span (llm.started), lo cierra
+        pase lo que pase (cancelación, error, éxito vía _record_usage) y
+        deja el registro de uso/costo real con ese mismo event_id, en vez de
+        repetir apertura/cierre en los 3 call sites reales de _create()
+        (llamada inicial, continuación por corte de longitud, cierre sin
+        tools)."""
+        span = spans.start_llm("anthropic", self.model)
+        try:
+            response, duration_ms = self._create(**kwargs)
+        except GenerationCancelled:
+            spans.fail(span, reason="cancelled")
+            raise
+        except Exception as exc:
+            spans.fail(span, reason=type(exc).__name__)
+            raise
+        self._record_usage(response, duration_ms, span=span)
+        return response, duration_ms
+
     def generate(
         self,
         system: str,
@@ -288,10 +308,9 @@ class AnthropicLLM(Capability):
             if tools:
                 kwargs["tools"] = tools
             try:
-                response, duration_ms = self._create(**kwargs)
+                response, duration_ms = self._create_and_record(**kwargs)
             except GenerationCancelled as exc:
                 return self._cancelled_response(exc.partial_text)
-            self._record_usage(response, duration_ms)
 
             if response.stop_reason == "tool_use" and tool_handler:
                 conversation.append({"role": "assistant", "content": response.content})
@@ -334,12 +353,11 @@ class AnthropicLLM(Capability):
                 call_messages = list(conversation)
                 call_messages[-1] = _mark_cache_breakpoint(call_messages[-1])
                 try:
-                    response, duration_ms = self._create(
+                    response, duration_ms = self._create_and_record(
                         model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=call_messages
                     )
                 except GenerationCancelled as exc:
                     return self._cancelled_response(text + exc.partial_text)
-                self._record_usage(response, duration_ms)
                 text += "".join(block.text for block in response.content if block.type == "text")
 
             if response.stop_reason == "max_tokens":
@@ -370,10 +388,9 @@ class AnthropicLLM(Capability):
             }
         )
         try:
-            response, duration_ms = self._create(
+            response, duration_ms = self._create_and_record(
                 model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=closing_messages
             )
-            self._record_usage(response, duration_ms)
             text = "".join(block.text for block in response.content if block.type == "text")
             if text.strip():
                 return split_speech(text)
@@ -398,9 +415,16 @@ class AnthropicLLM(Capability):
             return LLMResponse(text=text, speech=text, cancelled=True)
         return replace(split_speech(text), cancelled=True)
 
-    def _record_usage(self, response, duration_ms: float | None = None) -> None:
+    def _record_usage(self, response, duration_ms: float | None = None, span=None) -> None:
         usage = getattr(response, "usage", None)
         if usage is None:
+            # Edge case real solo visto en tests con fakes incompletos — en
+            # producción `usage` siempre viene. Si había un span abierto
+            # (ver _create_and_record), hay que cerrarlo igual: sin esto
+            # quedaría un llm.started sin su llm.finished, huérfano para
+            # siempre en telemetry_events.jsonl.
+            if span is not None:
+                spans.finish(span, estado="completo")
             return
         # Texto real ya generado en esta ronda (mismo slice que hace la
         # respuesta final más abajo) — nunca una llamada nueva al modelo,
@@ -416,4 +440,5 @@ class AnthropicLLM(Capability):
             stop_reason=getattr(response, "stop_reason", None),
             detalle=detail.truncate_detalle(text),
             duration_ms=duration_ms,
+            span=span,
         )

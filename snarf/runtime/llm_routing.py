@@ -548,12 +548,17 @@ class _ResilientLLM:
         return self._llm.available
 
     def generate(self, **generate_kwargs):
-        # context.set_llm_role (ADR de esta ronda): para que usage_log/
-        # telemetry_events sepan qué ROL disparó esta llamada real — nunca
-        # sobrevive más allá de esta llamada (mismo criterio que
-        # conversation_id en Orchestrator.handle()).
-        context.set_llm_role(self._role)
-        try:
+        # context.scoped_llm_role (Fase 1 del plan de observabilidad — antes
+        # set_llm_role/clear_llm_role): para que usage_log/telemetry_events
+        # sepan qué ROL disparó esta llamada real. Bug real corregido acá:
+        # clear_llm_role() borraba el rol a None en vez de restaurar el
+        # valor anterior — una llamada de Specialist (este método) hecha
+        # DENTRO de un turno de Orchestrator.handle() (que ya seteó
+        # llm_role="orchestrator") le borraba el rol al resto del turno en
+        # vez de devolverlo a "orchestrator" al terminar. scoped_llm_role
+        # restaura el valor previo (o None si no había ninguno), nunca lo
+        # limpia a ciegas.
+        with context.scoped_llm_role(self._role):
             # Chequeo barato (un compare de timestamps, sin red) salvo que
             # self._entry sea realmente un fallback vencido — ahí sí intenta
             # volver al proveedor local antes de usar el de fallback (ver
@@ -573,8 +578,6 @@ class _ResilientLLM:
                 # usar el proveedor que funcionó.
                 self._llm, self._entry = _build(new_entry["provider"], new_entry["model"]), new_entry
                 return response
-        finally:
-            context.clear_llm_role()
 
 
 def build_resilient_llm(role: str) -> _ResilientLLM:
