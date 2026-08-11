@@ -9,15 +9,16 @@
 
 ## Estado actual (retomar una sesión nueva desde acá)
 
-**Última actualización:** 2026-08-11. **Hechas: Fases 0-7 + Fase 8/1 (HITL) + Fase 9.3 (completa, con la
-reapertura de n8n)** (más el adelanto real de la Fase 9.1) — la reapertura de n8n (`adr/0145-*`) hecha y
-testeada, **todavía sin commitear** — ver "Trabajo pendiente de commit" abajo. Todo lo anterior
-commiteado, sin pushear a `origin/master` en este momento — confirmar `git push` con el fundador antes de
-asumirlo hecho. Suite completa en verde: 1277/1277 tests (`.venv/bin/python -m pytest -q`). **Fase 8
-parte 2/2 (decisión de stack de observability/Langfuse) NO se ejecutó** — condicionada al rollout de
-usuarios de prueba, que todavía no pasó (ver Fase 3). **Fase 9.2 (cerebro rediseñado) y la parte visual
-de 9.1 tampoco** — necesitan dirección visual real del fundador y verificación con Playwright, no solo
-backend (ver CLAUDE.md).
+**Última actualización:** 2026-08-11. **Hechas: Fases 0-7 + Fase 8/1 (HITL) + Fase 9.1 (parcial) + Fase
+9.3 (completa)** — Fase 9.1 (`adr/0146-*`) hecha, testeada Y verificada con Playwright, **todavía sin
+commitear** — ver "Trabajo pendiente de commit" abajo. Todo lo anterior commiteado, sin pushear a
+`origin/master` en este momento — confirmar `git push` con el fundador antes de asumirlo hecho. Suite
+completa en verde: 1282/1282 tests (`.venv/bin/python -m pytest -q`). **Fase 8 parte 2/2 (decisión de
+stack de observability/Langfuse) NO se ejecutó** — condicionada al rollout de usuarios de prueba, que
+todavía no pasó (ver Fase 3). **Fase 9.2 (cerebro rediseñado) y las otras dos deudas de 9.1 ("ver logs
+desde la UI", asistente de migración a VPS) tampoco** — 9.2 necesita dirección visual real del fundador
+(mismo patrón que el rediseño del dock, SESSION_STATE.md); las otras dos son features aparte, no
+adelantadas esta ronda.
 
 **Decisión de gobernanza real tomada esta ronda**: el fundador decidió que n8n puede escribir
 prompts/config directo (`N8N_CONTROL_TOKEN`, sin aprobación humana) — reabre puntualmente, solo para esa
@@ -41,11 +42,11 @@ el detalle completo de diseño/riesgos/tests):**
   (solo founder, con confirmación de dos pasos, `com.snarf.server` excluido de auto-reinicio)
   (`adr/0138-*`).
 
-**Trabajo pendiente de commit:** reapertura de n8n (escritura directa, `adr/0145-*`) — hecha, testeada
-(1277/1277), sin commitear todavía. Archivos: cambios en `app.py` (6 endpoints `/n8n/prompts`/
-`/n8n/generation-config` + refactor a funciones privadas compartidas), `tests/test_app.py`,
-`CHANGELOG.md`, este documento — sin archivos nuevos aparte del ADR. **No commitear sin pedido explícito
-del fundador.**
+**Trabajo pendiente de commit:** Fase 9.1 parcial (vista real de control de infraestructura, `adr/0146-*`)
+— hecha, testeada (1282/1282) y verificada con Playwright en servidor aislado, sin commitear todavía.
+Archivos: cambios en `app.py` (2 endpoints `/ops/processes` nuevos), `web/index.html` (sección nueva en
+Configuración), `tests/test_app.py`, `CHANGELOG.md`, este documento — sin archivos nuevos aparte del ADR.
+**No commitear sin pedido explícito del fundador.**
 
 **Estado real de infraestructura en esta Mac** (verificar que sigue así al retomar, puede haber
 cambiado):
@@ -260,12 +261,13 @@ infraestructura por delante de una necesidad real, contra el criterio explícito
 
 ## Fase 9 — Cockpit del fundador: control de infraestructura + cerebro rediseñado
 
-### 9.1 — Control de infraestructura ⚠️ ADELANTADO PARCIALMENTE, ya hecho (`adr/0138-*`)
+### 9.1 — Control de infraestructura ⚠️ PARCIAL, la vista real ya hecha (`adr/0138-*`, `adr/0146-*`)
 
 Lo que ya existe: tools `ops_process_status`/`ops_process_restart` (solo founder, confirmación de dos
 pasos, `com.snarf.server` excluido de auto-reinicio), nombres de proceso reales en Activity Monitor/`ps`
-(`setproctitle`). Vive en el chat, no en una vista de dashboard — **falta**: vista visual real en
-`web/index.html`, ver logs desde la UI, asistente guiado de migración a VPS.
+(`setproctitle`), y ahora también **una vista real en `web/index.html`** (sección "Control de
+infraestructura" en Configuración, `GET/POST /ops/processes`, verificado con Playwright — ver ADR 0146).
+**Falta todavía**: ver logs desde la UI, asistente guiado de migración a VPS.
 
 ### 9.2 — Cerebro rediseñado ("entidad cognitiva digital"), founder-preview primero
 

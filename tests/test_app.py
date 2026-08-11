@@ -1895,3 +1895,52 @@ def test_founder_and_n8n_write_paths_share_the_same_underlying_storage(monkeypat
         c.post("/login", json={"password": "x"})
         res = c.get("/prompts")
     assert res.json()["gmail_digest"]["active_text"] == "escrito por n8n"
+
+
+# --- Fase 9.1: control de infraestructura real vía HTTP (ADR 0146) --------
+
+
+def test_get_ops_processes_returns_the_real_status(client, monkeypatch):
+    from snarf.runtime import process_control
+
+    monkeypatch.setattr(process_control, "status", lambda: [{"label": "com.snarf.mlx-fast", "running": True}])
+    res = client.get("/ops/processes")
+    assert res.status_code == 200
+    assert res.json()["processes"] == [{"label": "com.snarf.mlx-fast", "running": True}]
+
+
+def test_get_ops_processes_is_forbidden_for_a_non_founder_user(client, monkeypatch):
+    from snarf.runtime.web_auth import create_session_token
+
+    token = create_session_token("test-session-secret", "usuario_de_prueba")
+    client.cookies.set("snarf_session", token)
+    res = client.get("/ops/processes")
+    assert res.status_code == 403
+
+
+def test_post_ops_process_restart_requires_confirmation_first(client, monkeypatch):
+    from snarf.runtime import process_control
+
+    calls = []
+    monkeypatch.setattr(process_control, "restart", lambda label: calls.append(label) or {"label": label, "restarted": True})
+    res = client.post("/ops/processes/com.snarf.mlx-fast/restart", json={})
+    assert res.status_code == 200
+    assert res.json()["status"] == "pending_confirmation"
+    assert calls == []
+
+
+def test_post_ops_process_restart_confirmed_calls_process_control(client, monkeypatch):
+    from snarf.runtime import process_control
+
+    calls = []
+    monkeypatch.setattr(process_control, "restart", lambda label: calls.append(label) or {"label": label, "restarted": True})
+    res = client.post("/ops/processes/com.snarf.mlx-fast/restart", json={"confirmed": True})
+    assert res.status_code == 200
+    assert res.json() == {"label": "com.snarf.mlx-fast", "restarted": True}
+    assert calls == ["com.snarf.mlx-fast"]
+
+
+def test_post_ops_process_restart_rejects_the_main_server_with_a_clear_error(client):
+    res = client.post("/ops/processes/com.snarf.server/restart", json={"confirmed": True})
+    assert res.status_code == 400
+    assert "reiniciaría el propio proceso" in res.json()["detail"]

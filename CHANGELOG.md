@@ -2,6 +2,22 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-11] Fase 9.1: vista real de control de infraestructura en la UI (ADR 0146)
+
+- `GET /ops/processes` / `POST /ops/processes/{label}/restart` (nuevos, `app.py`): reusan
+  `process_control.status()`/`.restart()` tal cual — nunca una segunda implementación. Mismo protocolo
+  `confirmed` en dos pasos que `HIGH_IMPACT_TOOLS`. Primer gate de founder a nivel HTTP (403 para
+  cualquier otro `user_id`) — hasta ahora ese chequeo solo vivía dentro del tool del chat.
+- Nueva sección "Control de infraestructura" en el panel de Configuración (`web/index.html`) — oculta
+  por completo si el backend responde 403 (nunca asume quién está logueado). Botón "Reiniciar" con
+  `window.confirm()`, mismo patrón ya usado para borrar un proyecto.
+- Cierra la primera de las tres deudas de ADR 0138 ("vive en el chat, no en una vista de dashboard
+  todavía") — "ver logs desde la UI" y el asistente de migración a VPS quedan para otra ronda.
+- Verificado con Playwright en un servidor aislado (puerto 8001): los 6 procesos reales de esta Mac
+  visibles con PID/RAM real, diálogo de confirmación real disparado y descartado a propósito (nunca se
+  reinició nada de producción sin decisión explícita del fundador en el momento).
+- 5 tests nuevos (`tests/test_app.py`). 1282/1282 tests de la suite completa.
+
 ## [2026-08-11] Reapertura: n8n puede escribir prompts/config directo (ADR 0145)
 
 - Decisión explícita del fundador (presentada con 3 opciones reales: solo lectura, HITL, o escritura

@@ -1161,6 +1161,37 @@ def n8n_rollback_generation_config(role: str, payload: dict, _: None = Depends(r
     return _rollback_generation_config(role, payload, DEFAULT_USER_ID)
 
 
+# --- Fase 9.1 del plan de observabilidad/n8n (ADR 0146): primera vista real
+# en la propia UI para lo que ADR 0138 dejó "vive en el chat, no en una
+# vista de dashboard todavía" — mismo `process_control.py`, nunca una
+# segunda implementación. Solo el fundador (mismo gate ya usado dentro de
+# cada _tool_ops_process_* de orchestrator.py, acá aplicado también a nivel
+# HTTP porque es la primera vez que este control se expone fuera del chat).
+
+
+@app.get("/ops/processes")
+def get_ops_processes(user_id: str = Depends(require_user)):
+    if user_id != DEFAULT_USER_ID:
+        raise HTTPException(403, "Este endpoint es solo para el fundador.")
+    return {"processes": process_control.status()}
+
+
+@app.post("/ops/processes/{label}/restart")
+def post_ops_process_restart(label: str, payload: dict, user_id: str = Depends(require_user)):
+    if user_id != DEFAULT_USER_ID:
+        raise HTTPException(403, "Este endpoint es solo para el fundador.")
+    if not payload.get("confirmed"):
+        return {
+            "status": "pending_confirmation",
+            "preview": {"label": label},
+            "instructions": "No se reinició nada todavía — volvé a llamar con confirmed=true para confirmar.",
+        }
+    try:
+        return process_control.restart(label)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
 @app.get("/llm-routing/fallback_events")
 def get_llm_fallback_events(since: float | None = None, user_id: str = Depends(require_user)):
     # Registro trazable real de cada vez que un rol cambió de proveedor solo

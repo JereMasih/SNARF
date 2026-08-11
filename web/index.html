@@ -935,6 +935,25 @@
   .llm-routing-row select:focus { outline: none; border-color: var(--glow); }
   .llm-routing-row option:disabled { color: var(--text-dim); }
 
+  /* Fase 9.1 (ADR 0146): control de infraestructura real, panel de Config. */
+  .ops-processes-list { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.3rem 0.2rem 0.4rem; }
+  .ops-process-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px; padding: 0.5rem 0.65rem;
+  }
+  .ops-process-info { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+  .ops-process-name { font-size: 0.8rem; color: var(--text); }
+  .ops-process-status { font-size: 0.7rem; color: var(--text-dim); }
+  .ops-process-status.running::before { content: "●"; color: #4fd88a; margin-right: 0.3rem; }
+  .ops-process-status.stopped::before { content: "●"; color: var(--text-dim); margin-right: 0.3rem; }
+  .ops-process-restart-btn {
+    flex: none; background: rgba(255,255,255,0.06); border: 1px solid rgba(79,216,232,0.25);
+    border-radius: 6px; color: var(--text); font-size: 0.72rem; padding: 0.35rem 0.6rem;
+    font-family: inherit; cursor: pointer;
+  }
+  .ops-process-restart-btn:hover { border-color: var(--glow); }
+
   /* --- barra lateral: Conversaciones / Proyectos ---
      .conv-list ya es flex:1 1 auto dentro de #sidebar — dos listas con el
      mismo flex competirían por el espacio, así que el switcher alterna cuál
@@ -2024,6 +2043,14 @@
     <div class="settings-section-head"><h3>LLM por rol</h3></div>
     <div class="llm-routing-list" id="llmRoutingList"></div>
 
+    <!-- Fase 9.1 del plan de observabilidad/n8n (ADR 0146): primera vista
+         real en la propia UI de lo que antes solo vivía en el chat
+         (ops_process_status/restart, ADR 0138) — oculta por completo si
+         GET /ops/processes devuelve 403 (no es el fundador), ver
+         renderOpsProcessesSection(). -->
+    <div class="settings-section-head" id="opsProcessesSectionHead"><h3>Control de infraestructura</h3></div>
+    <div class="settings-list ops-processes-list" id="opsProcessesList"></div>
+
     <div class="settings-section-head"><h3>Chat</h3></div>
     <div class="settings-row">
       <span>Mostrar fecha y hora de los mensajes</span>
@@ -2447,6 +2474,8 @@ const sarcasmSlider = document.getElementById("sarcasmSlider");
 const sarcasmValue = document.getElementById("sarcasmValue");
 const profileNameInput = document.getElementById("profileNameInput");
 const llmRoutingList = document.getElementById("llmRoutingList");
+const opsProcessesSectionHead = document.getElementById("opsProcessesSectionHead");
+const opsProcessesList = document.getElementById("opsProcessesList");
 const brainOverlay = document.getElementById("brainOverlay");
 const brainPanel = document.getElementById("brainPanel");
 const brainCloseBtn = document.getElementById("brainCloseBtn");
@@ -5962,6 +5991,47 @@ async function persistLlmRouting(role, value) {
   } catch (e) {}
 }
 
+// Fase 9.1 (ADR 0146): oculta la sección entera si GET /ops/processes
+// devuelve 403 (no es el fundador) — nunca asume quién está logueado de
+// antemano, deja que el propio backend (mismo gate que ops_process_status
+// en el chat) decida.
+async function renderOpsProcessesSection() {
+  const res = await apiFetch("/ops/processes");
+  if (!res.ok) {
+    opsProcessesSectionHead.style.display = "none";
+    opsProcessesList.style.display = "none";
+    return;
+  }
+  opsProcessesSectionHead.style.display = "";
+  opsProcessesList.style.display = "";
+  const data = await res.json();
+  opsProcessesList.innerHTML = data.processes.map((p) => {
+    const statusLabel = p.running ? `corriendo — PID ${p.pid}${p.rss_mb != null ? `, ${p.rss_mb} MB` : ""}` : "detenido";
+    const restartBtn = p.restartable_via_tool
+      ? `<button class="ops-process-restart-btn" data-label="${escapeHtml(p.label)}">Reiniciar</button>`
+      : "";
+    return `<div class="ops-process-row">
+      <div class="ops-process-info">
+        <span class="ops-process-name">${escapeHtml(p.friendly_name)}</span>
+        <span class="ops-process-status ${p.running ? "running" : "stopped"}">${escapeHtml(statusLabel)}</span>
+      </div>
+      ${restartBtn}
+    </div>`;
+  }).join("");
+  opsProcessesList.querySelectorAll(".ops-process-restart-btn").forEach((btn) => {
+    btn.addEventListener("click", () => restartOpsProcess(btn.dataset.label));
+  });
+}
+async function restartOpsProcess(label) {
+  // window.confirm es la confirmación real que exige el backend
+  // (?confirmed=true) — mismo patrón ya usado para borrar un proyecto.
+  if (!confirm(`¿Reiniciar "${label}"? El proceso se corta y vuelve a arrancar solo.`)) return;
+  const res = await apiFetch(`/ops/processes/${encodeURIComponent(label)}/restart`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmed: true }),
+  });
+  if (res.ok) renderOpsProcessesSection();
+}
+
 function visibleOrdered(ids) {
   return dashboardPrefs.panel_order.filter((id) => ids.includes(id) && dashboardPrefs.visible_widgets[id]);
 }
@@ -6797,6 +6867,7 @@ function openSettings() {
   renderPersonalitySection();
   renderProfileSection();
   renderLlmRoutingSection();
+  renderOpsProcessesSection();
   renderHudChatPositionSection();
   renderTemplateProposalsSection();
   renderShowTimestampsToggle();
