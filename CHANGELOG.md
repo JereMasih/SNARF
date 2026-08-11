@@ -2,6 +2,33 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-11] Fase 10: conversación continua manos libres (ADR 0151)
+
+- Botón nuevo (`#continuousModeBtn`, a la derecha del mic actual, que sigue funcionando exactamente
+  igual) activa un modo de conversación continua tipo Jarvis — hablás y Snarf responde con voz sin tap
+  manual por turno, con barge-in real (empezar a hablar mientras Snarf habla lo interrumpe al instante).
+- Sin WebSocket: ni Groq STT ni Kokoro TTS son streaming del lado del proveedor, así que un transporte
+  nuevo no bajaría latencia real. La sensación de "continuo" la da un VAD (voice activity detection)
+  client-side por energía RMS (`AudioContext`+`AnalyserNode`), reusando `/transcribe`, `/send`, `/tts`,
+  `/cancel/{request_id}` tal cual existen hoy — cero endpoints backend nuevos.
+- Estado y variables propias (`continuousMode`/`continuousPhase`/`cm*`), aisladas del flujo de push-to-talk
+  existente a propósito — evita 3 puntos reales de colisión encontrados (`updateSendMicToggle`/
+  `textSendBtn`/`micBtn` leen `state === "listening"` con lógica que un estado compartido rompería).
+- Barge-in sin llamada nueva al backend para el caso "Snarf hablando": pausar `sharedAudio` es 100%
+  client-side; para el caso "Snarf pensando" reusa `stopActiveRequest()` tal cual (mismo mecanismo que el
+  botón "frenar" manual de texto).
+- Autoplay acotado solo a este modo (parámetro `autoPlay` nuevo, backward-compatible, en `sendText`/
+  `postAndHandleSend`/`addMessage`) — reusa el mismo pathway de síntesis+player que ya existía para
+  turnos de voz, nunca una segunda implementación. El resto del chat sigue sin autoplay (ADR 0056 punto 6,
+  no reabierto).
+- Riesgo conocido, documentado, no resuelto esta ronda: VAD sin cancelación de eco acústico (parlantes
+  físicos podrían disparar el VAD con el propio audio de Snarf) — requiere prueba en vivo, no verificable
+  con audio sintético.
+- Sin cambios de backend — 1288/1288 tests de la suite completa. Verificado con Playwright y mic
+  simulado (`--use-fake-device-for-media-stream`): ciclo completo capturing→thinking→transcribe real→
+  barge-in real (`POST /cancel` confirmado en el log), botón en la posición real del DOM, apagar el modo
+  limpia todo, cero errores de consola.
+
 ## [2026-08-11] Cerebro "giroscopio": cardán real (orientación anidada) + rotor con giro propio (ADR 0150)
 
 - Los 3 anillos principales dejan de ser hermanos independientes: `BRAIN_RING_PARENT_CHAIN` (nuevo) los

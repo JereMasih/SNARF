@@ -10,13 +10,15 @@
 ## Estado actual (retomar una sesión nueva desde acá)
 
 **Última actualización:** 2026-08-11. **Hechas: Fases 0-7 + Fase 8/1 (HITL) + Fase 9.1 (parcial) + Fase
-9.2 (4 rondas de iteración real, ver abajo) + Fase 9.3 (completa)**. Fase 9.2 hasta `adr/0149-*` ya
-commiteada y pusheada (`0a29c5d`). La ronda más reciente, `adr/0150-*` (cardán real: orientación anidada
-entre anillos + rotor con giro propio), hecha, verificada con Playwright, **todavía sin commitear** — ver
-"Trabajo pendiente de commit" abajo. Suite completa backend en verde (sin cambios de backend en esta
-ronda). **Fase 8 parte 2/2 (decisión de stack de observability/Langfuse) NO se ejecutó** — condicionada al
+9.2 (4 rondas de iteración real) + Fase 9.3 (completa) + Fase 10 (primer corte, ver abajo)**. Fase 9.2
+completa hasta `adr/0150-*` ya commiteada y pusheada (`4144c59`). La ronda más reciente, `adr/0151-*`
+(Fase 10: conversación continua manos libres, VAD client-side, sin WebSocket — ver sección de la Fase 10
+más abajo), hecha, verificada con Playwright (mic simulado), **todavía sin commitear** — ver "Trabajo
+pendiente de commit" abajo. Suite completa backend en verde (sin cambios de backend en esta ronda).
+**Fase 8 parte 2/2 (decisión de stack de observability/Langfuse) NO se ejecutó** — condicionada al
 rollout de usuarios de prueba, que todavía no pasó (ver Fase 3). **Las otras dos deudas de 9.1 ("ver logs
-desde la UI", asistente de migración a VPS) tampoco** — features aparte.
+desde la UI", asistente de migración a VPS) tampoco** — features aparte. Fases 11 (extensión MCP) y 12
+(replay/debugging) siguen sin arrancar.
 
 **Fase 9.2 — el fundador mandó las referencias reales del HUD de Iron Man (Jarvis/Ultron) y confirmó dos
 decisiones antes de construir**: (1) los "skills" son un 4to anillo agrupado por familia, nunca un nodo
@@ -48,10 +50,10 @@ el detalle completo de diseño/riesgos/tests):**
   (solo founder, con confirmación de dos pasos, `com.snarf.server` excluido de auto-reinicio)
   (`adr/0138-*`).
 
-**Trabajo pendiente de commit:** `adr/0150-*` (cardán real: `BRAIN_RING_PARENT_CHAIN` anida la
-orientación de los 3 anillos + rotor del orquestador con giro propio constante) — hecho y verificado con
-Playwright, esperando confirmación explícita del fundador antes de commitear/pushear/reiniciar el server
-real, mismo criterio que las rondas anteriores de esta misma fase.
+**Trabajo pendiente de commit:** `adr/0151-*` (Fase 10: conversación continua manos libres — botón nuevo
+`#continuousModeBtn`, VAD client-side por RMS, barge-in real, sin WebSocket ni endpoints backend nuevos)
+— hecho y verificado con Playwright (mic simulado), esperando confirmación explícita del fundador antes
+de commitear/pushear/reiniciar el server real, mismo criterio que todas las rondas anteriores.
 
 **Estado real de infraestructura en esta Mac** (verificar que sigue así al retomar, puede haber
 cambiado):
@@ -298,9 +300,19 @@ superficie. Sin UI nueva en `web/index.html` — eso sigue siendo 9.2.
 
 ---
 
-## Fase 10 — Streaming de voz como canal principal (estilo Jarvis)
+## Fase 10 — Conversación continua manos libres ✅ HECHO, primer corte (`adr/0151-*`)
 
-Hoy la voz es grabar → transcribir → Snarf responde → sintetizar (turnos discretos). El objetivo de largo plazo es un canal continuo, bidireccional. Se construye sobre lo que ya existe (ElevenLabs/Groq STT, Kokoro TTS nativo con MPS) en vez de reemplazar el stack de voz entero. Fase de diseño propio cuando le toque el turno.
+Resuelto **sin** el canal WebSocket bidireccional que el texto original de esta fase insinuaba: ni Groq
+STT ni Kokoro TTS son streaming del lado del proveedor (confirmado leyendo el código real de ambos
+providers), así que un transporte nuevo no bajaría latencia real. En cambio: botón nuevo en la barra de
+input (a la derecha del mic existente, que sigue igual) activa un modo de conversación continua con VAD
+(voice activity detection) client-side por energía RMS — hablás y Snarf responde con voz sin tap manual
+por turno, con barge-in real (empezar a hablar mientras Snarf habla lo interrumpe). Reusa `/transcribe`,
+`/send`, `/tts`, `/cancel/{request_id}` tal cual — cero endpoints backend nuevos. Riesgo conocido, no
+resuelto esta ronda: VAD sin cancelación de eco acústico real (requiere auriculares o prueba en vivo para
+confirmar que no se auto-interrumpe con el propio audio de los parlantes). Si en el futuro Groq o Kokoro
+sumaran soporte real de streaming del lado del proveedor, ahí sí valdría reabrir la opción de un transporte
+WebSocket — no antes.
 
 ---
 

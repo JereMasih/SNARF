@@ -1877,6 +1877,24 @@
     background: rgba(232,90,90,0.16); border-color: var(--error); color: var(--error);
     animation: pulse-fast 1s ease-in-out infinite;
   }
+  /* Modo de conversación continua (manos libres, ver ADR 0151) — nunca rojo
+     (no es una grabación puntual ni un error, es un modo persistente
+     armado). armed/capturing: cian, igual paleta que el resto de la barra.
+     thinking: mismo cian, pulso más rápido. speaking: violeta, mismo tono
+     que usa el cerebro para "voz" (ver MASTER_MAP.md). */
+  .text-row #continuousModeBtn.cm-armed,
+  .text-row #continuousModeBtn.cm-capturing {
+    background: rgba(79,216,232,0.22); border-color: var(--glow);
+    animation: pulse-fast 1.4s ease-in-out infinite;
+  }
+  .text-row #continuousModeBtn.cm-thinking {
+    background: rgba(79,216,232,0.22); border-color: var(--glow);
+    animation: pulse-fast 0.6s ease-in-out infinite;
+  }
+  .text-row #continuousModeBtn.cm-speaking {
+    background: rgba(122,90,232,0.2); border-color: #7a5ae8; color: #7a5ae8;
+    animation: pulse-fast 1s ease-in-out infinite;
+  }
   /* Grabación a un tap: tocar el mic entra directo a grabar, manos libres
      desde el primer instante (sin estado de "mantener presionado" ni de
      "bloqueo" intermedio) — un tap simple, tacho para cancelar, flecha para
@@ -2148,6 +2166,7 @@
           <button class="record-cancel-btn" id="recordCancelBtn" title="cancelar grabación" hidden>🗑</button>
         </div>
         <button class="icon-btn" id="micBtn" title="Tocá para grabar" disabled><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg></button>
+        <button class="icon-btn" id="continuousModeBtn" title="Conversación continua (manos libres)" disabled><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M6.3 6.3a5.2 5.2 0 0 0 0 7.4M13.7 6.3a5.2 5.2 0 0 1 0 7.4"/><path d="M3.6 3.6a9.2 9.2 0 0 0 0 12.8M16.4 3.6a9.2 9.2 0 0 1 0 12.8" opacity="0.55"/></svg></button>
         <button class="icon-btn" id="textSendBtn" title="Enviar" disabled><svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="16" x2="10" y2="4"/><path d="M5 9l5-5 5 5"/></svg></button>
       </div>
       <div class="orb-wrap" id="orbWrap">
@@ -2377,6 +2396,7 @@ async function bootSequence() {
   textInput.disabled = false;
   textSendBtn.disabled = false;
   micBtn.disabled = false;
+  continuousModeBtn.disabled = false;
   connectingOverlayEl.classList.add("hidden");
   watchForDisconnect();
 }
@@ -2435,6 +2455,7 @@ const recordHint = document.getElementById("recordHint");
 const recordCancelBtn = document.getElementById("recordCancelBtn");
 const recordWave = document.getElementById("recordWave");
 const micBtn = document.getElementById("micBtn");
+const continuousModeBtn = document.getElementById("continuousModeBtn");
 const attachBtn = document.getElementById("attachBtn");
 const fileInput = document.getElementById("fileInput");
 const dashBtn = document.getElementById("dashBtn");
@@ -2755,7 +2776,7 @@ function reindexChatDepth() {
   msgs.forEach((el, i) => el.style.setProperty("--depth", Math.min(total - 1 - i, CHAT_DEPTH_MAX)));
 }
 
-function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliverable, thinking, insertBeforeNode, timestamp, cancelled, messageId, replyToPreview) {
+function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliverable, thinking, insertBeforeNode, timestamp, cancelled, messageId, replyToPreview, autoPlay) {
   const div = document.createElement("div");
   div.className = "msg " + who;
   if (timestamp) div.dataset.timestamp = timestamp;
@@ -2836,8 +2857,16 @@ function addMessage(text, who, withAudio, inputAudioId, speech, autoSpeak, deliv
         summarySlot.textContent = "generando audio...";
         playersContainer.appendChild(summarySlot);
         synthesizeVoiceNote(text).then((audioId) => {
-          if (audioId) summarySlot.replaceWith(buildVoiceNotePlayer(audioId, "respuesta-de-snarf"));
-          else summarySlot.remove();
+          if (audioId) {
+            const player = buildVoiceNotePlayer(audioId, "respuesta-de-snarf");
+            summarySlot.replaceWith(player);
+            // Modo de conversación continua (ADR 0151): única situación real
+            // donde se reproduce sola, sin tap — el resto del chat sigue sin
+            // autoplay (ADR 0056 punto 6, decisión deliberada, no reabierta).
+            if (autoPlay) player.querySelector(".vn-play-btn").click();
+          } else {
+            summarySlot.remove();
+          }
         });
       } else {
         const listenBtn = document.createElement("button");
@@ -7440,7 +7469,7 @@ async function stopActiveRequest() {
   } catch (e) {}
 }
 
-async function postAndHandleSend(text, inputAudioId, replyToId) {
+async function postAndHandleSend(text, inputAudioId, replyToId, autoPlay) {
   const requestId = crypto.randomUUID();
   activeRequestId = requestId;
   activeRequestStartedAt = Date.now();
@@ -7464,7 +7493,7 @@ async function postAndHandleSend(text, inputAudioId, replyToId) {
     // messageId = el mismo requestId (ver ADR de esta ronda: el backend lo
     // reusa como id persistente del turno) — así se puede responder a ESTA
     // respuesta ya en la misma sesión, sin esperar un reload.
-    addMessage(data.response, "snarf", ttsAvailable, null, data.speech, Boolean(inputAudioId), data.deliverable, data.thinking, null, Date.now() / 1000, data.cancelled, requestId);
+    addMessage(data.response, "snarf", ttsAvailable, null, data.speech, Boolean(inputAudioId), data.deliverable, data.thinking, null, Date.now() / 1000, data.cancelled, requestId, null, autoPlay);
     refreshDateSeparators();
     setState("idle", idleLabel());
     // Sin esto, una conversación nueva se queda mostrando el placeholder
@@ -7510,7 +7539,7 @@ async function postAndHandleSend(text, inputAudioId, replyToId) {
       }
     );
     setState("error", "se perdió la conexión — reconectando");
-    setRetry(() => postAndHandleSend(text, inputAudioId, replyToId));
+    setRetry(() => postAndHandleSend(text, inputAudioId, replyToId, autoPlay));
   } finally {
     activeRequestId = null;
     activeRequestStartedAt = null;
@@ -7547,7 +7576,7 @@ function clearReplyState() {
 }
 replyContextCancel.addEventListener("click", clearReplyState);
 
-async function sendText(text, inputAudioId) {
+async function sendText(text, inputAudioId, autoPlay) {
   if (!text.trim()) { setState("idle", idleLabel()); return; }
   if (pendingProjectHomeId) {
     // Se tipeó directo sobre el "home" de un proyecto, sin usar el botón
@@ -7571,7 +7600,7 @@ async function sendText(text, inputAudioId) {
   clearReplyState();
   addMessage(text, "user", false, inputAudioId, null, false, null, null, null, Date.now() / 1000, false, null, replyPreviewForThisTurn);
   refreshDateSeparators();
-  await postAndHandleSend(text, inputAudioId, replyToIdForThisTurn);
+  await postAndHandleSend(text, inputAudioId, replyToIdForThisTurn, autoPlay);
 }
 
 function showTranscriptForReview(transcript) {
@@ -7742,6 +7771,181 @@ async function finishRecording(cancelled) {
     updateSendMicToggle();
   }
 }
+
+/* ---------- modo de conversación continua, manos libres (ADR 0151) ----------
+   Independiente del flujo de grabación de arriba A PROPÓSITO: estado y
+   variables propias (cm*), nunca comparte `state`/`mediaRecorder`/`stream`/
+   `chunks` globales — updateSendMicToggle/textSendBtn/micBtn (más arriba)
+   leen `state === "listening"` con lógica real que un `state` compartido
+   rompería (ver ADR 0151). Reusa `transcribeBlob`/`pickMimeType`/`sendText`/
+   `stopActiveRequest`/`sharedAudio` tal cual — nunca una segunda
+   implementación. Sin WebSocket: ni Groq STT ni Kokoro TTS son streaming del
+   lado del proveedor, así que un transporte nuevo no bajaría latencia real
+   (ver ADR 0151) — la sensación de "continuo" la da el VAD client-side de
+   acá abajo, disparando los mismos 4 endpoints de siempre. */
+let continuousMode = false;
+let continuousPhase = "idle"; // "armed" | "capturing" | "thinking" | "speaking"
+let cmStream = null;
+let cmAudioCtx = null;
+let cmAnalyser = null;
+let cmVadBuffer = null;
+let cmRAF = null;
+let cmMediaRecorder = null;
+let cmChunks = [];
+let cmMimeType = "audio/webm";
+let cmSpeaking = false; // ¿el VAD cree que hay voz humana ahora mismo?
+let cmSilenceTimer = null;
+
+// RMS sobre -1..1 (getFloatTimeDomainData) — umbral de un primer corte, sin
+// calibrar en vivo todavía (varía con ganancia de mic/distancia real; ver
+// ADR 0151, límite conocido a ajustar con el fundador probándolo).
+const CM_VAD_THRESHOLD = 0.018;
+const CM_SILENCE_HANGOVER_MS = 550;
+
+function setContinuousPhase(phase, label) {
+  continuousPhase = phase;
+  continuousModeBtn.classList.remove("cm-armed", "cm-capturing", "cm-thinking", "cm-speaking");
+  if (phase !== "idle") continuousModeBtn.classList.add("cm-" + phase);
+  if (label) statusEl.textContent = label;
+}
+
+// Mientras el modo continuo está activo, la reproducción REAL de
+// sharedAudio (nunca cuándo `sendText` resuelve, que es antes de que la
+// síntesis/reproducción siquiera arranquen — ver addMessage/autoSpeak) es
+// la única señal honesta de "Snarf está hablando ahora mismo".
+sharedAudio.addEventListener("play", () => {
+  if (continuousMode && continuousPhase !== "capturing") setContinuousPhase("speaking", "modo continuo: Snarf está hablando...");
+});
+sharedAudio.addEventListener("pause", () => {
+  if (continuousMode && continuousPhase === "speaking") setContinuousPhase("armed", "modo continuo: escuchando...");
+});
+sharedAudio.addEventListener("ended", () => {
+  if (continuousMode && continuousPhase === "speaking") setContinuousPhase("armed", "modo continuo: escuchando...");
+});
+
+async function enterContinuousMode() {
+  try {
+    cmStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    setState("error", "sin micrófono: " + (err.message || err));
+    return;
+  }
+  continuousMode = true;
+  micBtn.disabled = true;
+  cmAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source = cmAudioCtx.createMediaStreamSource(cmStream);
+  cmAnalyser = cmAudioCtx.createAnalyser();
+  cmAnalyser.fftSize = 1024;
+  cmVadBuffer = new Float32Array(cmAnalyser.fftSize);
+  source.connect(cmAnalyser);
+  setContinuousPhase("armed", "modo continuo: escuchando...");
+  continuousVadLoop();
+}
+
+function exitContinuousMode() {
+  continuousMode = false;
+  if (cmRAF) cancelAnimationFrame(cmRAF);
+  cmRAF = null;
+  clearTimeout(cmSilenceTimer);
+  cmSilenceTimer = null;
+  if (cmMediaRecorder && cmMediaRecorder.state !== "inactive") {
+    try { cmMediaRecorder.stop(); } catch (e) {}
+  }
+  cmMediaRecorder = null;
+  if (cmStream) { cmStream.getTracks().forEach((t) => t.stop()); cmStream = null; }
+  if (cmAudioCtx) { try { cmAudioCtx.close(); } catch (e) {} }
+  cmAudioCtx = null;
+  cmAnalyser = null;
+  cmSpeaking = false;
+  if (!sharedAudio.paused) sharedAudio.pause();
+  setContinuousPhase("idle", "");
+  micBtn.disabled = false;
+  setState("idle", idleLabel());
+}
+
+function continuousVadLoop() {
+  if (!continuousMode || !cmAnalyser) return;
+  cmAnalyser.getFloatTimeDomainData(cmVadBuffer);
+  let sumSquares = 0;
+  for (let i = 0; i < cmVadBuffer.length; i++) sumSquares += cmVadBuffer[i] * cmVadBuffer[i];
+  const rms = Math.sqrt(sumSquares / cmVadBuffer.length);
+
+  if (rms >= CM_VAD_THRESHOLD) {
+    clearTimeout(cmSilenceTimer);
+    cmSilenceTimer = null;
+    if (!cmSpeaking) {
+      cmSpeaking = true;
+      // Habla nueva: si Snarf está pensando o hablando, es barge-in real —
+      // cortarlo. Si estaba armado sin nada en curso, arranca una captura.
+      if (continuousPhase === "thinking" || continuousPhase === "speaking") cmBargeIn();
+      else if (continuousPhase === "armed") cmStartCapture();
+    }
+  } else if (cmSpeaking && !cmSilenceTimer) {
+    cmSilenceTimer = setTimeout(() => {
+      cmSpeaking = false;
+      cmSilenceTimer = null;
+      if (continuousPhase === "capturing") cmStopCaptureAndSend();
+    }, CM_SILENCE_HANGOVER_MS);
+  }
+  cmRAF = requestAnimationFrame(continuousVadLoop);
+}
+
+function cmStartCapture() {
+  cmChunks = [];
+  const mimeType = pickMimeType();
+  cmMediaRecorder = mimeType ? new MediaRecorder(cmStream, { mimeType }) : new MediaRecorder(cmStream);
+  cmMimeType = cmMediaRecorder.mimeType || mimeType || "audio/webm";
+  cmMediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) cmChunks.push(e.data); };
+  cmMediaRecorder.start();
+  setContinuousPhase("capturing", "modo continuo: escuchándote...");
+}
+
+async function cmStopCaptureAndSend() {
+  const recorder = cmMediaRecorder;
+  if (!recorder || recorder.state === "inactive") return;
+  setContinuousPhase("thinking", "modo continuo: transcribiendo...");
+  const blob = await new Promise((resolve) => {
+    recorder.onstop = () => resolve(new Blob(cmChunks, { type: cmMimeType }));
+    recorder.stop();
+  });
+  cmMediaRecorder = null;
+  if (!continuousMode) return; // se desactivó mientras tanto
+  let result;
+  try {
+    result = await transcribeBlob(blob);
+  } catch (err) {
+    setContinuousPhase("armed", "modo continuo: no se pudo transcribir, escuchando...");
+    return;
+  }
+  if (!continuousMode) return;
+  if (result.error || !result.transcript.trim()) {
+    setContinuousPhase("armed", "modo continuo: escuchando...");
+    return;
+  }
+  setContinuousPhase("thinking", "modo continuo: pensando...");
+  await sendText(result.transcript, result.audioId, true);
+  if (!continuousMode) return;
+  // Vuelve a "armado" ya mismo — si la respuesta trae audio, el listener de
+  // sharedAudio.play() de arriba lo va a pisar a "speaking" apenas arranque
+  // de verdad la reproducción (nunca antes, sería mentir el estado real).
+  setContinuousPhase("armed", "modo continuo: escuchando...");
+}
+
+// Barge-in real (ADR 0151): el VAD detectó habla mientras Snarf pensaba o
+// hablaba. Cortar lo que haya en curso y arrancar a capturar el turno
+// nuevo — sin llamada nueva al backend para el caso "hablando" (pausar
+// sharedAudio es 100% client-side, el audio ya estaba generado).
+async function cmBargeIn() {
+  if (activeRequestId) { await stopActiveRequest(); }
+  if (!sharedAudio.paused) { sharedAudio.pause(); }
+  if (!continuousMode) return;
+  cmStartCapture();
+}
+
+continuousModeBtn.addEventListener("click", () => {
+  unlockAudio();
+  if (continuousMode) exitContinuousMode(); else enterContinuousMode();
+});
 
 async function beginActualRecording() {
   try {
