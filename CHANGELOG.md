@@ -2,6 +2,24 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-11] Cerebro "giroscopio": cardán real (orientación anidada) + rotor con giro propio (ADR 0150)
+
+- Los 3 anillos principales dejan de ser hermanos independientes: `BRAIN_RING_PARENT_CHAIN` (nuevo) los
+  anida de verdad — Capacidades (raíz, ancla al espacio-mundo) → Especialistas (montado sobre la
+  orientación viva de Capacidades) → Input (montado sobre la de Especialistas), junta ejecutiva montada
+  sobre Especialistas un nivel más adentro. `brainApplyTierOrientation` (nuevo) compone recursivamente la
+  orientación de toda la cadena — un anillo que gira/inclina arrastra de verdad a los que tiene montados
+  adentro, el efecto real de un cardán en vez de 3 elipses que solo comparten el centro.
+- El orquestador gana giro propio real (`BRAIN_RING_SPIN_BASE.orchestrator`, antes `0`) con marcador
+  visual dedicado (`.brain-rotor-ring`) — constante, deliberadamente afuera de la reactividad de
+  velocidad/dirección de ADR 0149: un rotor de cardán estabiliza porque gira siempre igual, sin que lo de
+  afuera lo perturbe.
+- Sin cambios de backend — 1288/1288 tests de la suite completa. Verificado con Playwright: acoplamiento
+  real confirmado numéricamente (mover el giro de `capability` mueve la posición viva de
+  `specialist_gmail`; mover el de `specialist` mueve `input_text`; mover el de `input` NO mueve `memory`,
+  la raíz de la cadena — propagación padre→hijo, nunca al revés). Cero posiciones no-finitas, cero
+  errores de consola, 41 nodos.
+
 ## [2026-08-11] Fase 9.1: vista real de control de infraestructura en la UI (ADR 0146)
 
 - `GET /ops/processes` / `POST /ops/processes/{label}/restart` (nuevos, `app.py`): reusan

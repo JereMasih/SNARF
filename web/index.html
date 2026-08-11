@@ -1118,6 +1118,9 @@
     transform-origin: center; transform-box: fill-box;
   }
   .brain-node-center { fill-opacity: 0.25; stroke-width: 2.2; filter: drop-shadow(0 0 14px var(--brain-violet)); }
+  /* Rotor: el giro propio del orquestador (constante, ver BRAIN_RING_SPIN_BASE.orchestrator) —
+     un anillo punteado sin relleno, rotado en vivo por applyBrain3DProjection. */
+  .brain-rotor-ring { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-dasharray: 3 7; opacity: 0.55; pointer-events: none; }
   .brain-node-specialist { stroke-dasharray: 2 2; }
   /* Nunca tuvo actividad real registrada — ni activo ni en espera, un nodo
      "fantasma": potencial todavía sin usar, no un estado inventado. */
@@ -4853,6 +4856,12 @@ let brainGraphBuilt = false;
 let brainNodeEls = {};
 let brainIconEls = {};
 let brainNodeGroupEls = {};
+// Marcador visual real del giro propio del rotor (orquestador) — un anillo
+// punteado que gira sobre su propio eje, distinto de la órbita de los
+// anillos exteriores (ver BRAIN_RING_SPIN_BASE.orchestrator). Nunca
+// participa del layout por radio/ángulo como los demás nodos, se rota
+// aparte en applyBrain3DProjection.
+let brainRotorRingEl = null;
 let brainNodeBaseRadius = {}; // radio original de cada nodo (antes de que un frame lo escale por profundidad)
 // x/y/z originales de cada nodo, cacheados una sola vez al construir el
 // esqueleto — evita leer cx/cy del DOM (getAttribute + parseFloat) en cada
@@ -4917,6 +4926,17 @@ function buildBrainGraphSkeleton() {
   brainNodeEls.orchestrator = centerCircle;
   brainNodeBaseRadius.orchestrator = 30;
   brainNodeBasePos.orchestrator = { x: cx, y: cy };
+
+  // Rotor: gira siempre a velocidad/dirección constante (ver
+  // BRAIN_RING_SPIN_BASE.orchestrator) — la estabilidad es justamente lo
+  // que lo distingue de los anillos reactivos que orbitan alrededor suyo.
+  const rotorRing = document.createElementNS(SVG_NS, "circle");
+  rotorRing.setAttribute("cx", cx);
+  rotorRing.setAttribute("cy", cy);
+  rotorRing.setAttribute("r", 20);
+  rotorRing.setAttribute("class", "brain-rotor-ring brain-color-white");
+  centerGroup.appendChild(rotorRing);
+  brainRotorRingEl = rotorRing;
 
   const centerIcon = createBrainNodeIconEl("orchestrator", cx, cy + 48, 22);
   centerIcon.classList.add("brain-color-white");
@@ -5731,21 +5751,67 @@ const BRAIN_RING_TILT = {
   // diagonal opuesta — entre las tres, los planos quedan bien separados,
   // como los aros reales de un giroscopio/esfera armilar, nunca paralelos.
   capability: { tiltX: -0.55, tiltZ: -0.5 },
-  // Sub-anillo de la junta directiva: su propia inclinación, MÁS la
-  // posición viva de su padre (specialist_executive_board) — un giroscopio
-  // chico orbitando dentro del giroscopio grande.
+  // Sub-anillo de la junta directiva: su propia inclinación LOCAL — se monta
+  // sobre la orientación viva de "specialist" (ver BRAIN_RING_PARENT_CHAIN),
+  // un giroscopio chico anidado de verdad dentro del grande.
   executive_board: { tiltX: 0.7, tiltZ: -0.6 },
 };
-const BRAIN_RING_SPIN_BASE = { orchestrator: 0, input: 0.09, specialist: -0.13, capability: 0.06, executive_board: 0.22 };
+// Cardán real (fase de anidado de orientación, pedido explícito del
+// fundador: "que cada anillo tenga su propio eje... montado sobre el
+// anterior, como los pivots reales de un giroscopio de cardán"). Cadena de
+// afuera hacia adentro, mismo orden que los radios reales del layout
+// (buildBrainGraphSkeleton: input=65, specialist=125, capability=195):
+// Capacidades es el anillo más externo (el que más lejos toca el mundo
+// real) y queda anclado al espacio-mundo fijo (sin padre); Especialistas
+// se monta sobre la orientación viva de Capacidades; Input se monta sobre
+// la de Especialistas; la junta ejecutiva se monta sobre Especialistas
+// también (un nivel más adentro todavía, ver brainNodeRingInfo.parentId
+// para su traslación). Ver brainApplyTierOrientation — un anillo que
+// gira/inclina arrastra de verdad a todo lo que tiene montado adentro, en
+// vez de 3 anillos independientes que solo comparten el centro.
+const BRAIN_RING_PARENT_CHAIN = { capability: null, specialist: "capability", input: "specialist", executive_board: "specialist" };
+// El orquestador es el ROTOR: a diferencia de los anillos (que reaccionan
+// a actividad real, ver renderBrainFrame), gira siempre a velocidad y
+// dirección constantes — esa estabilidad es justamente lo que lo hace leer
+// como el eje fijo del giroscopio, nunca arrastrado por lo que pase afuera.
+const BRAIN_RING_SPIN_BASE = { orchestrator: 0.9, input: 0.09, specialist: -0.13, capability: 0.06, executive_board: 0.22 };
 let brainRingSpinAngle = { orchestrator: 0, input: 0, specialist: 0, capability: 0, executive_board: 0 };
 // Dirección real de la órbita de cada anillo (±1, arranca con el signo de
 // BRAIN_RING_SPIN_BASE) — pedido explícito del fundador: no solo la
 // velocidad debe reaccionar a actividad real, la DIRECCIÓN también, cuando
 // llega una ráfaga nueva de datos (ver brainMaybeFlipRingDirection, que
 // flipea en el flanco real ocioso→activo, nunca en cada evento individual
-// ni al azar decorativo).
+// ni al azar decorativo). El orquestador (rotor) queda afuera de esta
+// reactividad a propósito — ver el branch dedicado en renderBrainFrame.
 let brainRingDirection = { orchestrator: 1, input: 1, specialist: 1, capability: 1, executive_board: 1 };
 let brainTierWasActive = { orchestrator: false, input: false, specialist: false, capability: false, executive_board: false };
+// Rota un vector 3D alrededor del eje X/Z — únicas dos rotaciones que usa
+// todo el motor del cerebro (ver brainApplyTierOrientation/BRAIN_RING_TILT),
+// factorizadas acá para no repetir la trigonometría inline.
+function brainRotateVecX(v, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return { x: v.x, y: v.y * c - v.z * s, z: v.y * s + v.z * c };
+}
+function brainRotateVecZ(v, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return { x: v.x * c - v.y * s, y: v.x * s + v.y * c, z: v.z };
+}
+// Aplica la orientación VIVA real de un anillo (su giro propio +
+// inclinación fija) a un vector ya expresado en el sistema de referencia de
+// ESE anillo — y si el anillo está montado sobre otro
+// (BRAIN_RING_PARENT_CHAIN), sigue subiendo la cadena real, aplicando
+// también la orientación del padre (que a su vez puede tener el suyo).
+// Esto es lo que hace que un anillo arrastre de verdad a los que tiene
+// montados adentro — el efecto real de un cardán, no 3 anillos
+// independientes que solo comparten el punto central.
+function brainApplyTierOrientation(vec, tier) {
+  const tilt = BRAIN_RING_TILT[tier] || { tiltX: 0, tiltZ: 0 };
+  let v = brainRotateVecZ(vec, brainRingSpinAngle[tier] || 0);
+  v = brainRotateVecX(v, tilt.tiltX);
+  v = brainRotateVecZ(v, tilt.tiltZ);
+  const parentTier = BRAIN_RING_PARENT_CHAIN[tier];
+  return parentTier ? brainApplyTierOrientation(v, parentTier) : v;
+}
 // Actividad real reciente (mismo criterio que BRAIN_ACTIVE_WINDOW_S, ya
 // reflejado en activeBrainNodeIds por applyBrainSnapshot) acelera
 // momentáneamente el anillo correspondiente — nunca decorativo al azar,
@@ -5773,20 +5839,15 @@ function brainRingWorldPos(id) {
   const info = brainNodeRingInfo[id];
   if (!info) return { x: 250, y: 250, z: 0 };
   const spinKey = info.parentId ? "executive_board" : info.tier;
-  const theta = info.angle0 + (brainRingSpinAngle[spinKey] || 0);
-  const rx = info.radius * Math.cos(theta);
-  const ry = info.radius * Math.sin(theta);
-  const tilt = BRAIN_RING_TILT[spinKey] || { tiltX: 0, tiltZ: 0 };
-  // Rota el punto plano del anillo (rx, ry, 0) por la inclinación FIJA de
-  // este anillo — primero alrededor de X, después alrededor de Z — así
-  // cada tier queda en su propio plano real, nunca los tres apilados sobre
-  // el mismo plano XY.
-  const y1 = ry * Math.cos(tilt.tiltX);
-  const z1 = ry * Math.sin(tilt.tiltX);
-  const x2 = rx * Math.cos(tilt.tiltZ) - y1 * Math.sin(tilt.tiltZ);
-  const y2 = rx * Math.sin(tilt.tiltZ) + y1 * Math.cos(tilt.tiltZ);
+  // Punto plano LOCAL del nodo dentro de su propio anillo (radio real +
+  // ángulo fijo de layout) — el giro propio de este tier, MÁS el de toda la
+  // cadena de anillos en la que está montado (BRAIN_RING_PARENT_CHAIN), se
+  // aplica en brainApplyTierOrientation: eso es lo que hace que el anillo
+  // padre arrastre de verdad al hijo, como un cardán real.
+  const local = { x: info.radius * Math.cos(info.angle0), y: info.radius * Math.sin(info.angle0), z: 0 };
+  const rotated = brainApplyTierOrientation(local, spinKey);
   const origin = info.parentId ? brainRingWorldPos(info.parentId) : { x: 250, y: 250, z: 0 };
-  return { x: origin.x + x2, y: origin.y + y2, z: origin.z + z1 };
+  return { x: origin.x + rotated.x, y: origin.y + rotated.y, z: origin.z + rotated.z };
 }
 const brainCamera3D = {
   rotY: 0, // la vuelta principal — avanza sola, sin parar, ver updateBrainRotation
@@ -5855,7 +5916,13 @@ function applyBrain3DProjection() {
     group.setAttribute("transform", `translate(${(proj.x - pos.x).toFixed(2)} ${(proj.y - pos.y).toFixed(2)})`);
     node.setAttribute("r", (baseR * proj.scale).toFixed(2));
     group.style.opacity = Math.max(0.4, Math.min(1, proj.scale)).toFixed(2);
-    if (id === "orchestrator") return;
+    if (id === "orchestrator") {
+      if (brainRotorRingEl) {
+        const deg = ((brainRingSpinAngle.orchestrator * 180) / Math.PI) % 360;
+        brainRotorRingEl.setAttribute("transform", `rotate(${deg.toFixed(1)} ${pos.x} ${pos.y})`);
+      }
+      return;
+    }
     const info = brainNodeRingInfo[id];
     const origin = info && info.parentId ? boardProj : centerProj;
     const d = `M ${origin.x.toFixed(1)} ${origin.y.toFixed(1)} L ${proj.x.toFixed(1)} ${proj.y.toFixed(1)}`;
@@ -5890,8 +5957,13 @@ function renderBrainFrame(ts) {
   // más rápido mientras tenga actividad real reciente, Y la DIRECCIÓN
   // cambia real (no solo la velocidad) en el flanco ocioso→activo de cada
   // ráfaga nueva de datos — nunca en cada evento individual (sería un
-  // tembleque, no una reacción real legible) ni al azar decorativo.
+  // tembleque, no una reacción real legible) ni al azar decorativo. El
+  // rotor (orquestador) queda AFUERA de esta reactividad a propósito: gira
+  // siempre igual, esa constancia es lo que lo hace leer como el eje fijo
+  // del cardán en vez de un anillo más.
+  brainRingSpinAngle.orchestrator += dt * BRAIN_RING_SPIN_BASE.orchestrator;
   Object.keys(BRAIN_RING_SPIN_BASE).forEach((tier) => {
+    if (tier === "orchestrator") return;
     const busyNow = brainTierHasRecentActivity(tier);
     if (busyNow && !brainTierWasActive[tier]) brainRingDirection[tier] *= -1;
     brainTierWasActive[tier] = busyNow;

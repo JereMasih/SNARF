@@ -10,12 +10,13 @@
 ## Estado actual (retomar una sesión nueva desde acá)
 
 **Última actualización:** 2026-08-11. **Hechas: Fases 0-7 + Fase 8/1 (HITL) + Fase 9.1 (parcial) + Fase
-9.2 (primer corte) + Fase 9.3 (completa)** — Fase 9.2 (`adr/0147-*`) hecha, testeada y verificada con
-Playwright, **todavía sin commitear** — ver "Trabajo pendiente de commit" abajo. Todo lo anterior
-commiteado y pusheado a `origin/master` (`8fbb659`). Suite completa en verde: 1288/1288 tests
-(`.venv/bin/python -m pytest -q`). **Fase 8 parte 2/2 (decisión de stack de observability/Langfuse) NO se
-ejecutó** — condicionada al rollout de usuarios de prueba, que todavía no pasó (ver Fase 3). **Las otras
-dos deudas de 9.1 ("ver logs desde la UI", asistente de migración a VPS) tampoco** — features aparte.
+9.2 (4 rondas de iteración real, ver abajo) + Fase 9.3 (completa)**. Fase 9.2 hasta `adr/0149-*` ya
+commiteada y pusheada (`0a29c5d`). La ronda más reciente, `adr/0150-*` (cardán real: orientación anidada
+entre anillos + rotor con giro propio), hecha, verificada con Playwright, **todavía sin commitear** — ver
+"Trabajo pendiente de commit" abajo. Suite completa backend en verde (sin cambios de backend en esta
+ronda). **Fase 8 parte 2/2 (decisión de stack de observability/Langfuse) NO se ejecutó** — condicionada al
+rollout de usuarios de prueba, que todavía no pasó (ver Fase 3). **Las otras dos deudas de 9.1 ("ver logs
+desde la UI", asistente de migración a VPS) tampoco** — features aparte.
 
 **Fase 9.2 — el fundador mandó las referencias reales del HUD de Iron Man (Jarvis/Ultron) y confirmó dos
 decisiones antes de construir**: (1) los "skills" son un 4to anillo agrupado por familia, nunca un nodo
@@ -47,8 +48,10 @@ el detalle completo de diseño/riesgos/tests):**
   (solo founder, con confirmación de dos pasos, `com.snarf.server` excluido de auto-reinicio)
   (`adr/0138-*`).
 
-**Trabajo pendiente de commit:** ninguno — Fase 9.2 commiteada y pusheada a pedido explícito del
-fundador (2026-08-11, `b809499`).
+**Trabajo pendiente de commit:** `adr/0150-*` (cardán real: `BRAIN_RING_PARENT_CHAIN` anida la
+orientación de los 3 anillos + rotor del orquestador con giro propio constante) — hecho y verificado con
+Playwright, esperando confirmación explícita del fundador antes de commitear/pushear/reiniciar el server
+real, mismo criterio que las rondas anteriores de esta misma fase.
 
 **Estado real de infraestructura en esta Mac** (verificar que sigue así al retomar, puede haber
 cambiado):
