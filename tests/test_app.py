@@ -1644,3 +1644,41 @@ def test_n8n_status_returns_real_system_health_and_process_status(monkeypatch):
     body = res.json()
     assert "llm_available" in body["system_health"]
     assert body["processes"] == [{"label": "com.snarf.mlx-fast", "running": True}]
+
+
+# --- Fase 5: introspección real (ADR 0140) ---------------------------------
+
+
+def test_n8n_introspect_requires_the_control_token(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        res = anonymous_client.get("/n8n/introspect")
+    assert res.status_code == 401
+
+
+def test_n8n_introspect_is_unavailable_without_a_configured_token():
+    from fastapi.testclient import TestClient
+
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        res = anonymous_client.get("/n8n/introspect", headers={"X-Snarf-Token": "lo-que-sea"})
+    assert res.status_code == 503
+
+
+def test_n8n_introspect_returns_real_agents_tools_board_and_session_count(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from snarf.runtime import llm_routing
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.setattr(app_module, "_orchestrators", {"a": object(), "b": object()})
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        res = anonymous_client.get("/n8n/introspect", headers={"X-Snarf-Token": "el-token-real"})
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["agents"]) == len(llm_routing.ROLES)
+    assert len(body["executive_board"]) == 7
+    assert isinstance(body["tools"], list) and len(body["tools"]) > 0
+    assert body["active_user_sessions"] == 2

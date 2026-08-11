@@ -2,6 +2,24 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-10] Fase 5: API de introspección real (agentes, tools, board ejecutivo) (ADR 0140)
+
+- `GET /n8n/introspect` (nuevo, `app.py`): la API de introspección "más completa" que ADR 0139 había
+  dejado pendiente explícitamente al construir `GET /n8n/status`. Mismo token/auth (`N8N_CONTROL_TOKEN`),
+  solo lectura, ningún tool invocable desde acá — sigue el principio "n8n observa y propone" de ADR 0139.
+- `snarf/runtime/introspection.py` (nuevo): agrega, sin reimplementar nada, ruteo real de modelo por
+  rol (`llm_routing.load_routing()`), tools reales filtrados por el mismo allowlist que ya usa el
+  servidor MCP (`MCP_EXPOSED_TOOLS - HIGH_IMPACT_TOOLS - BULK_READ_GATED_TOOLS`), y los 7 roles reales
+  del board de Inteligencia Ejecutiva — más el conteo real de sesiones de `Orchestrator` activas por
+  usuario (Fase 3, ADR 0137).
+- **Nota de honestidad**: el texto exacto del alcance de la Fase 5 no quedó guardado como documento en
+  el repo (se aprobó en una sesión anterior); esta ronda reconstruyó el alcance desde la evidencia real
+  más fuerte disponible (la cita textual de ADR 0139) en vez de inventar contenido no verificable — ver
+  ADR 0140 para el detalle. Deliberadamente no incluye prompts completos de ningún rol ni edición de
+  nada — eso sigue siendo Fase 6 (Prompt Registry), todavía sin construir.
+- 10 tests nuevos (`tests/test_introspection.py` + extensión de `tests/test_app.py`). 1221/1221 tests
+  de la suite completa.
+
 ## [2026-08-10] Fase 4: n8n self-hosted + primera integración real, observa y propone (ADR 0139)
 
 - `docker-compose.n8n.yml` (nuevo): n8n Community Edition real, self-hosted vía Colima/Docker, solo

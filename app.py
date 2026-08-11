@@ -45,6 +45,7 @@ from snarf.runtime import llm_routing
 from snarf.runtime import data_backup
 from snarf.runtime import ops_health
 from snarf.runtime import process_control
+from snarf.runtime import introspection
 from snarf.knowledge.extraction import categorize_mime
 from snarf.specialists import dashboard_curator as dashboard_curator_module
 from snarf.specialists.dashboard_curator import DashboardCuratorSpecialist
@@ -499,6 +500,18 @@ def n8n_status(_: None = Depends(require_n8n_token)):
         ),
         "processes": process_control.status(),
     }
+
+
+@app.get("/n8n/introspect")
+def n8n_introspect(_: None = Depends(require_n8n_token)):
+    """API de introspección real (Fase 5 del plan de observabilidad/n8n,
+    ADR 0140) — la que ADR 0139 dejó pendiente explícitamente al construir
+    GET /n8n/status. Mismo token/auth que /n8n/status, mismo principio
+    ("n8n observa y propone — la lógica real vive del lado de Snarf"): solo
+    lectura, ningún tool invocable desde acá."""
+    with _orchestrators_lock:
+        active_user_sessions = len(_orchestrators)
+    return introspection.system_snapshot(active_user_sessions=active_user_sessions)
 
 
 @app.post("/transcribe")
