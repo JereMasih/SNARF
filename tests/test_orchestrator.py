@@ -867,6 +867,41 @@ def test_high_impact_tool_requires_explicit_confirmation(
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize("tool_name, capability_attr, method_name, base_input", HIGH_IMPACT_TOOLS)
+def test_high_impact_tool_emits_a_real_approval_requested_then_approval_granted_event(
+    orchestrator, monkeypatch, tool_name, capability_attr, method_name, base_input
+):
+    """Fase 8 (HITL genérico, ADR 0143): el mismo protocolo de confirmed en
+    dos pasos ahora también emite eventos reales sobre el event bus, para
+    que n8n/el cockpit puedan observarlo — sin que eso cambie en nada la
+    ejecución real (sigue siendo el fundador, en el chat, quien confirma)."""
+    from snarf.telemetry import events
+
+    capability = getattr(orchestrator, capability_attr)
+    monkeypatch.setattr(capability, method_name, lambda *a, **kw: {"id": "x"})
+
+    orchestrator._handle_tool(tool_name, dict(base_input))
+    requested = [r for r in events.all_events(include_lifecycle=True) if r["event_type"] == events.APPROVAL_REQUESTED]
+    assert len(requested) == 1
+    assert requested[0]["skill"] == tool_name
+
+    orchestrator._handle_tool(tool_name, {**base_input, "confirmed": True})
+    granted = [r for r in events.all_events(include_lifecycle=True) if r["event_type"] == events.APPROVAL_GRANTED]
+    assert len(granted) == 1
+    assert granted[0]["skill"] == tool_name
+
+
+def test_a_tool_without_the_confirmed_protocol_never_emits_approval_events(orchestrator):
+    from snarf.telemetry import events
+
+    orchestrator._handle_tool("list_conversations", {})
+    approval_rows = [
+        r for r in events.all_events(include_lifecycle=True)
+        if r["event_type"] in (events.APPROVAL_REQUESTED, events.APPROVAL_GRANTED)
+    ]
+    assert approval_rows == []
+
+
 # (nombre de la tool, atributo de capacidad, método real, parámetro de cantidad, base_input sin ese parámetro)
 BULK_READ_TOOLS = [
     ("gmail_list_messages", "_gmail", "list_messages", "max_results", {}),
@@ -920,6 +955,26 @@ def test_bulk_read_tool_confirmed_executes_with_the_exact_amount_requested(
     orchestrator._handle_tool(tool_name, {**base_input, param: 1000, "confirmed": True})
     assert len(calls) == 1
     assert calls[0][param] == 1000
+
+
+@pytest.mark.parametrize("tool_name, capability_attr, method_name, param, base_input", BULK_READ_TOOLS)
+def test_bulk_read_tool_above_threshold_also_emits_approval_events(
+    orchestrator, monkeypatch, tool_name, capability_attr, method_name, param, base_input
+):
+    """Fase 8 (ADR 0143): el gate de costo de BULK_READ_GATED_TOOLS usa el
+    mismo protocolo de confirmed que HIGH_IMPACT_TOOLS — mismos eventos
+    reales, mismo chokepoint único."""
+    from snarf.telemetry import events
+
+    capability = getattr(orchestrator, capability_attr)
+    monkeypatch.setattr(capability, method_name, lambda *a, **kw: [])
+
+    orchestrator._handle_tool(tool_name, {**base_input, param: 1000})
+    orchestrator._handle_tool(tool_name, {**base_input, param: 1000, "confirmed": True})
+
+    rows = events.all_events(include_lifecycle=True)
+    assert any(r["event_type"] == events.APPROVAL_REQUESTED and r["skill"] == tool_name for r in rows)
+    assert any(r["event_type"] == events.APPROVAL_GRANTED and r["skill"] == tool_name for r in rows)
 
 
 def test_capped_for_replay_leaves_short_text_unchanged(orchestrator):

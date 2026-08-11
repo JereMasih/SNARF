@@ -55,6 +55,18 @@ LLM_FAILED = "llm.failed"
 VENDOR_FINISHED = "vendor.finished"
 INPUT_RECEIVED = "input.received"
 
+# HITL genérico (Fase 8 del plan de observabilidad/n8n, ADR 0143) —
+# generaliza el protocolo ad-hoc de confirmed=true/false en dos pasos
+# (HIGH_IMPACT_TOOLS/BULK_READ_GATED_TOOLS, ver orchestrator.py) en un
+# evento real sobre el mismo event bus, consumible desde n8n sin que n8n
+# pase a decidir nada — sigue siendo el fundador, en el chat, quien
+# confirma. No existe un event_type ".rejected": Snarf no tiene ninguna
+# señal real de "el fundador dijo que no" (es silencio conversacional, no
+# una acción) — inventar ese evento sería fabricar una capacidad que no
+# existe (Principio VI, FOUNDATION.md).
+APPROVAL_REQUESTED = "approval.requested"
+APPROVAL_GRANTED = "approval.granted"
+
 # Allowlist positivo — mismo criterio que snarf/mcp/tools.py::MCP_EXPOSED_TOOLS:
 # todo event_type NUEVO queda invisible para los consumidores legacy
 # (dashboards/cost_history/relevance/widget_summary) hasta que se agregue

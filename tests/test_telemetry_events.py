@@ -1,4 +1,4 @@
-from snarf.telemetry import context, events
+from snarf.telemetry import context, events, spans
 
 
 def test_record_vendor_event_tags_the_real_llm_role_when_set(tmp_path):
@@ -121,3 +121,43 @@ def test_record_tool_event_span_none_still_gets_correlated_to_ambient_parent(tmp
     entry = events.recent(path=path)[0]
     assert entry["parent_event_id"] == "parent-event-id"
     assert entry["trace_id"] == "trace-1"
+
+
+# --- Fase 8: HITL genérico (ADR 0143) --------------------------------------
+
+
+def test_approval_requested_event_carries_the_real_preview(tmp_path):
+    path = tmp_path / "events.jsonl"
+    span = spans.start_tool("gmail_send_message", path=path)
+    events.record_lifecycle_event(
+        events.APPROVAL_REQUESTED, span, detalle="Pide confirmación: gmail_send_message",
+        preview={"to": "a@b.com"}, path=path,
+    )
+    rows = events.all_events(path=path, include_lifecycle=True)
+    approval_row = rows[-1]
+    assert approval_row["event_type"] == events.APPROVAL_REQUESTED
+    assert approval_row["preview"] == {"to": "a@b.com"}
+    # Mismo event_id que el tool.started de este span (correlación real,
+    # igual criterio que tool.finished) — comparten identidad, no la traza.
+    assert approval_row["event_id"] == span.event_id
+    assert approval_row["parent_event_id"] == span.parent_event_id
+
+
+def test_approval_granted_event_shares_the_trace_of_its_tool_span(tmp_path):
+    path = tmp_path / "events.jsonl"
+    span = spans.start_tool("drive_delete_file", path=path)
+    events.record_lifecycle_event(events.APPROVAL_GRANTED, span, detalle="Confirmado: drive_delete_file", path=path)
+    rows = events.all_events(path=path, include_lifecycle=True)
+    approval_row = rows[-1]
+    assert approval_row["event_type"] == events.APPROVAL_GRANTED
+    assert approval_row["trace_id"] == span.trace_id
+
+
+def test_approval_events_are_invisible_to_legacy_consumers_by_default(tmp_path):
+    path = tmp_path / "events.jsonl"
+    span = spans.start_tool("gmail_send_message", path=path)
+    events.record_lifecycle_event(events.APPROVAL_REQUESTED, span, path=path)
+    # recent()/all_events() sin include_lifecycle=True es lo que ya usan
+    # dashboards/cost_history existentes — no debe verse el evento nuevo.
+    legacy_rows = [r for r in events.recent(path=path) if r["event_type"] == events.APPROVAL_REQUESTED]
+    assert legacy_rows == []

@@ -69,7 +69,7 @@ from snarf.specialists.finance.monthly_pnl import MonthlyPnLSpecialist
 from snarf.specialists.research.mode import COMPETITOR_WATCH_CONFIG, DEEP_RESEARCH_CONFIG, TREND_SCAN_CONFIG
 from snarf.specialists.research.specialist import ResearchSpecialist
 from snarf.specialists.skill_factory import SkillFactorySpecialist
-from snarf.telemetry import activity_log, context, detail, input_preprocessing, spans, usage_tracker
+from snarf.telemetry import activity_log, context, detail, events, input_preprocessing, spans, usage_tracker
 
 # Identidad del fundador — sigue siendo la ÚNICA con datos en las rutas
 # globales de siempre (data/episodic_memory.jsonl y compañía, ver
@@ -2425,6 +2425,20 @@ class Orchestrator:
                 preview=detail.extract_preview(name, tool_input, result),
                 span=span,
             )
+            # HITL genérico (Fase 8, ADR 0143): mismo chokepoint que ya abre
+            # tool.started/tool.finished — nunca una segunda implementación
+            # del protocolo de confirmed en dos pasos, solo su observabilidad
+            # real sobre el event bus.
+            if isinstance(result, dict) and result.get("status") == "pending_confirmation":
+                events.record_lifecycle_event(
+                    events.APPROVAL_REQUESTED, span,
+                    detalle=detail.truncate_detalle(f"Pide confirmación: {name}"),
+                    preview=result.get("preview"),
+                )
+            elif tool_input.get("confirmed") is True and (name in HIGH_IMPACT_TOOLS or name in BULK_READ_GATED_TOOLS):
+                events.record_lifecycle_event(
+                    events.APPROVAL_GRANTED, span, detalle=detail.truncate_detalle(f"Confirmado: {name}")
+                )
             return result
         except Exception as exc:
             activity_log.record(name, "error", duration_ms=(time.monotonic() - started) * 1000, error=str(exc), span=span)

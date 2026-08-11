@@ -2,6 +2,23 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-11] Fase 8 (parte 1/2): HITL genérico sobre el event bus (ADR 0143)
+
+- `snarf/telemetry/events.py`: dos `event_type` nuevos — `approval.requested`/`approval.granted` —
+  emitidos desde el único chokepoint real (`Orchestrator._handle_tool`), reusando el span del tool y
+  `record_lifecycle_event()` ya existente. Ningún cambio al protocolo de confirmación en dos pasos en sí
+  (safety-critical, ver ADR 0084) — puramente observacional.
+- Sin `approval.rejected`: no hay ninguna señal real de "el fundador dijo que no" en el código (es
+  silencio conversacional) — inventarlo sería fabricar una capacidad que no existe. Documentado como gap
+  honesto.
+- n8n puede observar estos eventos (mismos sinks de Fases 1/2/4) pero no gana ningún poder de
+  aprobar/rechazar — sigue siendo exclusivamente el fundador, en el chat, quien confirma.
+- **Fuera de alcance a propósito**: la segunda mitad de la Fase 8 (decisión de stack de observability,
+  Langfuse) está condicionada por el propio plan a que arranque el rollout de usuarios de prueba — todavía
+  no pasó (ver Fase 3). Queda registrada, sin ejecutar.
+- 18 tests nuevos (`tests/test_telemetry_events.py` + wiring en `tests/test_orchestrator.py` sobre los 8
+  `HIGH_IMPACT_TOOLS` + 6 `BULK_READ_TOOLS`). 1259/1259 tests de la suite completa.
+
 ## [2026-08-11] Fase 7: Configuración dinámica de generación (ADR 0142)
 
 - `snarf/runtime/generation_config.py` (nuevo): igual patrón que Prompt Registry (Fase 6) —

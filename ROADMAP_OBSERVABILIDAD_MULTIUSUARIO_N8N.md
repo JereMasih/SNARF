@@ -9,11 +9,13 @@
 
 ## Estado actual (retomar una sesión nueva desde acá)
 
-**Última actualización:** 2026-08-11. **Hechas: Fases 0-7** (más un adelanto real de la Fase 9.1) —
-Fase 7 (Configuración dinámica, `adr/0142-*`) hecha y testeada, **todavía sin commitear** — ver "Trabajo
-pendiente de commit" abajo. Fases 0-6 commiteadas, sin pushear a `origin/master` en este momento —
-confirmar `git push` con el fundador antes de asumirlo hecho. Suite completa en verde: 1241/1241 tests
-(`.venv/bin/python -m pytest -q`).
+**Última actualización:** 2026-08-11. **Hechas: Fases 0-7 + Fase 8 parte 1/2 (HITL)** (más un adelanto
+real de la Fase 9.1) — Fase 8/1 (`adr/0143-*`) hecha y testeada, **todavía sin commitear** — ver "Trabajo
+pendiente de commit" abajo. Fases 0-7 commiteadas, sin pushear a `origin/master` en este momento —
+confirmar `git push` con el fundador antes de asumirlo hecho. Suite completa en verde: 1259/1259 tests
+(`.venv/bin/python -m pytest -q`). **Fase 8 parte 2/2 (decisión de stack de observability/Langfuse) NO
+se ejecutó** — el propio plan la condiciona a que arranque el rollout de usuarios de prueba, que todavía
+no pasó (ver Fase 3).
 
 **Hecho y commiteado, con ADR real por cada fase (leer el ADR antes de tocar código relacionado, tiene
 el detalle completo de diseño/riesgos/tests):**
@@ -33,12 +35,11 @@ el detalle completo de diseño/riesgos/tests):**
   (solo founder, con confirmación de dos pasos, `com.snarf.server` excluido de auto-reinicio)
   (`adr/0138-*`).
 
-**Trabajo pendiente de commit:** Fase 7 (Configuración dinámica, `adr/0142-*`) — hecha, testeada
-(1241/1241), sin commitear todavía. Archivos: `snarf/runtime/generation_config.py` (nuevo),
-`tests/test_generation_config.py` (nuevo), `adr/0142-*.md` (nuevo), más cambios en
-`snarf/runtime/llm_routing.py`, los 3 capabilities de LLM (`anthropic_llm.py`/
-`openai_compatible_llm.py`/`gemini_llm.py`), `tests/test_llm_routing.py`, `CHANGELOG.md`, este
-documento. **No commitear sin pedido explícito del fundador.**
+**Trabajo pendiente de commit:** Fase 8 parte 1/2 (HITL genérico, `adr/0143-*`) — hecha, testeada
+(1259/1259), sin commitear todavía. Archivos: cambios en `snarf/telemetry/events.py`,
+`snarf/core/orchestrator.py`, `tests/test_telemetry_events.py`, `tests/test_orchestrator.py`,
+`CHANGELOG.md`, este documento — sin archivos nuevos esta vez. **No commitear sin pedido explícito del
+fundador.**
 
 **Estado real de infraestructura en esta Mac** (verificar que sigue así al retomar, puede haber
 cambiado):
@@ -59,10 +60,11 @@ orquestación, la inferencia local sigue viajando a esta Mac por Tailscale) — 
 porque MLX es específico de Apple Silicon y una migración completa perdería el costo ~$0 de inferencia
 local. Pendiente de que el fundador decida si/cuándo.
 
-**Qué preguntar/confirmar apenas se retome:** (1) ¿se commitea el trabajo de Fase 7 tal cual está? (2)
-¿seguimos con la Fase 8 (HITL + stack de observability), o el fundador quiere reordenar/saltar a otra
-fase? La instrucción vigente de sesiones anteriores fue "continuá con las fases siguientes, no hace
-falta que preguntes" — sigue aplicando salvo que el fundador diga lo contrario, pero **no** cubre
+**Qué preguntar/confirmar apenas se retome:** (1) ¿se commitea el trabajo de Fase 8/1 tal cual está? (2)
+¿seguimos con la Fase 9 (cockpit del fundador — 9.1 ya adelantada, quedan 9.2/9.3), o el fundador quiere
+reordenar/saltar a otra fase (recordar: Fase 8/2 sigue bloqueada hasta que haya rollout de usuarios de
+prueba real)? La instrucción vigente de sesiones anteriores fue "continuá con las fases siguientes, no
+hace falta que preguntes" — sigue aplicando salvo que el fundador diga lo contrario, pero **no** cubre
 commits (esos siempre se piden explícitamente) ni gasto real/infraestructura paga.
 
 ---
@@ -219,7 +221,7 @@ valiosa a Langfuse en la Fase 8, pero no los construye.
 
 ---
 
-## Fase 7 — Configuración dinámica ✅ HECHO PERO SIN COMMITEAR (`adr/0142-*`)
+## Fase 7 — Configuración dinámica ✅ HECHO (`adr/0142-*`)
 
 Extendió el patrón de `llm_routing.py` a `max_output_tokens`, `temperature` (hoy ni se pasaba),
 `timeout_seconds`/`max_continuations` por rol (interpretación real de "retry": el loop de continuación
@@ -232,9 +234,17 @@ de clase, no solo de `__init__`.
 
 ## Fase 8 — Aprobación humana genérica (HITL) + decisión de stack de observability
 
-**HITL:** generaliza el protocolo de dos pasos ad-hoc de `HIGH_IMPACT_TOOLS` (ADR 0015) en un evento reusable (`ApprovalRequested`/`Granted`/`Rejected`) sobre el event bus de Fase 2, consumible desde n8n sin que n8n pase a decidir nada.
+**Parte 1/2 — HITL ✅ HECHO PERO SIN COMMITEAR (`adr/0143-*`):** generalizó el protocolo de dos pasos
+ad-hoc de `HIGH_IMPACT_TOOLS`/`BULK_READ_GATED_TOOLS` (ADR 0015) en dos `event_type` reales
+(`approval.requested`/`approval.granted`) sobre el event bus de Fase 2, emitidos desde el chokepoint
+único `_handle_tool` — consumible desde n8n sin que n8n pase a decidir nada. Sin `approval.rejected`
+(gap honesto: no existe esa señal en el código, ver ADR). El protocolo de confirmación en sí no se tocó
+— safety-critical, ADR 0084.
 
-**Stack de observability**, evaluado con el rollout de usuarios de prueba como driver real:
+**Parte 2/2 — decisión de stack de observability: NO EJECUTADA, condicionada.** El propio driver de esta
+parte (rollout de usuarios de prueba) todavía no arrancó (ver Fase 3) — instalar/decidir esto ahora sería
+infraestructura por delante de una necesidad real, contra el criterio explícito de este mismo plan
+("Fundación técnica vs. modo Capacidades"). Queda para retomar cuando el rollout arranque:
 - **Grafana + Prometheus**: postergados — ese problema lo crea el VPS multiplicando procesos, no la cantidad de usuarios de prueba.
 - **OpenTelemetry**: postergado hasta que haga falta interoperar con un tercero externo real.
 - **Langfuse**: el candidato a adelantar, gratis en su versión self-hosted. Se evalúa en paralelo a la Fase 6, cuando arranque el rollout de usuarios de prueba.
