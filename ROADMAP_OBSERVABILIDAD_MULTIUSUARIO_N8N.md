@@ -47,12 +47,8 @@ el detalle completo de diseño/riesgos/tests):**
   (solo founder, con confirmación de dos pasos, `com.snarf.server` excluido de auto-reinicio)
   (`adr/0138-*`).
 
-**Trabajo pendiente de commit:** Fase 9.2 (cerebro "giroscopio", `adr/0147-*`) — hecha, testeada
-(1288/1288) y verificada con Playwright contra datos reales de producción, sin commitear todavía.
-Archivos: `snarf/telemetry/brain.py` (`EXECUTIVE_ROLE_TO_NODE`/`NODE_PARENT` nuevos), `app.py`
-(`lifecycle_entries` + `verbo` en `dashboard_brain`), `web/index.html` (motor de rotación por anillo,
-mini-anillo del board, anillo 4), `tests/test_brain.py`, `tests/test_app.py`, `CHANGELOG.md`, este
-documento. **No commitear sin pedido explícito del fundador.**
+**Trabajo pendiente de commit:** ninguno — Fase 9.2 commiteada y pusheada a pedido explícito del
+fundador (2026-08-11, `b809499`).
 
 **Estado real de infraestructura en esta Mac** (verificar que sigue así al retomar, puede haber
 cambiado):
