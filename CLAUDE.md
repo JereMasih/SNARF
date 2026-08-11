@@ -7,6 +7,7 @@
 - `MASTER_MAP.md` es el plano maestro del ecosistema — leelo primero para ubicar en qué Dominio cae el pedido (Identity, Governance, Cognition, Knowledge, Architecture, Capabilities, Business, Infrastructure, Roadmaps). Su "Regla de crecimiento": si algo nuevo no encaja en el mapa, primero evoluciona el mapa.
 - `FOUNDATION.md` / `CONSTITUTION.md` / `CHARACTER.md` / `COGNITION.md`: identidad y gobernanza del proyecto. Principio VI de FOUNDATION.md (Honestidad Intelectual) rige también el propio trabajo de Claude en este repo: nunca presentar datos inventados como reales — construir el cerebro de Snarf, por ejemplo, se hizo estrictamente desde telemetría real (`activity_log`, `usage_log`, `input_log`), nunca con datos de relleno.
 - `adr/` tiene una decisión por archivo, numeradas; `CHANGELOG.md` tiene una entrada por ADR con conteo de tests. Todo cambio de arquitectura real (no un fix trivial) se documenta en ambos.
+- `ROADMAP_OBSERVABILIDAD_MULTIUSUARIO_N8N.md` es el plan vivo en curso (observabilidad, multi-usuario, n8n, memoria semántica) — tiene su propia sección "Estado actual" al tope para retomar sin preguntar de nuevo qué falta. Vive en el repo (no en `~/.claude/plans/`) a propósito: un plan de `ExitPlanMode` no es fiable entre sesiones — pasó de verdad que una sesión nueva no pudo leerlo y tuvo que reconstruir alcance desde un ADR. Cualquier plan multi-sesión futuro de este tipo debería vivir acá también, no solo en el plan mode.
 
 ## Convenciones de este repo
 
