@@ -7,9 +7,10 @@ import anthropic
 import openai
 from google.genai import errors as genai_errors
 
-from snarf.capabilities.anthropic_llm import AnthropicLLM
+from snarf.capabilities.anthropic_llm import MAX_CONTINUATIONS, MAX_OUTPUT_TOKENS, AnthropicLLM
 from snarf.capabilities.gemini_llm import GeminiLLM
-from snarf.capabilities.openai_compatible_llm import LocalPromptTooLargeError, OpenAICompatibleLLM
+from snarf.capabilities.openai_compatible_llm import LOCAL_TIMEOUT_SECONDS, LocalPromptTooLargeError, OpenAICompatibleLLM
+from snarf.runtime import generation_config
 from snarf.telemetry import context
 
 ROUTING_PATH = Path("data/llm_routing.json")
@@ -274,18 +275,39 @@ def available_providers() -> list[str]:
     return [p for p, env_var in _PROVIDER_API_KEY_ENV.items() if env_var is None or os.environ.get(env_var)]
 
 
-def _build(provider: str, model: str):
+def _build(provider: str, model: str, role: str):
     preset = PROVIDER_PRESETS[provider]
+    # Fase 7 (ADR 0142): config de generación versionada por rol, mismo
+    # criterio que Prompt Registry (Fase 6) — un rol nunca tocado usa
+    # exactamente las constantes de siempre de cada Capacidad.
+    default_gen_config = {
+        "max_output_tokens": MAX_OUTPUT_TOKENS,
+        "temperature": None,
+        "timeout_seconds": LOCAL_TIMEOUT_SECONDS if preset.get("local") else None,
+        "max_continuations": MAX_CONTINUATIONS,
+    }
+    gen = generation_config.get_active_config(role, default_gen_config)
     if preset["capability"] == "anthropic":
-        return AnthropicLLM(model=model)
+        return AnthropicLLM(
+            model=model,
+            max_output_tokens=gen["max_output_tokens"],
+            temperature=gen["temperature"],
+            max_continuations=gen["max_continuations"],
+        )
     if preset["capability"] == "gemini":
-        return GeminiLLM(model=model)
-    return OpenAICompatibleLLM(
+        return GeminiLLM(model=model, max_output_tokens=gen["max_output_tokens"], temperature=gen["temperature"])
+    openai_kwargs = dict(
         model=model,
         base_url=preset["base_url"],
         api_key_env=preset.get("api_key_env") or "OPENAI_API_KEY",
         local=preset.get("local", False),
+        max_output_tokens=gen["max_output_tokens"],
+        temperature=gen["temperature"],
+        max_continuations=gen["max_continuations"],
     )
+    if gen["timeout_seconds"] is not None:
+        openai_kwargs["timeout_seconds"] = gen["timeout_seconds"]
+    return OpenAICompatibleLLM(**openai_kwargs)
 
 
 def build_llm(role: str):
@@ -293,7 +315,7 @@ def build_llm(role: str):
     proveedor se elige por configuración persistida, nunca hardcodeado — así
     Snarf no queda atado a un solo proveedor de LLM."""
     entry = load_routing().get(role, DEFAULT_ROUTING[role])
-    return _build(entry["provider"], entry["model"])
+    return _build(entry["provider"], entry["model"], role)
 
 
 # --- Fallback automático entre proveedores (ADR de esta ronda) ------------
@@ -461,7 +483,7 @@ def attempt_fallback(role: str, entry: dict, first_exc: Exception, **generate_kw
             continue
         model = RECOMMENDED_MODEL[provider]
         try:
-            response = _build(provider, model).generate(**generate_kwargs)
+            response = _build(provider, model, role).generate(**generate_kwargs)
         except Exception:
             continue
         # fallback_expires_at marca esto como un fallback AUTOMÁTICO (ver
@@ -501,7 +523,7 @@ def maybe_revert_expired_fallback(role: str, entry: dict, **generate_kwargs):
         save_routing({**load_routing(), role: default_entry})
         return None, None
     try:
-        response = _build(default_entry["provider"], default_entry["model"]).generate(**generate_kwargs)
+        response = _build(default_entry["provider"], default_entry["model"], role).generate(**generate_kwargs)
     except Exception:
         extended = {**entry, "fallback_expires_at": time.time() + FALLBACK_COOLDOWN_SECONDS}
         save_routing({**load_routing(), role: extended})
@@ -541,7 +563,7 @@ class _ResilientLLM:
     def __init__(self, role: str):
         self._role = role
         self._entry = load_routing().get(role, DEFAULT_ROUTING[role])
-        self._llm = _build(self._entry["provider"], self._entry["model"])
+        self._llm = _build(self._entry["provider"], self._entry["model"], role)
 
     @property
     def available(self) -> bool:
@@ -565,7 +587,7 @@ class _ResilientLLM:
             # maybe_revert_expired_fallback).
             reverted_response, reverted_entry = maybe_revert_expired_fallback(self._role, self._entry, **generate_kwargs)
             if reverted_response is not None:
-                self._llm, self._entry = _build(reverted_entry["provider"], reverted_entry["model"]), reverted_entry
+                self._llm, self._entry = _build(reverted_entry["provider"], reverted_entry["model"], self._role), reverted_entry
                 return reverted_response
             try:
                 return self._llm.generate(**generate_kwargs)
@@ -576,7 +598,7 @@ class _ResilientLLM:
                 # Este mismo objeto sigue viviendo entre llamadas (guardado como
                 # atributo fijo del Specialist dueño) — la próxima ya tiene que
                 # usar el proveedor que funcionó.
-                self._llm, self._entry = _build(new_entry["provider"], new_entry["model"]), new_entry
+                self._llm, self._entry = _build(new_entry["provider"], new_entry["model"], self._role), new_entry
                 return response
 
 

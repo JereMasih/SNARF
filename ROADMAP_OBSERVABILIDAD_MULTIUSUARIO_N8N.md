@@ -9,10 +9,10 @@
 
 ## Estado actual (retomar una sesión nueva desde acá)
 
-**Última actualización:** 2026-08-10. **Hechas: Fases 0-6** (más un adelanto real de la Fase 9.1) —
-Fase 6 (Prompt Registry, `adr/0141-*`) hecha y testeada, **todavía sin commitear** — ver "Trabajo
-pendiente de commit" abajo. Fases 0-5 commiteadas, sin pushear a `origin/master` en este momento —
-confirmar `git push` con el fundador antes de asumirlo hecho. Suite completa en verde: 1233/1233 tests
+**Última actualización:** 2026-08-11. **Hechas: Fases 0-7** (más un adelanto real de la Fase 9.1) —
+Fase 7 (Configuración dinámica, `adr/0142-*`) hecha y testeada, **todavía sin commitear** — ver "Trabajo
+pendiente de commit" abajo. Fases 0-6 commiteadas, sin pushear a `origin/master` en este momento —
+confirmar `git push` con el fundador antes de asumirlo hecho. Suite completa en verde: 1241/1241 tests
 (`.venv/bin/python -m pytest -q`).
 
 **Hecho y commiteado, con ADR real por cada fase (leer el ADR antes de tocar código relacionado, tiene
@@ -33,12 +33,12 @@ el detalle completo de diseño/riesgos/tests):**
   (solo founder, con confirmación de dos pasos, `com.snarf.server` excluido de auto-reinicio)
   (`adr/0138-*`).
 
-**Trabajo pendiente de commit:** Fase 6 (Prompt Registry, `adr/0141-*`) — hecha, testeada (1233/1233),
-sin commitear todavía. Archivos: `snarf/runtime/prompt_registry.py` (nuevo),
-`tests/test_prompt_registry.py` (nuevo), `adr/0141-*.md` (nuevo), más cambios en
-`snarf/core/orchestrator.py`, `app.py`, `CHANGELOG.md`, este documento, y los ~13 archivos de
-`snarf/specialists/`/`snarf/knowledge/` wireados (ver ADR 0141 para el detalle completo). **No
-commitear sin pedido explícito del fundador.**
+**Trabajo pendiente de commit:** Fase 7 (Configuración dinámica, `adr/0142-*`) — hecha, testeada
+(1241/1241), sin commitear todavía. Archivos: `snarf/runtime/generation_config.py` (nuevo),
+`tests/test_generation_config.py` (nuevo), `adr/0142-*.md` (nuevo), más cambios en
+`snarf/runtime/llm_routing.py`, los 3 capabilities de LLM (`anthropic_llm.py`/
+`openai_compatible_llm.py`/`gemini_llm.py`), `tests/test_llm_routing.py`, `CHANGELOG.md`, este
+documento. **No commitear sin pedido explícito del fundador.**
 
 **Estado real de infraestructura en esta Mac** (verificar que sigue así al retomar, puede haber
 cambiado):
@@ -59,11 +59,11 @@ orquestación, la inferencia local sigue viajando a esta Mac por Tailscale) — 
 porque MLX es específico de Apple Silicon y una migración completa perdería el costo ~$0 de inferencia
 local. Pendiente de que el fundador decida si/cuándo.
 
-**Qué preguntar/confirmar apenas se retome:** (1) ¿se commitea el trabajo de Fase 6 tal cual está? (2)
-¿seguimos con la Fase 7 (Configuración dinámica), o el fundador quiere reordenar/saltar a otra fase? La
-instrucción vigente de sesiones anteriores fue "continuá con las fases siguientes, no hace falta que
-preguntes" — sigue aplicando salvo que el fundador diga lo contrario, pero **no** cubre commits (esos
-siempre se piden explícitamente) ni gasto real/infraestructura paga.
+**Qué preguntar/confirmar apenas se retome:** (1) ¿se commitea el trabajo de Fase 7 tal cual está? (2)
+¿seguimos con la Fase 8 (HITL + stack de observability), o el fundador quiere reordenar/saltar a otra
+fase? La instrucción vigente de sesiones anteriores fue "continuá con las fases siguientes, no hace
+falta que preguntes" — sigue aplicando salvo que el fundador diga lo contrario, pero **no** cubre
+commits (esos siempre se piden explícitamente) ni gasto real/infraestructura paga.
 
 ---
 
@@ -205,7 +205,7 @@ usuario. `GET /n8n/introspect`, mismo token que `GET /n8n/status`.
 
 ---
 
-## Fase 6 — Prompt Registry ✅ HECHO PERO SIN COMMITEAR (`adr/0141-*`)
+## Fase 6 — Prompt Registry ✅ HECHO (`adr/0141-*`)
 
 Migró los prompts hardcodeados (`SYSTEM_PREFIX` en `orchestrator.py` + system prompt propio de cada
 Specialist — 20 constantes reales, más de las "~11" estimadas acá, ver ADR 0141 para el mapeo completo)
@@ -219,9 +219,14 @@ valiosa a Langfuse en la Fase 8, pero no los construye.
 
 ---
 
-## Fase 7 — Configuración dinámica
+## Fase 7 — Configuración dinámica ✅ HECHO PERO SIN COMMITEAR (`adr/0142-*`)
 
-Extiende el patrón de `llm_routing.py` a `MAX_OUTPUT_TOKENS`, temperatura (hoy ni se pasa), timeout/retry por rol. Versionado igual que el Prompt Registry.
+Extendió el patrón de `llm_routing.py` a `max_output_tokens`, `temperature` (hoy ni se pasaba),
+`timeout_seconds`/`max_continuations` por rol (interpretación real de "retry": el loop de continuación
+automática, único mecanismo de ese tipo que existe hoy más allá del fallback entre proveedores).
+Versionado igual que Prompt Registry, con overrides parciales (no resetea campos no tocados). Gotcha
+real: varios tests construyen las Capacidades de LLM con `__new__` — necesitó defaults también a nivel
+de clase, no solo de `__init__`.
 
 ---
 

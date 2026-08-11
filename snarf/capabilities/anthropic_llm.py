@@ -186,9 +186,33 @@ class GenerationCancelled(Exception):
 
 class AnthropicLLM(Capability):
     name = "anthropic_llm"
+    # Defaults a nivel de clase (no solo de __init__): varios tests reales
+    # construyen esta clase con `AnthropicLLM.__new__(AnthropicLLM)` para
+    # evitar el __init__ real (credenciales, cliente HTTP) y setean a mano
+    # solo `_client`/`model` — sin estas, esas instancias no tendrían
+    # `_max_output_tokens`/etc. Instancias construidas normalmente las pisan
+    # con el valor real pasado a __init__.
+    _max_output_tokens = MAX_OUTPUT_TOKENS
+    _temperature = None
+    _max_continuations = MAX_CONTINUATIONS
 
-    def __init__(self, model: str = DEFAULT_MODEL):
+    def __init__(
+        self,
+        model: str = DEFAULT_MODEL,
+        max_output_tokens: int = MAX_OUTPUT_TOKENS,
+        temperature: float | None = None,
+        max_continuations: int = MAX_CONTINUATIONS,
+    ):
         self.model = model
+        # Configuración de generación (Fase 7 del plan de observabilidad/n8n,
+        # ADR 0142): defaults = las constantes de siempre, así construir sin
+        # estos parámetros (todos los tests existentes, cualquier consumidor
+        # que no pase por llm_routing._build) se comporta exactamente igual
+        # que antes. `snarf/runtime/llm_routing.py` es quien resuelve el
+        # override real por rol (vía generation_config.py) y lo pasa acá.
+        self._max_output_tokens = max_output_tokens
+        self._temperature = temperature
+        self._max_continuations = max_continuations
         self._api_key = os.environ.get("ANTHROPIC_API_KEY")
         self._client = None
         if self._api_key:
@@ -304,7 +328,9 @@ class AnthropicLLM(Capability):
                 # dentro de una misma llamada, cada ronda del loop de
                 # herramientas — hoy se reprocesaba entero y sin cachear.
                 call_messages[-1] = _mark_cache_breakpoint(call_messages[-1])
-            kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=call_messages)
+            kwargs = dict(model=self.model, max_tokens=self._max_output_tokens, system=cached_system, messages=call_messages)
+            if self._temperature is not None:
+                kwargs["temperature"] = self._temperature
             if tools:
                 kwargs["tools"] = tools
             try:
@@ -330,7 +356,7 @@ class AnthropicLLM(Capability):
 
             text = "".join(block.text for block in response.content if block.type == "text")
             continuations = 0
-            while response.stop_reason == "max_tokens" and continuations < MAX_CONTINUATIONS:
+            while response.stop_reason == "max_tokens" and continuations < self._max_continuations:
                 # Red de seguridad real: pese a MAX_OUTPUT_TOKENS=16000 la
                 # respuesta se sigue cortando (documento muy largo). En vez de
                 # perder lo que sigue, se le pide al modelo continuar EXACTO
@@ -353,9 +379,12 @@ class AnthropicLLM(Capability):
                 call_messages = list(conversation)
                 call_messages[-1] = _mark_cache_breakpoint(call_messages[-1])
                 try:
-                    response, duration_ms = self._create_and_record(
-                        model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=call_messages
+                    continuation_kwargs = dict(
+                        model=self.model, max_tokens=self._max_output_tokens, system=cached_system, messages=call_messages
                     )
+                    if self._temperature is not None:
+                        continuation_kwargs["temperature"] = self._temperature
+                    response, duration_ms = self._create_and_record(**continuation_kwargs)
                 except GenerationCancelled as exc:
                     return self._cancelled_response(text + exc.partial_text)
                 text += "".join(block.text for block in response.content if block.type == "text")
@@ -388,9 +417,12 @@ class AnthropicLLM(Capability):
             }
         )
         try:
-            response, duration_ms = self._create_and_record(
-                model=self.model, max_tokens=MAX_OUTPUT_TOKENS, system=cached_system, messages=closing_messages
+            closing_kwargs = dict(
+                model=self.model, max_tokens=self._max_output_tokens, system=cached_system, messages=closing_messages
             )
+            if self._temperature is not None:
+                closing_kwargs["temperature"] = self._temperature
+            response, duration_ms = self._create_and_record(**closing_kwargs)
             text = "".join(block.text for block in response.content if block.type == "text")
             if text.strip():
                 return split_speech(text)

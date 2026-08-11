@@ -181,12 +181,35 @@ class OpenAICompatibleLLM(Capability):
     con qué proveedor está hablando."""
 
     name = "openai_compatible_llm"
+    # Defaults a nivel de clase — ver el mismo comentario en
+    # AnthropicLLM: varios tests construyen esta clase con `__new__` para
+    # evitar el __init__ real.
+    _max_output_tokens = MAX_OUTPUT_TOKENS
+    _temperature = None
+    _max_continuations = MAX_CONTINUATIONS
 
-    def __init__(self, model: str, base_url: str | None = None, api_key_env: str = "OPENAI_API_KEY", local: bool = False):
+    def __init__(
+        self,
+        model: str,
+        base_url: str | None = None,
+        api_key_env: str = "OPENAI_API_KEY",
+        local: bool = False,
+        max_output_tokens: int = MAX_OUTPUT_TOKENS,
+        temperature: float | None = None,
+        timeout_seconds: float = LOCAL_TIMEOUT_SECONDS,
+        max_continuations: int = MAX_CONTINUATIONS,
+    ):
         self.model = model
         self._api_key_env = api_key_env
         self._vendor = _VENDOR_BY_API_KEY_ENV.get(api_key_env, "openai")
         self._local = local
+        # Configuración de generación (Fase 7 del plan de observabilidad/n8n,
+        # ADR 0142) — mismo criterio documentado en AnthropicLLM.__init__:
+        # defaults = las constantes de siempre, override real resuelto por
+        # llm_routing._build() vía generation_config.py.
+        self._max_output_tokens = max_output_tokens
+        self._temperature = temperature
+        self._max_continuations = max_continuations
         self._api_key = _LOCAL_DUMMY_API_KEY if local else os.environ.get(api_key_env)
         self._client = None
         if self._api_key:
@@ -196,7 +219,7 @@ class OpenAICompatibleLLM(Capability):
             if base_url:
                 kwargs["base_url"] = base_url
             if local:
-                kwargs["timeout"] = LOCAL_TIMEOUT_SECONDS
+                kwargs["timeout"] = timeout_seconds
                 # El default de la SDK (max_retries=2) reintenta la misma
                 # request en silencio ante un timeout — contra un proveedor
                 # local eso convierte los 90s de LOCAL_TIMEOUT_SECONDS en
@@ -285,7 +308,9 @@ class OpenAICompatibleLLM(Capability):
                         f"El prompt total ({total_chars} caracteres) supera el tope seguro para un "
                         f"proveedor local ({MAX_LOCAL_PROMPT_CHARS}) — ver ADR de esta ronda."
                     )
-            kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, messages=chat_messages)
+            kwargs = dict(model=self.model, max_tokens=self._max_output_tokens, messages=chat_messages)
+            if self._temperature is not None:
+                kwargs["temperature"] = self._temperature
             if chat_tools:
                 kwargs["tools"] = chat_tools
             content, reasoning, tool_calls, finish_reason = self._complete_once(kwargs)
@@ -309,7 +334,7 @@ class OpenAICompatibleLLM(Capability):
             text = content or ""
             thinking = reasoning or ""
             continuations = 0
-            while finish_reason == "length" and continuations < MAX_CONTINUATIONS:
+            while finish_reason == "length" and continuations < self._max_continuations:
                 # Misma red de seguridad que AnthropicLLM.generate(): en vez
                 # de aceptar el corte, pedirle al modelo que continúe exacto
                 # donde quedó y concatenar.
@@ -325,7 +350,9 @@ class OpenAICompatibleLLM(Capability):
                         ),
                     }
                 )
-                kwargs = dict(model=self.model, max_tokens=MAX_OUTPUT_TOKENS, messages=chat_messages)
+                kwargs = dict(model=self.model, max_tokens=self._max_output_tokens, messages=chat_messages)
+                if self._temperature is not None:
+                    kwargs["temperature"] = self._temperature
                 cont_content, cont_reasoning, _, finish_reason = self._complete_once(kwargs)
                 text += cont_content or ""
                 thinking += cont_reasoning or ""

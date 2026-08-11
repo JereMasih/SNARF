@@ -71,6 +71,26 @@ def test_build_llm_resolves_gemini(tmp_path, monkeypatch):
     assert llm.model == "gemini-3-pro-preview"
 
 
+def test_build_llm_uses_the_generation_config_override_for_the_role(tmp_path, monkeypatch):
+    from snarf.runtime import generation_config
+
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.setattr(generation_config, "GENERATION_CONFIG_PATH", tmp_path / "generation_config.json")
+    generation_config.save_new_version(
+        "orchestrator",
+        {"max_output_tokens": 4000, "temperature": 0.3},
+        default={"max_output_tokens": 16000, "temperature": None, "timeout_seconds": None, "max_continuations": 2},
+    )
+    llm_routing.save_routing({"orchestrator": {"provider": "anthropic", "model": "claude-haiku-4-5"}})
+
+    llm = llm_routing.build_llm("orchestrator")
+
+    assert llm._max_output_tokens == 4000
+    assert llm._temperature == 0.3
+    # max_continuations no se tocó en el override -> hereda el default real.
+    assert llm._max_continuations == 2
+
+
 def test_build_llm_resolves_openai(tmp_path, monkeypatch):
     monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
     llm_routing.save_routing({"orchestrator": {"provider": "openai", "model": "gpt-5"}})
@@ -214,7 +234,7 @@ def test_attempt_fallback_switches_to_the_next_available_provider_and_leaves_a_t
     class _Response:
         text = "respuesta real de xai"
 
-    def fake_build(provider, model):
+    def fake_build(provider, model, role):
         assert provider == "xai"  # anthropic (el que falló) nunca debería reintentarse a sí mismo
         return type("F", (), {"generate": lambda self, **kw: _Response()})()
 
@@ -245,7 +265,7 @@ def test_attempt_fallback_returns_none_when_every_provider_fails_and_leaves_no_t
     monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
     monkeypatch.setattr(llm_routing, "available_providers", lambda: ["anthropic", "xai", "gemini"])
 
-    def fake_build(provider, model):
+    def fake_build(provider, model, role):
         def boom(self, **kw):
             raise RuntimeError(f"{provider} también falló")
 
@@ -265,7 +285,7 @@ def test_attempt_fallback_never_tries_a_provider_without_credentials(tmp_path, m
     monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
     monkeypatch.setattr(llm_routing, "available_providers", lambda: ["anthropic"])  # xai NO tiene credencial
 
-    def fake_build(provider, model):
+    def fake_build(provider, model, role):
         raise AssertionError("no debería construirse nada — no hay otro proveedor disponible")
 
     monkeypatch.setattr(llm_routing, "_build", fake_build)
@@ -281,7 +301,7 @@ def test_attempt_fallback_stamps_new_entries_with_an_expiring_cooldown(tmp_path,
     monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
     monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
     monkeypatch.setattr(llm_routing, "available_providers", lambda: ["anthropic", "xai"])
-    monkeypatch.setattr(llm_routing, "_build", lambda provider, model: type("F", (), {"generate": lambda self, **kw: type("R", (), {"text": "ok"})()})())
+    monkeypatch.setattr(llm_routing, "_build", lambda provider, model, role: type("F", (), {"generate": lambda self, **kw: type("R", (), {"text": "ok"})()})())
     entry = {"provider": "anthropic", "model": "claude-haiku-4-5"}
     before = time.time()
 
@@ -297,7 +317,7 @@ def test_attempt_fallback_uses_the_conservative_vision_order_for_drive_vision(tm
     monkeypatch.setattr(llm_routing, "available_providers", lambda: ["anthropic", "xai", "gemini"])
     tried = []
 
-    def fake_build(provider, model):
+    def fake_build(provider, model, role):
         tried.append(provider)
 
         def gen(self, **kw):
@@ -337,7 +357,7 @@ def test_recent_fallback_events_filters_by_since(tmp_path, monkeypatch):
 def test_maybe_revert_expired_fallback_does_nothing_before_the_cooldown_expires(tmp_path, monkeypatch):
     monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
 
-    def fake_build(provider, model):
+    def fake_build(provider, model, role):
         raise AssertionError("no debería ni intentar reconstruir el proveedor local todavía")
 
     monkeypatch.setattr(llm_routing, "_build", fake_build)
@@ -351,7 +371,7 @@ def test_maybe_revert_expired_fallback_does_nothing_for_a_manual_choice_without_
     fundador (ver PUT /llm-routing) — nunca debe revertirse sola."""
     monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
 
-    def fake_build(provider, model):
+    def fake_build(provider, model, role):
         raise AssertionError("una elección manual nunca debería reintentarse sola")
 
     monkeypatch.setattr(llm_routing, "_build", fake_build)
@@ -367,7 +387,7 @@ def test_maybe_revert_expired_fallback_reverts_to_the_local_default_when_it_work
     class _Response:
         text = "respuesta real del local, ya recuperado"
 
-    def fake_build(provider, model):
+    def fake_build(provider, model, role):
         assert (provider, model) == (
             llm_routing.DEFAULT_ROUTING["dashboard_curator"]["provider"],
             llm_routing.DEFAULT_ROUTING["dashboard_curator"]["model"],
@@ -394,7 +414,7 @@ def test_maybe_revert_expired_fallback_extends_the_cooldown_when_the_local_is_st
     monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
     monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
 
-    def fake_build(provider, model):
+    def fake_build(provider, model, role):
         def boom(self, **kw):
             raise RuntimeError("el proveedor local sigue caído")
 
@@ -426,7 +446,7 @@ def test_build_resilient_llm_sets_and_clears_the_llm_role_context(tmp_path, monk
         captured["role_during_call"] = context.get_llm_role()
         return type("R", (), {"text": "ok"})()
 
-    monkeypatch.setattr(llm_routing, "_build", lambda provider, model: type("F", (), {"available": True, "generate": fake_generate})())
+    monkeypatch.setattr(llm_routing, "_build", lambda provider, model, role: type("F", (), {"available": True, "generate": fake_generate})())
     context.clear_llm_role()
     llm = llm_routing.build_resilient_llm("dashboard_curator")
     llm.generate(system="x", messages=[])
@@ -438,7 +458,7 @@ def test_build_resilient_llm_sets_and_clears_the_llm_role_context(tmp_path, monk
 def test_build_resilient_llm_behaves_normally_when_the_provider_works(tmp_path, monkeypatch):
     monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
     monkeypatch.setattr(
-        llm_routing, "_build", lambda provider, model: type("F", (), {"available": True, "generate": lambda self, **kw: type("R", (), {"text": "todo bien"})()})()
+        llm_routing, "_build", lambda provider, model, role: type("F", (), {"available": True, "generate": lambda self, **kw: type("R", (), {"text": "todo bien"})()})()
     )
     llm = llm_routing.build_resilient_llm("dashboard_curator")
     assert llm.available is True
@@ -455,7 +475,7 @@ def test_build_resilient_llm_falls_back_and_self_heals_for_the_next_call(tmp_pat
     llm_routing.save_routing({"dashboard_curator": {"provider": "anthropic", "model": "claude-haiku-4-5"}})
     calls = []
 
-    def fake_build(provider, model):
+    def fake_build(provider, model, role):
         calls.append(provider)
 
         def gen(self, **kw):
@@ -485,7 +505,7 @@ def test_build_resilient_llm_raises_the_original_exception_when_every_provider_f
     monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
     monkeypatch.setattr(llm_routing, "available_providers", lambda: ["anthropic"])  # sin otro candidato real
 
-    def fake_build(provider, model):
+    def fake_build(provider, model, role):
         def boom(self, **kw):
             raise _anthropic_status_error(500, "el proveedor está caído de verdad")
 

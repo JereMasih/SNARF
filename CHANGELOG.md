@@ -2,6 +2,22 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-11] Fase 7: Configuración dinámica de generación (ADR 0142)
+
+- `snarf/runtime/generation_config.py` (nuevo): igual patrón que Prompt Registry (Fase 6) —
+  `data/generation_config.json`, versión activa + historial, rollback — pero para overrides PARCIALES
+  (guardar solo `temperature` nunca resetea `max_output_tokens`).
+- `AnthropicLLM`/`OpenAICompatibleLLM`/`GeminiLLM` ganan `max_output_tokens`/`temperature` (más
+  `timeout_seconds`/`max_continuations` donde aplica) como parámetros de constructor, default = las
+  constantes hardcodeadas de siempre. `llm_routing._build()` resuelve el override real por rol antes de
+  construir.
+- **Gotcha real encontrado corriendo la suite**: varios tests construyen estas Capacidades con `__new__`
+  (evitan el `__init__` real) — sin atributos de CLASE con el mismo default, esas instancias quedaban
+  rotas. 53 tests fallaron hasta agregar los defaults también a nivel de clase.
+- Ningún endpoint HTTP para editar todavía — mismo criterio que Fase 6, eso es Fase 9.3.
+- 8 tests nuevos (`tests/test_generation_config.py` + wiring en `test_llm_routing.py`). 1241/1241 tests
+  de la suite completa.
+
 ## [2026-08-10] Fase 6: Prompt Registry (ADR 0141)
 
 - `snarf/runtime/prompt_registry.py` (nuevo): almacenamiento versionado real para prompts, mismo estilo

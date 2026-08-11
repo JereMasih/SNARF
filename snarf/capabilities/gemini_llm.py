@@ -50,9 +50,19 @@ class GeminiLLM(Capability):
     """Misma interfaz pública que AnthropicLLM (generate/available/model)."""
 
     name = "gemini_llm"
+    # Defaults a nivel de clase — mismo motivo documentado en AnthropicLLM.
+    _max_output_tokens = MAX_OUTPUT_TOKENS
+    _temperature = None
 
-    def __init__(self, model: str):
+    def __init__(self, model: str, max_output_tokens: int = MAX_OUTPUT_TOKENS, temperature: float | None = None):
         self.model = model
+        # Configuración de generación (Fase 7, ADR 0142) — mismo criterio
+        # documentado en AnthropicLLM.__init__. Esta integración no tiene
+        # loop de continuación propio (MAX_TOOL_ROUNDS cubre reintentos de
+        # tool-calling, no de longitud) ni timeout configurado todavía —
+        # solo max_output_tokens/temperature son reales acá.
+        self._max_output_tokens = max_output_tokens
+        self._temperature = temperature
         self._api_key = os.environ.get("GEMINI_API_KEY")
         self._client = None
         if self._api_key:
@@ -89,7 +99,9 @@ class GeminiLLM(Capability):
             types.Content(role="model" if m["role"] == "assistant" else "user", parts=_translate_content(m["content"]))
             for m in messages
         ]
-        config_kwargs = {"system_instruction": system, "max_output_tokens": MAX_OUTPUT_TOKENS}
+        config_kwargs = {"system_instruction": system, "max_output_tokens": self._max_output_tokens}
+        if self._temperature is not None:
+            config_kwargs["temperature"] = self._temperature
         if tools:
             config_kwargs["tools"] = _translate_tools(tools)
 
