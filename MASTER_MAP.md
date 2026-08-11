@@ -182,6 +182,14 @@ Hoy implementado mediante `adr/` (decisiones de arquitectura y gobernanza) y `CH
 
 Planificación de la evolución del sistema.
 
+**Plan vivo en curso, el más reciente (desde 2026-08-04, ver ADR 0135 en adelante):**
+`ROADMAP_OBSERVABILIDAD_MULTIUSUARIO_N8N.md` — observabilidad (event bus v2, Redis/SSE), multi-usuario
+real (Orchestrator por `user_id`, login Google), n8n self-hosted, y el cerebro/HUD como "entidad
+cognitiva digital". Vive en el repo (no en `~/.claude/plans/`) a propósito, indexado también desde
+CLAUDE.md — tiene su propia sección "Estado actual" al tope para retomar sin releer todo. No contradice
+ni reemplaza los roadmaps de abajo (dashboard/vectorización, 2026-07-27/28): los continúa — esos ítems
+ya construidos siguen siendo la base real sobre la que corre este plan nuevo.
+
 **Dashboard, plan por fases (2026-07-27, ver ADR 0022 y ADR 0023):**
 
 - Fase 1 (construida): dashboard con widgets sobre datos 100% reales — estado del sistema, conversaciones, memoria episódica, y (corrección de ADR 0023 a la Fase 2 original) Drive, Gmail, Calendar y YouTube, porque esas Capacidades ya existían y no eran hipotéticas. Menú de usuario, panel de configuración (qué widgets mostrar), reordenamiento persistido por usuario, navegación Chat/Dashboard por swipe o botón en mobile, y layout "Jarvis" (chat centrado + paneles alrededor) en desktop ancho. Ver Capabilities y Architecture para el detalle.
