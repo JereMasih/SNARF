@@ -117,6 +117,8 @@ TOOL_TO_NODE: dict[str, str] = {
     # que telemetry_cost_summary (utility).
     "ops_system_health": "utility",
     "ops_backup_now": "utility",
+    "ops_process_status": "utility",
+    "ops_process_restart": "utility",
     # Proyectos tenía las 14 tools de este Especialista cayendo en un único
     # nodo — de lejos el más cargado del cerebro, y el más opaco: no se veía
     # QUÉ parte de Proyectos estaba realmente activa. Separado en 3 nodos

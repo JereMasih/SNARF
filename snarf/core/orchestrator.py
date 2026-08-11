@@ -39,7 +39,7 @@ from snarf.knowledge.indexer import KnowledgeIndexer
 from snarf.knowledge.local_repo_source import LocalRepoKnowledgeSource
 from snarf.knowledge.vector_store import VectorStore
 from snarf.memory.episodic import EpisodicMemory
-from snarf.runtime import data_backup, llm_routing, ops_health, personality_prefs, user_profile
+from snarf.runtime import data_backup, llm_routing, ops_health, personality_prefs, process_control, user_profile
 from snarf.executive.specialist import ExecutiveBoardSpecialist
 from snarf.specialists.gmail_digest import GmailDigestSpecialist
 from snarf.specialists.project_manager import ProjectManager
@@ -55,11 +55,17 @@ from snarf.specialists.finance.monthly_pnl import MonthlyPnLSpecialist
 from snarf.specialists.research.mode import COMPETITOR_WATCH_CONFIG, DEEP_RESEARCH_CONFIG, TREND_SCAN_CONFIG
 from snarf.specialists.research.specialist import ResearchSpecialist
 from snarf.specialists.skill_factory import SkillFactorySpecialist
-from snarf.telemetry import activity_log, context, detail, input_preprocessing, usage_tracker
+from snarf.telemetry import activity_log, context, detail, input_preprocessing, spans, usage_tracker
 
-# Único usuario real hoy. El Orchestrator ya recibe un user_id explícito (en
-# vez de asumirlo implícitamente) para que agregar un segundo usuario en el
-# futuro sea pasar otro user_id, no rediseñar esta clase.
+# Identidad del fundador — sigue siendo la ÚNICA con datos en las rutas
+# globales de siempre (data/episodic_memory.jsonl y compañía, ver
+# self._memory en __init__), preservadas tal cual por compatibilidad hacia
+# atrás con sus 180+ conversaciones reales ya en disco. Desde Fase 3 del
+# plan de multi-usuario (ADR 0137), app.py ya no instancia un único
+# Orchestrator global — mantiene un registro por user_id (ver
+# app.py::get_orchestrator) y cualquier user_id que NO sea este recibe rutas
+# de datos propias bajo MEMORY_DATA_DIR, nunca comparte archivo con nadie
+# más.
 DEFAULT_USER_ID = "fundador"
 
 # El modelo no tiene ninguna fuente confiable de "qué día es hoy" por su cuenta
@@ -75,6 +81,11 @@ FOUNDER_TIMEZONE = "America/Argentina/Buenos_Aires"
 
 DRIVE_INDEX_DATA_DIR = Path("data/drive_index")
 LOCAL_FILES_DATA_DIR = Path("data/local_files")
+# Memoria episódica de cualquier user_id que NO sea DEFAULT_USER_ID (ver
+# comentario ahí) — un usuario de prueba nuevo nunca toca
+# data/episodic_memory.jsonl, tiene su propio archivo acá desde su primera
+# conversación.
+MEMORY_DATA_DIR = Path("data/users")
 # Knowledge Layer generalizada (ver KNOWLEDGE.md) — dominios más allá de
 # 'personal' (que sigue viviendo en DRIVE_INDEX_DATA_DIR/DriveIndexer, sin
 # tocar). Hoy solo 'code' tiene una fuente real conectada.
@@ -105,6 +116,9 @@ HIGH_IMPACT_TOOLS = frozenset({
     "skill_factory_activate",
     # Fase I, rama Community: postear en Discord como el fundador/marca.
     "community_post_message",
+    # Cockpit del fundador (Fase 9.1 adelantada, ADR 0137/0138): reinicia
+    # infraestructura real de esta Mac.
+    "ops_process_restart",
 })
 BULK_READ_GATED_TOOLS = frozenset({
     "drive_list_files",
@@ -779,6 +793,30 @@ TOOLS = [
             "nunca toca los datos en vivo, no requiere confirmación."
         ),
         "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "ops_process_status",
+        "description": (
+            "Solo para el fundador. Estado real de los procesos/LaunchAgents propios de Snarf en "
+            "esta Mac (server principal, servers MLX locales, Kokoro TTS, watchdog de memoria): si "
+            "están corriendo, PID real, RAM real usada (rss_mb). Nunca inventa un dato: "
+            "running=false/pid=null/rss_mb=null cuando de verdad no está corriendo."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "ops_process_restart",
+        "description": (
+            "ALTO IMPACTO. Solo para el fundador. Reinicia real (launchctl kickstart) uno de los "
+            "servers locales de Snarf (MLX local, Kokoro TTS, watchdog) — nunca el server principal "
+            "(com.snarf.server), que no puede reiniciarse a sí mismo desde acá. Protocolo de "
+            "confirmed obligatorio, mismo criterio que community_post_message."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"label": {"type": "string", "description": "Ej. 'com.snarf.mlx-fast'."}},
+            "required": ["label"],
+        },
     },
     {
         "name": "gmail_send_message",
@@ -1637,7 +1675,23 @@ class Orchestrator:
         # verdad (ver PUT /llm-routing en app.py), no en cada turno.
         self._llm = llm_routing.build_llm("orchestrator")
         self._title_llm = llm_routing.build_llm("conversation_title")
-        self._memory = EpisodicMemory()
+        # Bug real corregido en Fase 3 del plan de multi-usuario (ADR 0137):
+        # EpisodicMemory() sin argumentos apuntaba siempre a las rutas
+        # globales de siempre (data/episodic_memory.jsonl), sin importar qué
+        # user_id se le pasara a este constructor — dos Orchestrator de dos
+        # usuarios distintos habrían compartido el mismo historial de
+        # conversaciones. DEFAULT_USER_ID sigue usando esas rutas globales a
+        # propósito (compatibilidad con datos reales ya en disco); cualquier
+        # otro user_id recibe su propio archivo bajo MEMORY_DATA_DIR.
+        if user_id == DEFAULT_USER_ID:
+            self._memory = EpisodicMemory()
+        else:
+            user_memory_dir = MEMORY_DATA_DIR / user_id
+            self._memory = EpisodicMemory(
+                path=user_memory_dir / "episodic_memory.jsonl",
+                project_links_path=user_memory_dir / "conversation_projects.json",
+                titles_path=user_memory_dir / "conversation_titles.json",
+            )
         self._identity = load_identity()
         # Cache en memoria (no persistida — se pierde con cada reinicio, y
         # está bien: es barata de reconstruir) de resúmenes reales de
@@ -1892,6 +1946,8 @@ class Orchestrator:
                 recent_activity=activity_log.recent(i.get("n", 50)),
             ),
             "ops_backup_now": lambda i: {"snapshot": str(data_backup.backup_now())},
+            "ops_process_status": self._tool_ops_process_status,
+            "ops_process_restart": self._tool_ops_process_restart,
             "drive_index_scan": lambda i: self._drive_indexer.scan(query=i.get("query")),
             "drive_index_catalog_unsupported": lambda i: self._drive_indexer.catalog_unsupported(query=i.get("query")),
             "drive_index_start": lambda i: self._drive_indexer.start(query=i.get("query")),
@@ -2142,6 +2198,21 @@ class Orchestrator:
             return self._pending({"content": i.get("content")})
         return self._discord.send_message(i["content"])
 
+    def _tool_ops_process_status(self, i: dict) -> dict:
+        if self._user_id != DEFAULT_USER_ID:
+            return {"error": "Este tool es solo para el fundador."}
+        return {"processes": process_control.status()}
+
+    def _tool_ops_process_restart(self, i: dict) -> dict:
+        if self._user_id != DEFAULT_USER_ID:
+            return {"error": "Este tool es solo para el fundador."}
+        if not i.get("confirmed"):
+            return self._pending({"label": i.get("label")})
+        try:
+            return process_control.restart(i["label"])
+        except ValueError as exc:
+            return {"error": str(exc)}
+
     def _tool_gmail_send_message(self, i: dict) -> dict:
         if not i.get("confirmed"):
             return self._pending({"to": i.get("to"), "subject": i.get("subject"), "body": i.get("body")})
@@ -2289,16 +2360,27 @@ class Orchestrator:
             activity_log.record(name, "unknown_tool", detalle=detail.extract(name, "unknown_tool", tool_input, None))
             return {"error": f"herramienta desconocida: {name}"}
         started = time.monotonic()
+        # spans.start_tool (Fase 1 del plan de observabilidad): abre un
+        # tool.started correlacionado con el turno/tool/subagente que lo
+        # llamó. `spans.active(span)` es lo que hace que cualquier llamada
+        # LLM que el propio handler dispare (un Specialist llamando a su
+        # rol) quede automáticamente parentada a ESTE tool call, sin que el
+        # Specialist tenga que saber nada de spans — cierra el gap #3 de
+        # TELEMETRY_SCHEMA.md (correlacionar un tool call con el LLM que
+        # dispara adentro) sin tocar ningún Specialist.
+        span = spans.start_tool(name, detalle=detail.extract(name, "started", tool_input, None))
         try:
-            result = handler(tool_input)
+            with spans.active(span):
+                result = handler(tool_input)
             activity_log.record(
                 name, "ok", duration_ms=(time.monotonic() - started) * 1000,
                 detalle=detail.extract(name, "ok", tool_input, result),
                 preview=detail.extract_preview(name, tool_input, result),
+                span=span,
             )
             return result
         except Exception as exc:
-            activity_log.record(name, "error", duration_ms=(time.monotonic() - started) * 1000, error=str(exc))
+            activity_log.record(name, "error", duration_ms=(time.monotonic() - started) * 1000, error=str(exc), span=span)
             return {"error": str(exc)}
 
     def _capped_for_replay(self, text: str) -> str:
@@ -2384,6 +2466,12 @@ class Orchestrator:
         # dónde sacar la sesión. Siempre se limpia en el finally, nunca
         # sobrevive más allá de este turno.
         context.set_conversation_id(conversation_id)
+        # user_id (Fase 1 del plan de observabilidad): el Orchestrator es
+        # una instancia fija por user_id (ver __init__) — se propaga acá
+        # para que cada evento de este turno quede particionado por usuario,
+        # sin esperar a que exista multi-usuario real (Fase 3) para
+        # agregarlo, y así evitar una segunda migración de esquema después.
+        context.set_user_id(self._user_id)
         # Rol real para usage_log/telemetry_events (ADR de esta ronda) — acá
         # sí es siempre "orchestrator" porque este método es exactamente ese
         # rol de instancia fija (ver comentario de _ResilientLLM en
@@ -2395,100 +2483,116 @@ class Orchestrator:
         # con firma estricta — solo AnthropicLLM._create() lo lee de acá para
         # poder cortar el stream a mitad de camino.
         context.set_request_id(request_id)
+        # spans.start_workflow (Fase 1): raíz de la traza de este turno —
+        # todo tool call y toda llamada LLM de acá para abajo (incluido el
+        # fan-out de la Inteligencia Ejecutiva, ver executive/specialist.py)
+        # comparte este trace_id y cuelga de este event_id como padre.
+        turn = spans.start_workflow("turn", detalle=detail.truncate_detalle(user_input))
         try:
-            if not self._llm.available:
-                echo_text = (
-                    "[modo eco - ANTHROPIC_API_KEY no configurada, ver .env.example] "
-                    f"{user_input}"
-                )
-                response = LLMResponse(text=echo_text, speech=fallback_speech(echo_text))
-            else:
-                system = SYSTEM_PREFIX + self._identity
-                # Se relee en cada turno (no se cachea en __init__ como
-                # self._identity) — a diferencia de los documentos de identidad,
-                # este valor puede cambiar a mitad de una conversación (desde
-                # configuración o por la tool personality_set_sarcasm) y debe
-                # reflejarse sin reiniciar Snarf.
-                sarcasm_level = personality_prefs.load_prefs(self._user_id)["sarcasm_level"]
-                system += sarcasm_instruction(sarcasm_level)
-                # Se relee en cada turno por el mismo motivo que sarcasm_level —
-                # profile_set_name puede guardar el nombre a mitad de conversación
-                # y tiene que reflejarse en el turno siguiente, sin reiniciar.
-                system += profile_identity_instruction(user_profile.load_profile(self._user_id)["name"])
-                if project_id:
-                    # Si el proyecto no existe más o no tiene prompt propio, se
-                    # degrada en silencio (nunca rompe el turno).
-                    project = self._projects.get(project_id)
-                    if project and project.get("prompt"):
-                        system += (
-                            f"\n\nEstás trabajando dentro del proyecto '{project['name']}'. "
-                            f"Instrucciones propias de este proyecto:\n{project['prompt']}\n"
-                        )
-                messages = []
-                for entry in self._memory.recent(10, conversation_id=conversation_id):
-                    messages.append({"role": "user", "content": self._capped_for_replay(entry["input"])})
-                    messages.append({"role": "assistant", "content": self._capped_for_replay(entry["response"])})
-                history_chars = sum(len(m["content"]) for m in messages)
-                history_entries = len(messages) // 2
-                # La cita solo se agrega al mensaje que el LLM ve ESTE turno
-                # — memory.append() más abajo sigue guardando user_input tal
-                # cual lo escribió el fundador, nunca envuelto. Si se
-                # guardara envuelto, un replay futuro de este mismo turno
-                # (ver el loop de arriba) repetiría la cita en cada mensaje
-                # posterior de la conversación, inflando tokens sin sentido.
-                effective_input = (
-                    f'[Respondiendo puntualmente a esto que dijiste antes: "{quoted_text}"]\n\n{user_input}'
-                    if quoted_text
-                    else user_input
-                )
-                messages.append({"role": "user", "content": effective_input})
-                # Fase 6 del plan de HUD: registro real de cuánto contexto
-                # viaja alrededor de lo que el fundador efectivamente
-                # escribió — nunca una llamada extra al modelo, solo
-                # tamaños ya calculados acá mismo.
-                input_preprocessing.record(conversation_id, user_input, len(system), history_chars, history_entries)
-                generate_kwargs = {"system": system, "messages": messages, "tools": TOOLS, "tool_handler": self._handle_tool}
-                # Si el rol está en un fallback automático ya vencido (ver
-                # llm_routing.maybe_revert_expired_fallback), reintenta solo
-                # el proveedor local por defecto ANTES de usar el fallback
-                # vigente — chequeo barato (compare de timestamps) salvo que
-                # de verdad corresponda reintentar. self._llm no está
-                # envuelto en _ResilientLLM acá (ver comentario más abajo),
-                # por eso el intento vive inline igual que attempt_fallback.
-                reverted_response, reverted_entry = llm_routing.maybe_revert_expired_fallback(
-                    "orchestrator", llm_routing.load_routing()["orchestrator"], **generate_kwargs
-                )
-                if reverted_response is not None:
-                    response = reverted_response
-                    self.refresh_llm_routing()
+            with spans.active(turn):
+                if not self._llm.available:
+                    echo_text = (
+                        "[modo eco - ANTHROPIC_API_KEY no configurada, ver .env.example] "
+                        f"{user_input}"
+                    )
+                    response = LLMResponse(text=echo_text, speech=fallback_speech(echo_text))
                 else:
-                    try:
-                        response = self._llm.generate(**generate_kwargs)
-                    except Exception as exc:
-                        # Fallback automático real (ver llm_routing.attempt_fallback
-                        # y ADR de esta ronda): un fallo real de PROVEEDOR (crédito
-                        # agotado, rate limit, 5xx) reintenta solo con el siguiente
-                        # proveedor disponible antes de rendirse. self._llm no está
-                        # envuelto acá (ver comentario en attempt_fallback: muchos
-                        # tests reemplazan orchestrator._llm._client/.generate
-                        # directamente) — por eso el intento vive inline.
-                        fallback_response, new_entry = llm_routing.attempt_fallback("orchestrator", llm_routing.load_routing()["orchestrator"], exc, **generate_kwargs)
-                        if fallback_response is not None:
-                            response = fallback_response
-                            self.refresh_llm_routing()  # instancia fija — la próxima ronda ya tiene que usar el proveedor que funcionó
-                        else:
-                            # Antes esto tiraba un 500 crudo hasta /send — un fallo
-                            # real del LLM degrada con gracia igual que /transcribe,
-                            # en vez de romper la request. Se llega acá solo si
-                            # ademas el fallback automático se agotó con todos los
-                            # proveedores disponibles (o el error no era de
-                            # proveedor, ver is_provider_level_error).
-                            error_text = f"[error real del LLM, no pude responder: {exc}]"
-                            response = LLMResponse(text=error_text, speech=fallback_speech(error_text))
+                    system = SYSTEM_PREFIX + self._identity
+                    # Se relee en cada turno (no se cachea en __init__ como
+                    # self._identity) — a diferencia de los documentos de identidad,
+                    # este valor puede cambiar a mitad de una conversación (desde
+                    # configuración o por la tool personality_set_sarcasm) y debe
+                    # reflejarse sin reiniciar Snarf.
+                    sarcasm_level = personality_prefs.load_prefs(self._user_id)["sarcasm_level"]
+                    system += sarcasm_instruction(sarcasm_level)
+                    # Se relee en cada turno por el mismo motivo que sarcasm_level —
+                    # profile_set_name puede guardar el nombre a mitad de conversación
+                    # y tiene que reflejarse en el turno siguiente, sin reiniciar.
+                    system += profile_identity_instruction(user_profile.load_profile(self._user_id)["name"])
+                    if project_id:
+                        # Si el proyecto no existe más o no tiene prompt propio, se
+                        # degrada en silencio (nunca rompe el turno).
+                        project = self._projects.get(project_id)
+                        if project and project.get("prompt"):
+                            system += (
+                                f"\n\nEstás trabajando dentro del proyecto '{project['name']}'. "
+                                f"Instrucciones propias de este proyecto:\n{project['prompt']}\n"
+                            )
+                    messages = []
+                    for entry in self._memory.recent(10, conversation_id=conversation_id):
+                        messages.append({"role": "user", "content": self._capped_for_replay(entry["input"])})
+                        messages.append({"role": "assistant", "content": self._capped_for_replay(entry["response"])})
+                    history_chars = sum(len(m["content"]) for m in messages)
+                    history_entries = len(messages) // 2
+                    # La cita solo se agrega al mensaje que el LLM ve ESTE turno
+                    # — memory.append() más abajo sigue guardando user_input tal
+                    # cual lo escribió el fundador, nunca envuelto. Si se
+                    # guardara envuelto, un replay futuro de este mismo turno
+                    # (ver el loop de arriba) repetiría la cita en cada mensaje
+                    # posterior de la conversación, inflando tokens sin sentido.
+                    effective_input = (
+                        f'[Respondiendo puntualmente a esto que dijiste antes: "{quoted_text}"]\n\n{user_input}'
+                        if quoted_text
+                        else user_input
+                    )
+                    messages.append({"role": "user", "content": effective_input})
+                    # Fase 6 del plan de HUD: registro real de cuánto contexto
+                    # viaja alrededor de lo que el fundador efectivamente
+                    # escribió — nunca una llamada extra al modelo, solo
+                    # tamaños ya calculados acá mismo.
+                    input_preprocessing.record(conversation_id, user_input, len(system), history_chars, history_entries)
+                    generate_kwargs = {"system": system, "messages": messages, "tools": TOOLS, "tool_handler": self._handle_tool}
+                    # Si el rol está en un fallback automático ya vencido (ver
+                    # llm_routing.maybe_revert_expired_fallback), reintenta solo
+                    # el proveedor local por defecto ANTES de usar el fallback
+                    # vigente — chequeo barato (compare de timestamps) salvo que
+                    # de verdad corresponda reintentar. self._llm no está
+                    # envuelto en _ResilientLLM acá (ver comentario más abajo),
+                    # por eso el intento vive inline igual que attempt_fallback.
+                    reverted_response, reverted_entry = llm_routing.maybe_revert_expired_fallback(
+                        "orchestrator", llm_routing.load_routing()["orchestrator"], **generate_kwargs
+                    )
+                    if reverted_response is not None:
+                        response = reverted_response
+                        self.refresh_llm_routing()
+                    else:
+                        try:
+                            response = self._llm.generate(**generate_kwargs)
+                        except Exception as exc:
+                            # Fallback automático real (ver llm_routing.attempt_fallback
+                            # y ADR de esta ronda): un fallo real de PROVEEDOR (crédito
+                            # agotado, rate limit, 5xx) reintenta solo con el siguiente
+                            # proveedor disponible antes de rendirse. self._llm no está
+                            # envuelto acá (ver comentario en attempt_fallback: muchos
+                            # tests reemplazan orchestrator._llm._client/.generate
+                            # directamente) — por eso el intento vive inline.
+                            fallback_response, new_entry = llm_routing.attempt_fallback("orchestrator", llm_routing.load_routing()["orchestrator"], exc, **generate_kwargs)
+                            if fallback_response is not None:
+                                response = fallback_response
+                                self.refresh_llm_routing()  # instancia fija — la próxima ronda ya tiene que usar el proveedor que funcionó
+                            else:
+                                # Antes esto tiraba un 500 crudo hasta /send — un fallo
+                                # real del LLM degrada con gracia igual que /transcribe,
+                                # en vez de romper la request. Se llega acá solo si
+                                # ademas el fallback automático se agotó con todos los
+                                # proveedores disponibles (o el error no era de
+                                # proveedor, ver is_provider_level_error).
+                                error_text = f"[error real del LLM, no pude responder: {exc}]"
+                                response = LLMResponse(text=error_text, speech=fallback_speech(error_text))
+            spans.finish(turn, estado="completo")
+        except Exception:
+            # Cualquier error real ya manejado arriba (LLM caído, fallback
+            # agotado) termina en una LLMResponse de error, no en una
+            # excepción hasta acá — este except cubre solo lo genuinamente
+            # inesperado (ver ADR de esta ronda). No vuelve a inventar una
+            # respuesta: re-lanza tal cual, el turno queda marcado failed.
+            spans.fail(turn, reason="unhandled")
+            raise
         finally:
             context.clear_llm_role()
             context.clear_conversation_id()
             context.clear_request_id()
+            context.clear_user_id()
 
         self._memory.append(
             channel_name, user_input, response.text,
@@ -2515,35 +2619,48 @@ class Orchestrator:
         first = entries[0]
         listing = f"Usuario: {first['input']}\n\nRespuesta: {first['response'][:500]}"
         context.set_conversation_id(conversation_id)
+        context.set_user_id(self._user_id)
         context.set_llm_role("conversation_title")
+        # spans.start_workflow (Fase 1): traza propia, distinta de la del
+        # turno de chat que la disparó como background task (ver /send en
+        # app.py) — es una llamada LLM real e independiente, no un hijo del
+        # turno principal, que para entonces ya terminó y devolvió su
+        # respuesta.
+        turn = spans.start_workflow("conversation_title", detalle=detail.truncate_detalle(listing))
         title_kwargs = {"system": CONVERSATION_TITLE_SYSTEM_PROMPT, "messages": [{"role": "user", "content": listing}]}
+        title = None
         try:
-            reverted_response, reverted_entry = llm_routing.maybe_revert_expired_fallback(
-                "conversation_title", llm_routing.load_routing()["conversation_title"], **title_kwargs
-            )
-            if reverted_response is not None:
-                title = reverted_response.text
-                self.refresh_llm_routing()
-            else:
-                try:
-                    title = self._title_llm.generate(**title_kwargs).text
-                except Exception as exc:
-                    # Mismo fallback automático que el chat principal (ver
-                    # attempt_fallback) — un título es de bajo riesgo (nunca
-                    # bloquea la respuesta real), pero no hay motivo para
-                    # perderlo solo porque el proveedor de este rol se quedó
-                    # sin crédito mientras otro sigue disponible.
-                    fallback_response, new_entry = llm_routing.attempt_fallback(
-                        "conversation_title", llm_routing.load_routing()["conversation_title"], exc, **title_kwargs
-                    )
-                    if fallback_response is None:
-                        return
-                    title = fallback_response.text
+            with spans.active(turn):
+                reverted_response, reverted_entry = llm_routing.maybe_revert_expired_fallback(
+                    "conversation_title", llm_routing.load_routing()["conversation_title"], **title_kwargs
+                )
+                if reverted_response is not None:
+                    title = reverted_response.text
                     self.refresh_llm_routing()
+                else:
+                    try:
+                        title = self._title_llm.generate(**title_kwargs).text
+                    except Exception as exc:
+                        # Mismo fallback automático que el chat principal (ver
+                        # attempt_fallback) — un título es de bajo riesgo (nunca
+                        # bloquea la respuesta real), pero no hay motivo para
+                        # perderlo solo porque el proveedor de este rol se quedó
+                        # sin crédito mientras otro sigue disponible.
+                        fallback_response, new_entry = llm_routing.attempt_fallback(
+                            "conversation_title", llm_routing.load_routing()["conversation_title"], exc, **title_kwargs
+                        )
+                        if fallback_response is not None:
+                            title = fallback_response.text
+                            self.refresh_llm_routing()
+            spans.finish(turn, estado="completo" if title else "error")
+        except Exception:
+            spans.fail(turn, reason="unhandled")
+            raise
         finally:
             context.clear_llm_role()
             context.clear_conversation_id()
-        title = title.strip().strip('"').strip("'").rstrip(".")
+            context.clear_user_id()
+        title = (title or "").strip().strip('"').strip("'").rstrip(".")
         if title:
             self._memory.set_title(conversation_id, title[:CONVERSATION_TITLE_MAX_CHARS])
 

@@ -2,6 +2,112 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-10] Fase 4: n8n self-hosted + primera integración real, observa y propone (ADR 0139)
+
+- `docker-compose.n8n.yml` (nuevo): n8n Community Edition real, self-hosted vía Colima/Docker, solo
+  `127.0.0.1` (nunca expuesto públicamente) — corriendo, verificado con Playwright y `docker stats`
+  (~530MB en reposo).
+- `snarf/telemetry/n8n_webhook_sink.py` (nuevo): Snarf → n8n, un subscriber más del dispatcher de Fase
+  1, opcional (`N8N_WEBHOOK_URL`), nunca una dependencia dura — verificado de punta a punta contra un
+  servidor HTTP real (no un mock).
+- `GET /n8n/status` (nuevo, `app.py`) + `require_n8n_token` (`snarf/runtime/web_auth.py`): n8n → Snarf,
+  autenticado por un token propio (`N8N_CONTROL_TOKEN`, header `X-Snarf-Token`) — nunca la cookie de
+  sesión del founder. De solo lectura, reusa `ops_system_health`/`ops_process_status` (ADR 0138) tal
+  cual.
+- No se creó ninguna cuenta de n8n en nombre del fundador — completó él mismo el "Set up owner
+  account" y el primer workflow con nodo Webhook. Gotcha real encontrado en la verificación en vivo:
+  el nodo Webhook nace en GET por default, `n8n_webhook_sink.py` manda POST — 404 hasta corregir el
+  método del nodo (ver ADR 0139). Cerrado de punta a punta en producción real: `POST` contra la
+  Production URL activada devuelve `200 {"message":"Workflow was started"}`. El caso de uso "n8n edita
+  un agente existente" del plan aprobado sigue bloqueado por las Fases 5/6 (introspección real, Prompt
+  Registry), todavía no construidas.
+
+## [2026-08-10] Nombres reales de proceso + primera pieza del cockpit de infraestructura (ADR 0138)
+
+- **Diagnóstico real primero**: los "22.71GB de RAM" que preocupaban no eran de Snarf — los procesos
+  reales de Snarf sumaban ~350MB combinados en el momento del diagnóstico (Chrome/VS Code/Spotify
+  eran el uso real). De paso, confirmado que `mlx-heavy`/`mlx-mid` no estaban cargados (solo
+  `mlx-fast`), corrigiendo una asunción de rondas anteriores.
+- Los procesos de Snarf ahora tienen nombre real reconocible en Activity Monitor/`ps`/`top`
+  (`snarf-server`, `snarf-mlx-fast`, `snarf-kokoro-tts`, `snarf-server-logs`) en vez de "Python"
+  genérico — `exec -a` desde el shell del LaunchAgent se probó primero y no sobrevivía al arranque de
+  este build de Python (evidencia real); `setproctitle` llamado desde adentro del proceso sí. Los tres
+  LaunchAgents afectados se recargaron en vivo, cero downtime real más allá de un restart normal, cero
+  cambios en `data/`.
+- Primera pieza real del cockpit de infraestructura del fundador (adelanto de Fase 9.1 del plan de
+  multi-usuario): dos tools nuevas solo para el fundador — `ops_process_status` (estado real de cada
+  LaunchAgent de Snarf) y `ops_process_restart` (reinicio real con confirmación en dos pasos, nunca
+  del server principal — se mataría a sí mismo a mitad de camino). Vive en el chat, no en una vista de
+  dashboard nueva todavía.
+
+## [2026-08-10] Fase 3 del plan de multi-usuario: Orchestrator real por user_id + login con Google (ADR 0137)
+
+- **Hallazgo real de auditoría, antes de tocar nada**: pese a tener credenciales de Google y
+  preferencias ya separadas por `user_id` desde ADR 0021, Snarf era single-user de punta a punta —
+  `app.py` corría un único `Orchestrator` global sin importar quién estuviera logueado, y
+  `EpisodicMemory()` ni siquiera usaba el `user_id` que recibía. Dos cuentas reales habrían compartido
+  la misma memoria de conversación, las mismas credenciales de Google, los mismos proyectos.
+- `app.py` pasa a mantener un registro real de `Orchestrator` por `user_id` (`get_orchestrator`, lazy +
+  cacheado) — cada una de las ~30 rutas HTTP que ya recibían `user_id` de la sesión ahora opera sobre
+  la instancia real de quien hizo la request, no siempre la del fundador. `EpisodicMemory` gana rutas
+  propias por usuario (`data/users/<user_id>/...`); el fundador conserva sus rutas globales de
+  siempre, sin ninguna migración.
+- Login real con Google (`snarf/capabilities/google_auth.py`, `snarf/runtime/google_identity.py`,
+  rutas nuevas en `app.py`): reemplaza `InstalledAppFlow.run_local_server()` (abría un navegador+server
+  local EN LA MÁQUINA de Snarf, estructuralmente imposible para un usuario remoto) por el flujo web
+  real de OAuth con redirect+callback y protección CSRF real. Conectar Google ahora ES el login para
+  cualquiera que no sea el fundador — un usuario nuevo sale del mismo consentimiento con su cuenta
+  identificada Y su Drive/Gmail/Calendar/YouTube ya conectados. Botón real en `web/login.html`,
+  verificado con Playwright hasta la pantalla real de Google.
+- Bug de seguridad real encontrado y corregido por un test propio antes de mergear: el primer intento
+  de derivar `user_id` desde un email dejaba pasar `.` como carácter seguro, permitiendo reconstruir un
+  path traversal real (`user_id` se usa como segmento de path de disco). Corregido antes de que
+  existiera ningún riesgo en producción.
+- **Gaps honestos, documentados en ADR 0137 y no resueltos en esta fase**: el dashboard/HUD sigue leyendo
+  telemetría global sin particionar por usuario (no debería exponerse a usuarios de prueba todavía);
+  Notion sigue siendo una integración global, sin conexión per-usuario; el redirect URI de producción y
+  la verificación de la app OAuth ante Google (límite de 100 testers en modo Testing) requieren acción
+  manual real del fundador en Google Cloud Console.
+
+## [2026-08-10] Fase 2 de observabilidad: transporte opcional Redis Streams + push real vía SSE (ADR 0136)
+
+- `GET /events/stream` (nuevo, `app.py`): el HUD deja de depender de re-pollear
+  `/dashboard/telemetry_feed` — push real vía Server-Sent Events, con cursor real
+  (`Last-Event-ID`/`?last_event_id=`) para reconectar sin perder eventos. Funciona con o sin Redis
+  configurado: sin Redis lee de un buffer in-process nuevo (`snarf/telemetry/event_buffer.py`), con
+  Redis lee del stream real (`XREAD BLOCK`, persistente).
+- `snarf/telemetry/redis_sink.py` (nuevo): sink opcional hacia Redis Streams — **nunca una dependencia
+  dura**, verificado en vivo apuntando a un puerto real sin servidor escuchando: el fallo se traga, se
+  cuenta, y un turno real jamás se entera. `SNARF_REDIS_URL` sin setear (default) ni siquiera importa
+  el paquete `redis`.
+- `snarf/runtime/ops_health.py` suma estado real del dispatcher/Redis a `ops_system_health`.
+- `requirements.txt` suma `redis==8.1.0` (nunca se activa sin `SNARF_REDIS_URL` seteada). El servidor
+  Redis en sí no se instaló en esta ronda a propósito — per el plan aprobado con el fundador, eso se
+  hace recién cuando n8n o un Control Center empiecen a leer de verdad (fases siguientes).
+
+## [2026-08-10] Fase 1 de observabilidad: modelo de evento v2 correlacionado + dispatcher in-process (ADR 0135)
+
+- Primer paso de un plan de evolución de 12 fases (auditoría completa del repo real + los tres
+  documentos que trajo el fundador — observabilidad, multi-usuario, n8n, memoria semántica, cockpit
+  del fundador estilo Jarvis). Esta fase es la base de correlación que todas las demás necesitan.
+- `snarf/telemetry/events.py`: el evento unificado suma `event_id`/`parent_event_id`/`trace_id`/
+  `event_type` (ciclo de vida completo: `.started`/`.finished`/`.failed` para turno/tool/llm/rol
+  ejecutivo, no solo el resultado final), `origin_pid`, `user_id`. Aditivo — los 14 campos v1 no
+  cambian, y un allowlist positivo (`LEGACY_EVENT_TYPES`) mantiene invisibles los tipos nuevos para
+  todo consumidor existente (dashboards, historial de costos, feed del dock) sin tocarlos.
+- `snarf/telemetry/context.py`: `threading.local()` → `contextvars.ContextVar` (FastAPI copia
+  contextvars al pasar a un worker de threadpool, pero no `threading.local()`). De paso corrige un bug
+  real: una llamada LLM de Specialist anidada dentro de un turno le borraba el `llm_role` al resto del
+  turno en vez de restaurarlo al salir.
+- `snarf/telemetry/spans.py` + `dispatcher.py` (nuevos): dos chokepoints reales instrumentados
+  (`Orchestrator._handle_tool`, y `_create_and_record`/`_complete_once`/`generate` en los tres
+  proveedores LLM) más el borde de turno y la Inteligencia Ejecutiva — correlación real de punta a
+  punta, incluso a través del límite de proceso del subproceso MCP de cada rol ejecutivo. Dispatcher
+  pub/sub in-process, sin infraestructura nueva todavía (base para Redis Streams opcional en la Fase 2).
+- Bug real corregido en el mismo cambio: el fan-out de la Inteligencia Ejecutiva (`ThreadPoolExecutor`)
+  reusaba un único `contextvars.Context` copiado entre los 7 roles — revienta si dos roles arrancan
+  casi al mismo tiempo ("cannot enter context: already entered"); cada rol necesita su propia copia.
+
 ## [2026-08-08] Rediseño de chat: boot robusto, sidebar/proyectos/foco, cerebro de "pensando", feed legible, id de mensaje real y responder-a-mensaje (ADR 0134)
 
 - Dos bugs reales reportados en vivo: el cerebro del arranque dependía enteramente de JS ejecutando

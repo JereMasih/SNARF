@@ -32,3 +32,21 @@ def test_reports_real_disk_usage_for_an_existing_directory(tmp_path):
     (tmp_path / "a.txt").write_bytes(b"x" * 1024 * 1024)  # 1 MB real
     result = system_health(True, True, [], data_dir=tmp_path)
     assert result["data_dir_size_mb"] == 1.0
+
+
+# --- Fase 2 del plan de observabilidad: dispatcher/redis stats reales -----
+
+
+def test_includes_real_event_dispatcher_stats():
+    result = system_health(True, True, [], data_dir=_NONEXISTENT)
+    assert set(result["event_dispatcher"].keys()) == {"published", "dropped", "by_subscriber"}
+
+
+def test_includes_redis_health_reported_as_not_configured_by_default():
+    result = system_health(True, True, [], data_dir=_NONEXISTENT)
+    assert result["event_bus_redis"]["configured"] is False
+
+
+def test_includes_n8n_health_reported_as_not_configured_by_default():
+    result = system_health(True, True, [], data_dir=_NONEXISTENT)
+    assert result["event_bus_n8n"]["configured"] is False

@@ -32,6 +32,8 @@ VERB_BY_SKILL: dict[str, str] = {
     "telemetry_cost_summary": "revisando el gasto real",
     "ops_system_health": "revisando el estado real",
     "ops_backup_now": "haciendo un backup real",
+    "ops_process_status": "mirando sus propios procesos",
+    "ops_process_restart": "reiniciando un proceso real",
     # memory
     "list_conversations": "hojeando conversaciones",
     "get_conversation": "releyendo",

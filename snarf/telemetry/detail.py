@@ -417,6 +417,18 @@ def _ops_backup_now(i, r):
     return None
 
 
+def _ops_process_status(i, r):
+    if isinstance(r, dict) and isinstance(r.get("processes"), list):
+        running = sum(1 for p in r["processes"] if p.get("running"))
+        return _truncate(f"{running}/{len(r['processes'])} procesos corriendo")
+    return None
+
+
+def _ops_process_restart(i, r):
+    label = i.get("label") if isinstance(i, dict) else None
+    return _truncate(f"reiniciando {label}") if label else None
+
+
 # --- notion ------------------------------------------------------------
 
 
@@ -447,6 +459,8 @@ DETAIL_EXTRACTORS = {
     "telemetry_cost_summary": _telemetry_cost_summary,
     "ops_system_health": _ops_system_health,
     "ops_backup_now": _ops_backup_now,
+    "ops_process_status": _ops_process_status,
+    "ops_process_restart": _ops_process_restart,
     # memory
     "list_conversations": _list_count("conversaciones"),
     "get_conversation": _get_conversation,

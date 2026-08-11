@@ -1,7 +1,7 @@
 import pytest
 
 from snarf.capabilities.anthropic_llm import LLMResponse
-from snarf.core.orchestrator import HISTORY_REPLAY_MAX_CHARS, Orchestrator
+from snarf.core.orchestrator import DEFAULT_USER_ID, HISTORY_REPLAY_MAX_CHARS, Orchestrator
 from snarf.knowledge.extraction import ExtractionResult
 from snarf.runtime import llm_routing
 
@@ -30,6 +30,38 @@ def orchestrator(tmp_path, monkeypatch):
     monkeypatch.setattr(o._llm, "_client", None)
     monkeypatch.setattr(o._title_llm, "_client", None)
     return o
+
+
+# --- Fase 3 del plan de multi-usuario (ADR 0137): aislamiento real entre usuarios ---
+
+
+def test_a_second_user_gets_their_own_episodic_memory_path(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    founder = Orchestrator(user_id=DEFAULT_USER_ID)
+    second_user = Orchestrator(user_id="usuario_de_prueba")
+    from pathlib import Path
+
+    # DEFAULT_USER_ID preserva las rutas globales de siempre (compatibilidad
+    # con datos reales ya en disco) — cualquier otro user_id nunca las toca.
+    assert founder._memory.path == Path("data/episodic_memory.jsonl")
+    assert second_user._memory.path == Path("data/users/usuario_de_prueba/episodic_memory.jsonl")
+    assert founder._memory.path != second_user._memory.path
+
+
+def test_two_users_conversations_never_land_in_the_same_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    founder = Orchestrator(user_id=DEFAULT_USER_ID)
+    second_user = Orchestrator(user_id="usuario_de_prueba")
+    monkeypatch.setattr(founder._llm, "_client", None)
+    monkeypatch.setattr(second_user._llm, "_client", None)
+
+    founder.handle("visual", "hola desde el fundador", conversation_id="c-founder")
+    second_user.handle("visual", "hola desde el usuario de prueba", conversation_id="c-second")
+
+    founder_conversations = founder._memory.list_conversations()
+    second_user_conversations = second_user._memory.list_conversations()
+    assert [c["conversation_id"] for c in founder_conversations] == ["c-founder"]
+    assert [c["conversation_id"] for c in second_user_conversations] == ["c-second"]
 
 
 def test_echo_mode_without_api_key_and_persists_to_memory(orchestrator):
@@ -700,6 +732,57 @@ def test_handle_tool_records_successful_calls_in_the_activity_log(orchestrator):
     assert entries[-1]["duration_ms"] >= 0
 
 
+# --- Fase 1 del plan de observabilidad: spans sobre _handle_tool -----------
+
+
+def test_handle_tool_emits_a_started_and_finished_event_sharing_event_id(orchestrator):
+    from snarf.telemetry import events
+
+    orchestrator._handle_tool("list_conversations", {})
+    rows = [r for r in events.all_events(include_lifecycle=True) if r["skill"] == "list_conversations"]
+    assert [r["event_type"] for r in rows] == [events.TOOL_STARTED, events.TOOL_FINISHED]
+    assert rows[0]["event_id"] == rows[1]["event_id"]
+
+
+def test_handle_tool_exception_emits_tool_failed_not_tool_finished(orchestrator, monkeypatch):
+    from snarf.telemetry import events
+
+    def boom(_input):
+        raise RuntimeError("fallo simulado")
+
+    monkeypatch.setitem(orchestrator._tool_handlers, "list_conversations", boom)
+    orchestrator._handle_tool("list_conversations", {})
+    rows = [r for r in events.all_events(include_lifecycle=True) if r["skill"] == "list_conversations"]
+    assert rows[-1]["event_type"] == events.TOOL_FAILED
+    assert rows[-1]["estado"] == "error"
+
+
+def test_llm_call_inside_a_tool_handler_is_parented_to_that_tool_span(orchestrator, monkeypatch):
+    """_handle_tool envuelve el handler en `with spans.active(span)` (Fase 1
+    del plan de observabilidad) — cualquier span que se abra DENTRO del
+    handler (acá simulado con spans.start_llm directo, en vez de mockear la
+    SDK real de Anthropic) tiene que heredar ese tool span como padre, sin
+    que el handler tenga que saber nada de spans."""
+    from snarf.telemetry import events, spans
+
+    captured = {}
+
+    def handler_that_opens_an_llm_span(_input):
+        captured["llm_span"] = spans.start_llm("anthropic", "claude-sonnet-5")
+        return {"ok": True}
+
+    monkeypatch.setitem(orchestrator._tool_handlers, "list_conversations", handler_that_opens_an_llm_span)
+    orchestrator._handle_tool("list_conversations", {})
+
+    tool_started = next(
+        r for r in events.all_events(include_lifecycle=True)
+        if r["skill"] == "list_conversations" and r["event_type"] == events.TOOL_STARTED
+    )
+    llm_span = captured["llm_span"]
+    assert llm_span.parent_event_id == tool_started["event_id"]
+    assert llm_span.trace_id == tool_started["trace_id"]
+
+
 def test_handle_tool_records_failed_calls_in_the_activity_log(orchestrator, monkeypatch):
     from snarf.telemetry import activity_log
 
@@ -1081,6 +1164,52 @@ def test_community_post_message_with_confirmed_calls_discord(orchestrator, monke
     monkeypatch.setattr(orchestrator._discord, "send_message", lambda content: {"id": "m1", "content": content})
     result = orchestrator._handle_tool("community_post_message", {"content": "hola", "confirmed": True})
     assert result == {"id": "m1", "content": "hola"}
+
+
+# --- Cockpit del fundador (Fase 9.1 adelantada, ADR 0137/0138): control real de procesos ---
+
+
+def test_ops_process_status_returns_real_process_control_status(orchestrator, monkeypatch):
+    from snarf.runtime import process_control
+
+    monkeypatch.setattr(process_control, "status", lambda: [{"label": "com.snarf.mlx-fast", "running": True}])
+    result = orchestrator._handle_tool("ops_process_status", {})
+    assert result == {"processes": [{"label": "com.snarf.mlx-fast", "running": True}]}
+
+
+def test_ops_process_status_is_refused_for_a_non_founder_user(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    second_user = Orchestrator(user_id="usuario_de_prueba")
+    result = second_user._handle_tool("ops_process_status", {})
+    assert "error" in result
+
+
+def test_ops_process_restart_requires_confirmation_first(orchestrator):
+    result = orchestrator._handle_tool("ops_process_restart", {"label": "com.snarf.mlx-fast"})
+    assert result["status"] == "pending_confirmation"
+
+
+def test_ops_process_restart_with_confirmed_calls_process_control(orchestrator, monkeypatch):
+    from snarf.runtime import process_control
+
+    calls = []
+    monkeypatch.setattr(process_control, "restart", lambda label: calls.append(label) or {"label": label, "restarted": True})
+    result = orchestrator._handle_tool("ops_process_restart", {"label": "com.snarf.mlx-fast", "confirmed": True})
+    assert result == {"label": "com.snarf.mlx-fast", "restarted": True}
+    assert calls == ["com.snarf.mlx-fast"]
+
+
+def test_ops_process_restart_refuses_to_restart_the_main_server(orchestrator):
+    result = orchestrator._handle_tool("ops_process_restart", {"label": "com.snarf.server", "confirmed": True})
+    assert "error" in result
+    assert "propio proceso" in result["error"]
+
+
+def test_ops_process_restart_is_refused_for_a_non_founder_user(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    second_user = Orchestrator(user_id="usuario_de_prueba")
+    result = second_user._handle_tool("ops_process_restart", {"label": "com.snarf.mlx-fast", "confirmed": True})
+    assert "error" in result
 
 
 def test_ops_system_health_reflects_real_orchestrator_state(orchestrator, monkeypatch):

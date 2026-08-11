@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -1495,3 +1497,150 @@ def test_dashboard_executive_board_consult_requires_a_question(client):
     assert "error" in res.json()
 
 
+
+
+# --- Fase 3 del plan de multi-usuario (ADR 0137) ---------------------------
+
+
+def test_get_orchestrator_returns_the_same_instance_for_the_same_user(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    first = app_module.get_orchestrator("otro_usuario")
+    second = app_module.get_orchestrator("otro_usuario")
+    assert first is second
+
+
+def test_get_orchestrator_returns_distinct_instances_for_distinct_users(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    a = app_module.get_orchestrator("usuario_a")
+    b = app_module.get_orchestrator("usuario_b")
+    assert a is not b
+    assert a._memory.path != b._memory.path
+
+
+def test_module_level_orchestrator_is_the_founders_cached_instance(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert app_module.get_orchestrator(app_module.DEFAULT_USER_ID) is app_module.orchestrator
+
+
+def test_login_with_google_redirects_to_a_real_google_consent_url(client, monkeypatch, tmp_path):
+    from snarf.capabilities import google_auth
+
+    monkeypatch.setattr(google_auth, "CLIENT_SECRET_PATH", tmp_path / "google_client_secret.json")
+    google_auth.CLIENT_SECRET_PATH.write_text(
+        '{"web": {"client_id": "fake.apps.googleusercontent.com", "client_secret": "x", '
+        '"auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token", '
+        '"redirect_uris": ["https://testserver/google/oauth/callback"]}}',
+        encoding="utf-8",
+    )
+    res = client.get("/login/google", follow_redirects=False)
+    assert res.status_code in (302, 307)
+    assert res.headers["location"].startswith("https://accounts.google.com/o/oauth2/")
+    assert "snarf_google_oauth_state" in res.cookies
+
+
+def test_login_with_google_fails_clearly_when_google_is_not_configured(client, monkeypatch):
+    from snarf.capabilities import google_auth
+
+    monkeypatch.setattr(google_auth, "CLIENT_SECRET_PATH", Path("/definitely/does/not/exist.json"))
+    res = client.get("/login/google", follow_redirects=False)
+    assert res.status_code == 503
+
+
+def test_google_connect_requires_authentication():
+    from fastapi.testclient import TestClient
+
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        res = anonymous_client.get("/google/connect", follow_redirects=False)
+    assert res.status_code == 401
+
+
+def test_oauth_callback_rejects_a_missing_state_cookie(client):
+    res = client.get("/google/oauth/callback", params={"code": "abc", "state": "s1"})
+    assert res.status_code == 400
+
+
+def test_oauth_callback_rejects_a_tampered_state(client):
+    client.cookies.set("snarf_google_oauth_state", "esto-no-es-un-token-firmado-real")
+    res = client.get("/google/oauth/callback", params={"code": "abc", "state": "s1"})
+    assert res.status_code == 400
+
+
+def test_oauth_callback_redirects_to_login_on_a_real_google_error(client):
+    res = client.get("/google/oauth/callback", params={"error": "access_denied"}, follow_redirects=False)
+    assert res.status_code in (302, 307)
+    assert "/login" in res.headers["location"]
+
+
+def test_full_login_via_google_mints_a_session_for_a_brand_new_isolated_user(client, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from snarf.capabilities import google_auth
+    from snarf.runtime import google_identity
+
+    monkeypatch.setattr(google_auth, "TOKENS_DIR", tmp_path / "tokens")
+    monkeypatch.setattr(google_auth, "CLIENT_SECRET_PATH", tmp_path / "google_client_secret.json")
+    google_auth.CLIENT_SECRET_PATH.write_text(
+        '{"web": {"client_id": "fake.apps.googleusercontent.com", "client_secret": "x", '
+        '"auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token", '
+        '"redirect_uris": ["https://testserver/google/oauth/callback"]}}',
+        encoding="utf-8",
+    )
+
+    # Arranca el flujo real: arma la URL de Google y deja el cookie de
+    # estado firmado real seteado en el cliente de test.
+    start_res = client.get("/login/google", follow_redirects=False)
+    assert start_res.status_code in (302, 307)
+    state = start_res.headers["location"].split("state=")[1].split("&")[0]
+
+    fake_creds = SimpleNamespace(to_json=lambda: '{"token": "tok-real"}')
+    monkeypatch.setattr(google_auth, "exchange_code", lambda *a, **k: fake_creds)
+    monkeypatch.setattr(google_identity, "fetch_email", lambda creds: "persona.nueva@gmail.com")
+
+    callback_res = client.get(
+        "/google/oauth/callback", params={"code": "real-code", "state": state}, follow_redirects=False
+    )
+    assert callback_res.status_code in (302, 307)
+    assert "snarf_session" in callback_res.cookies
+
+    new_user_id = google_identity.user_id_for_email("persona.nueva@gmail.com")
+    # El token real de Google quedó guardado para ESTE usuario nuevo, no
+    # para el fundador — la aislación real de su Orchestrator (memoria,
+    # proyectos, indexers) ya está cubierta en
+    # test_get_orchestrator_returns_distinct_instances_for_distinct_users.
+    assert google_auth.token_path(new_user_id).exists()
+    assert not google_auth.token_path(app_module.DEFAULT_USER_ID).exists()
+
+
+# --- Fase 4: integración con n8n (observa y propone, ADR 0139) ------------
+
+
+def test_n8n_status_requires_the_control_token(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        res = anonymous_client.get("/n8n/status")
+    assert res.status_code == 401
+
+
+def test_n8n_status_is_unavailable_without_a_configured_token():
+    from fastapi.testclient import TestClient
+
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        res = anonymous_client.get("/n8n/status", headers={"X-Snarf-Token": "lo-que-sea"})
+    assert res.status_code == 503
+
+
+def test_n8n_status_returns_real_system_health_and_process_status(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from snarf.runtime import process_control
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    monkeypatch.setattr(process_control, "status", lambda: [{"label": "com.snarf.mlx-fast", "running": True}])
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        res = anonymous_client.get("/n8n/status", headers={"X-Snarf-Token": "el-token-real"})
+    assert res.status_code == 200
+    body = res.json()
+    assert "llm_available" in body["system_health"]
+    assert body["processes"] == [{"label": "com.snarf.mlx-fast", "running": True}]
