@@ -206,3 +206,58 @@ def test_snapshot_with_no_data_returns_zeroed_nodes_and_empty_events():
     assert result["events"] == []
     assert all(node["count"] == 0 and node["errors"] == 0 for node in result["nodes"].values())
     assert set(result["nodes"].keys()) == set(brain.NODE_IDS)
+
+
+# --- Fase 9.2: junta directiva como 7 nodos reales (ADR 0147) --------------
+
+
+def test_executive_board_roles_have_a_parent_specialist_node():
+    for node_id in brain.EXECUTIVE_ROLE_TO_NODE.values():
+        assert brain.NODE_PARENT[node_id] == "specialist_executive_board"
+        assert brain.NODE_TIER[node_id] == "specialist"
+
+
+def test_snapshot_routes_agent_finished_events_to_the_matching_executive_role_node():
+    lifecycle_entries = [
+        {"timestamp": 5.0, "nodo": "specialist_executive_board", "skill": "cto", "event_type": "agent.finished"},
+    ]
+    result = brain.snapshot([], [], [], {}, lifecycle_entries=lifecycle_entries)
+    assert result["nodes"]["specialist_executive_board_cto"]["count"] == 1
+    assert result["nodes"]["specialist_executive_board_cto"]["errors"] == 0
+    assert result["nodes"]["specialist_executive_board_cto"]["last_timestamp"] == 5.0
+
+
+def test_snapshot_routes_agent_failed_events_as_errors_on_the_role_node():
+    lifecycle_entries = [
+        {"timestamp": 5.0, "nodo": "specialist_executive_board", "skill": "cfo", "event_type": "agent.failed"},
+    ]
+    result = brain.snapshot([], [], [], {}, lifecycle_entries=lifecycle_entries)
+    assert result["nodes"]["specialist_executive_board_cfo"]["count"] == 1
+    assert result["nodes"]["specialist_executive_board_cfo"]["errors"] == 1
+
+
+def test_snapshot_ignores_agent_started_events_to_avoid_double_counting():
+    lifecycle_entries = [
+        {"timestamp": 5.0, "nodo": "specialist_executive_board", "skill": "ceo", "event_type": "agent.started"},
+    ]
+    result = brain.snapshot([], [], [], {}, lifecycle_entries=lifecycle_entries)
+    assert result["nodes"]["specialist_executive_board_ceo"]["count"] == 0
+
+
+def test_snapshot_ignores_lifecycle_entries_for_other_nodos():
+    lifecycle_entries = [
+        {"timestamp": 5.0, "nodo": "specialist_gmail", "skill": "cto", "event_type": "agent.finished"},
+    ]
+    result = brain.snapshot([], [], [], {}, lifecycle_entries=lifecycle_entries)
+    assert result["nodes"]["specialist_executive_board_cto"]["count"] == 0
+
+
+def test_snapshot_never_touches_the_center_node_for_executive_role_activity():
+    """Decisión ya tomada en ADR 0147: el Orchestrator ya se cuenta una vez
+    vía activity_entries (el despacho real de executive_board_consult) — el
+    fan-out interno a los 7 roles nunca debe volver a tocar CENTER_NODE."""
+    lifecycle_entries = [
+        {"timestamp": 5.0, "nodo": "specialist_executive_board", "skill": "coo", "event_type": "agent.finished"},
+    ]
+    result = brain.snapshot([], [], [], {}, lifecycle_entries=lifecycle_entries)
+    assert result["nodes"]["orchestrator"]["count"] == 0

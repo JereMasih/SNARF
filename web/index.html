@@ -1124,6 +1124,19 @@
   .brain-node-ghost { color: var(--brain-grey) !important; fill-opacity: 0.05; stroke-dasharray: 1 4; opacity: 0.4; animation: none !important; }
   .brain-ring { fill: none; stroke: rgba(150,170,190,0.16); stroke-width: 1; stroke-dasharray: 1 5; }
 
+  /* Fase 9.2 (ADR 0147): anillo 4, chips reales de skill (verbo temático
+     real, verbs.py — nunca generado por LLM), transitorios, anclados al
+     nodo padre real. pointer-events:none: son decoración informativa,
+     nunca deben interceptar el click de un nodo debajo. */
+  #brainSkillChips { pointer-events: none; }
+  .brain-skill-chip rect {
+    fill: rgba(6, 14, 18, 0.72); stroke: currentColor; stroke-width: 0.6; stroke-opacity: 0.55; rx: 4;
+  }
+  .brain-skill-chip-text {
+    fill: currentColor; font-family: var(--hud-font-mono); font-size: 8px; text-anchor: middle;
+    dominant-baseline: middle;
+  }
+
   /* Latido lento y tenue: el estado por defecto de cualquier nodo con
      historia real pero sin actividad reciente — "en espera", nunca del
      todo apagado. */
@@ -2084,6 +2097,11 @@
             <g id="brainEdgeFlows"></g>
             <g id="pulseLayer"></g>
             <g id="brainNodes"></g>
+            <!-- Fase 9.2 (ADR 0147): anillo 4 (skills reales, chips
+                 transitorios) — arriba de brainNodes para que el texto
+                 siempre se lea, pointer-events:none (ver CSS) para que
+                 nunca tape el click de un nodo real debajo. -->
+            <g id="brainSkillChips"></g>
           </svg>
           <canvas id="brainParticles"></canvas>
         </div>
@@ -4495,6 +4513,32 @@ const BRAIN_SPECIALIST_ORDER = [
   "specialist_executive_board", "specialist_skill_factory",
 ];
 const BRAIN_CAPABILITY_ORDER = ["memory", "drive", "knowledge", "documents", "gmail_read", "gmail_manage", "gmail_send", "calendar_view", "calendar_edit", "youtube", "notion", "llm", "stt", "tts", "personality", "utility"];
+// Fase 9.2 (ADR 0147): los 7 roles reales del board ejecutivo
+// (snarf/telemetry/brain.py::EXECUTIVE_ROLE_TO_NODE/NODE_PARENT — este
+// array/objeto es el espejo real en JS, mantenido a mano en sync, mismo
+// criterio que BRAIN_NODE_LABELS reflejando NODE_TIER). A propósito NO
+// entran a BRAIN_SPECIALIST_ORDER: ese array es la lista de posiciones del
+// anillo principal, y estos 7 se layoutean aparte, orbitando
+// specialist_executive_board (ver buildBrainGraphSkeleton).
+const BRAIN_EXECUTIVE_ROLE_NODES = [
+  "specialist_executive_board_cto", "specialist_executive_board_coo", "specialist_executive_board_research",
+  "specialist_executive_board_ceo", "specialist_executive_board_cfo", "specialist_executive_board_cmo",
+  "specialist_executive_board_creative",
+];
+const BRAIN_EXECUTIVE_ROLE_PARENT = "specialist_executive_board";
+function isBrainSpecialistNode(id) {
+  return BRAIN_SPECIALIST_ORDER.includes(id) || BRAIN_EXECUTIVE_ROLE_NODES.includes(id);
+}
+// Consolida la lógica que antes vivía repetida e inline en ≥4 lugares
+// distintos (isSpecialist/isInput ad hoc) — única fuente real de verdad de
+// a qué anillo pertenece cada nodo, usada tanto por el layout de siempre
+// como por la rotación propia de cada anillo (giroscopio, ver más abajo).
+function tierForNode(id) {
+  if (id === "orchestrator") return "orchestrator";
+  if (BRAIN_INPUT_ORDER.includes(id)) return "input";
+  if (isBrainSpecialistNode(id)) return "specialist";
+  return "capability";
+}
 const BRAIN_NODE_LABELS = {
   input_text: "Texto",
   input_voice: "Voz",
@@ -4512,6 +4556,13 @@ const BRAIN_NODE_LABELS = {
   specialist_projects_tasks: "Proyectos: tareas y notas",
   specialist_projects_conversations: "Proyectos: conversaciones",
   specialist_executive_board: "Inteligencia Ejecutiva",
+  specialist_executive_board_cto: "Board: CTO",
+  specialist_executive_board_coo: "Board: COO",
+  specialist_executive_board_research: "Board: Research",
+  specialist_executive_board_ceo: "Board: CEO",
+  specialist_executive_board_cfo: "Board: CFO",
+  specialist_executive_board_cmo: "Board: CMO",
+  specialist_executive_board_creative: "Board: Creative",
   specialist_skill_factory: "Skill Factory",
   memory: "Memoria",
   drive: "Drive",
@@ -4556,6 +4607,18 @@ const BRAIN_NODE_ICON_PATHS = {
   specialist_community: '<circle cx="7" cy="8" r="3"/><circle cx="13" cy="8" r="3"/><path d="M2.5 16.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5"/><path d="M8.5 16.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5"/>',
   specialist_agency: '<path d="M6 3.5h8a1 1 0 0 1 1 1V16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z"/><rect x="7.5" y="2.3" width="5" height="2.6" rx="0.8"/><line x1="6.8" y1="9" x2="13.2" y2="9"/><line x1="6.8" y1="12" x2="13.2" y2="12"/>',
   specialist_executive_board: '<line x1="3" y1="14.5" x2="17" y2="14.5"/><circle cx="5.5" cy="9" r="2"/><circle cx="10" cy="7.3" r="2"/><circle cx="14.5" cy="9" r="2"/>',
+  // Fase 9.2 (ADR 0147): los 7 roles individuales reusan un único ícono
+  // simple (un solo punto real) — se distinguen entre sí por posición
+  // (mini-anillo propio) y label/tooltip, no por un ícono nuevo por rol
+  // (7 íconos dibujados a mano sería desproporcionado para nodos tan
+  // chicos del sub-cluster).
+  specialist_executive_board_cto: '<circle cx="10" cy="10" r="3.4"/>',
+  specialist_executive_board_coo: '<circle cx="10" cy="10" r="3.4"/>',
+  specialist_executive_board_research: '<circle cx="10" cy="10" r="3.4"/>',
+  specialist_executive_board_ceo: '<circle cx="10" cy="10" r="3.4"/>',
+  specialist_executive_board_cfo: '<circle cx="10" cy="10" r="3.4"/>',
+  specialist_executive_board_cmo: '<circle cx="10" cy="10" r="3.4"/>',
+  specialist_executive_board_creative: '<circle cx="10" cy="10" r="3.4"/>',
   specialist_skill_factory: '<path d="M13.5 3a3.5 3.5 0 0 0-4.8 4.4L3 13.1a1.6 1.6 0 0 0 2.3 2.3l5.7-5.7A3.5 3.5 0 0 0 15.5 5.5l-2 2-1.5-1.5 2-2Z"/>',
   memory: '<ellipse cx="10" cy="5.2" rx="6.3" ry="2.1"/><path d="M3.7 5.2v9.6c0 1.16 2.82 2.1 6.3 2.1s6.3-.94 6.3-2.1V5.2"/><path d="M3.7 10c0 1.16 2.82 2.1 6.3 2.1s6.3-.94 6.3-2.1"/>',
   drive: '<path d="M2.5 6a1 1 0 0 1 1-1h3.6l1.4 1.8H16.5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V6Z"/>',
@@ -4615,6 +4678,13 @@ const BRAIN_NODE_COLOR_CLASS = {
   specialist_community: "brain-color-magenta",
   specialist_agency: "brain-color-magenta",
   specialist_executive_board: "brain-color-magenta",
+  specialist_executive_board_cto: "brain-color-magenta",
+  specialist_executive_board_coo: "brain-color-magenta",
+  specialist_executive_board_research: "brain-color-magenta",
+  specialist_executive_board_ceo: "brain-color-magenta",
+  specialist_executive_board_cfo: "brain-color-magenta",
+  specialist_executive_board_cmo: "brain-color-magenta",
+  specialist_executive_board_creative: "brain-color-magenta",
   specialist_skill_factory: "brain-color-magenta",
 };
 // Categoría real de archivo (categorize_mime, snarf/knowledge/extraction.py)
@@ -4804,6 +4874,8 @@ function buildBrainGraphSkeleton() {
   edgesG.innerHTML = "";
   flowsG.innerHTML = "";
   nodesG.innerHTML = "";
+  document.getElementById("brainSkillChips").innerHTML = "";
+  brainSkillChips = [];
   brainNodeEls = {};
   brainIconEls = {};
   brainNodeGroupEls = {};
@@ -4853,50 +4925,82 @@ function buildBrainGraphSkeleton() {
   layout.forEach((p) => {
     const isSpecialist = BRAIN_SPECIALIST_ORDER.includes(p.id);
     const isInput = BRAIN_INPUT_ORDER.includes(p.id);
-    const colorCls = brainColorClassFor(p.id);
-    const d = `M ${cx} ${cy} L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
-
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("id", `edge-${p.id}`);
-    path.setAttribute("d", d);
-    path.setAttribute("class", `brain-edge ${colorCls}`);
-    edgesG.appendChild(path);
-    brainEdgePaths[p.id] = path;
-
-    // Path hermano, mismo trazado: la base de arriba nunca cambia de clase
-    // (la referencia el <mpath> de cada pulso puntual); este overlay es el
-    // que prende/apaga el flujo continuo según el nodo esté activo o no.
-    const flowPath = document.createElementNS(SVG_NS, "path");
-    flowPath.setAttribute("d", d);
-    flowPath.setAttribute("class", `brain-edge ${colorCls}`);
-    flowsG.appendChild(flowPath);
-    brainEdgeFlowPaths[p.id] = flowPath;
-
-    const group = document.createElementNS(SVG_NS, "g");
-    nodesG.appendChild(group);
-    brainNodeGroupEls[p.id] = group;
-
-    const baseRadius = isSpecialist || isInput ? 14 : 11;
-    const circle = document.createElementNS(SVG_NS, "circle");
-    circle.setAttribute("cx", p.x.toFixed(1));
-    circle.setAttribute("cy", p.y.toFixed(1));
-    circle.setAttribute("r", baseRadius);
-    circle.setAttribute("class", `brain-node ${colorCls}${isSpecialist ? " brain-node-specialist" : ""}`);
-    group.appendChild(circle);
-    brainNodeEls[p.id] = circle;
-    brainNodeBaseRadius[p.id] = baseRadius;
-    brainNodeBasePos[p.id] = { x: p.x, y: p.y, z: brainZForNode(p.id) };
-
-    const iconY = p.y + (p.y > cy ? 24 : -18);
-    const icon = createBrainNodeIconEl(p.id, p.x, iconY, 17);
-    icon.classList.add(colorCls);
-    group.appendChild(icon);
-    brainIconEls[p.id] = icon;
+    createBrainGraphNode(p.id, p.x, p.y, cx, cy, edgesG, flowsG, nodesG, {
+      isSpecialist,
+      radius: isSpecialist || isInput ? 14 : 11,
+      iconSize: 17,
+    });
   });
+
+  // Fase 9.2 (ADR 0147): los 7 roles del board ejecutivo orbitan a
+  // specialist_executive_board en su propio mini-anillo — nunca mezclados
+  // en el anillo principal de especialistas (los volvería indistinguibles
+  // del resto, 15 nodos en un solo anillo). El edge de cada uno sale del
+  // padre real (no del centro), reflejando la jerarquía real de
+  // brain.py::NODE_PARENT.
+  const boardPos = layout.find((p) => p.id === BRAIN_EXECUTIVE_ROLE_PARENT);
+  if (boardPos) {
+    const subRadius = 42;
+    brainLayoutRing(BRAIN_EXECUTIVE_ROLE_NODES, boardPos.x, boardPos.y, subRadius).forEach((p) => {
+      createBrainGraphNode(p.id, p.x, p.y, boardPos.x, boardPos.y, edgesG, flowsG, nodesG, {
+        isSpecialist: true,
+        radius: 7,
+        iconSize: 11,
+        parentId: BRAIN_EXECUTIVE_ROLE_PARENT,
+      });
+    });
+  }
 
   resizeBrainCanvas();
   initBrainParticles();
   initBrainMesh();
+}
+// Extraído de buildBrainGraphSkeleton (Fase 9.2, ADR 0147) para poder crear
+// tanto los nodos del anillo principal como el mini-anillo del board
+// ejecutivo con el mismo código real — nunca una segunda implementación.
+// `edgeOriginX/Y` es de dónde sale el edge real hacia este nodo: el centro
+// (250,250) para el anillo principal, la posición del padre para un
+// sub-nodo (jerarquía real, ver NODE_PARENT).
+function createBrainGraphNode(id, x, y, edgeOriginX, edgeOriginY, edgesG, flowsG, nodesG, opts) {
+  const { isSpecialist, radius, iconSize, parentId } = opts;
+  const colorCls = brainColorClassFor(id);
+  const d = `M ${edgeOriginX} ${edgeOriginY} L ${x.toFixed(1)} ${y.toFixed(1)}`;
+
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("id", `edge-${id}`);
+  path.setAttribute("d", d);
+  path.setAttribute("class", `brain-edge ${colorCls}`);
+  edgesG.appendChild(path);
+  brainEdgePaths[id] = path;
+
+  // Path hermano, mismo trazado: la base de arriba nunca cambia de clase
+  // (la referencia el <mpath> de cada pulso puntual); este overlay es el
+  // que prende/apaga el flujo continuo según el nodo esté activo o no.
+  const flowPath = document.createElementNS(SVG_NS, "path");
+  flowPath.setAttribute("d", d);
+  flowPath.setAttribute("class", `brain-edge ${colorCls}`);
+  flowsG.appendChild(flowPath);
+  brainEdgeFlowPaths[id] = flowPath;
+
+  const group = document.createElementNS(SVG_NS, "g");
+  nodesG.appendChild(group);
+  brainNodeGroupEls[id] = group;
+
+  const circle = document.createElementNS(SVG_NS, "circle");
+  circle.setAttribute("cx", x.toFixed(1));
+  circle.setAttribute("cy", y.toFixed(1));
+  circle.setAttribute("r", radius);
+  circle.setAttribute("class", `brain-node ${colorCls}${isSpecialist ? " brain-node-specialist" : ""}`);
+  group.appendChild(circle);
+  brainNodeEls[id] = circle;
+  brainNodeBaseRadius[id] = radius;
+  brainNodeBasePos[id] = { x, y, z: brainZForNode(id), parentId: parentId || null };
+
+  const iconY = y + (y > edgeOriginY ? 24 : -18);
+  const icon = createBrainNodeIconEl(id, x, iconY, iconSize);
+  icon.classList.add(colorCls);
+  group.appendChild(icon);
+  brainIconEls[id] = icon;
 }
 
 // Mismo ícono/paths que el grafo (BRAIN_NODE_ICON_PATHS), a tamaño de texto
@@ -5037,6 +5141,74 @@ function spawnPulse(ev) {
   const cleanup = () => circle.remove();
   anim.addEventListener("endEvent", cleanup);
   setTimeout(cleanup, 1300); // defensivo, por si endEvent no dispara en algún motor
+
+  spawnSkillChip(ev);
+}
+
+// Fase 9.2 (ADR 0147): anillo 4 — sin taxonomía nueva de "familias de
+// skill" (se evaluó y se descartó: cada chip ya cuelga de su nodo padre
+// real, "agrupado por familia" sale gratis de eso). Excluye nodos sin un
+// skill real y legible (orchestrator, los 3 vendors LLM/STT/TTS —
+// demasiado frecuentes, inundarían el anillo — y los 3 canales de
+// entrada) — alcance del primer corte, ver ADR para el resto.
+const BRAIN_RING4_EXCLUDED_NODES = new Set([
+  "orchestrator", "llm", "stt", "tts", "input_text", "input_voice", "input_file", "knowledge",
+]);
+const BRAIN_SKILL_CHIP_TTL_S = 5;
+let brainSkillChips = [];
+function spawnSkillChip(ev) {
+  if (BRAIN_RING4_EXCLUDED_NODES.has(ev.node) || !ev.verbo || !brainNodeBasePos[ev.node]) return;
+  const group = document.createElementNS(SVG_NS, "g");
+  group.setAttribute("class", `brain-skill-chip ${brainColorClassFor(ev.node)}`);
+  const rect = document.createElementNS(SVG_NS, "rect");
+  const text = document.createElementNS(SVG_NS, "text");
+  text.setAttribute("class", "brain-skill-chip-text");
+  text.textContent = ev.verbo;
+  group.appendChild(rect);
+  group.appendChild(text);
+  document.getElementById("brainSkillChips").appendChild(group);
+  brainSkillChips.push({ nodeId: ev.node, group, spawnedAt: performance.now() });
+  // getBBox() necesita el <text> ya insertado en el DOM — un frame después,
+  // recién ahí se conoce su ancho real para dimensionar el fondo.
+  requestAnimationFrame(() => {
+    try {
+      const bbox = text.getBBox();
+      rect.setAttribute("x", (bbox.x - 6).toFixed(1));
+      rect.setAttribute("y", (bbox.y - 3).toFixed(1));
+      rect.setAttribute("width", (bbox.width + 12).toFixed(1));
+      rect.setAttribute("height", (bbox.height + 6).toFixed(1));
+    } catch (e) {}
+  });
+  // Techo real (no solo TTL): una ráfaga de eventos no debe acumular
+  // decenas de chips superpuestos e ilegibles.
+  if (brainSkillChips.length > 24) {
+    const oldest = brainSkillChips.shift();
+    oldest.group.remove();
+  }
+}
+// Llamada una vez por frame desde renderBrainFrame, después de proyectar
+// los nodos — cada chip sigue la posición VIVA (girada + con cámara) de su
+// nodo padre real, nunca queda "abandonado" mientras el anillo gira.
+function updateBrainSkillChips(nowMs) {
+  brainSkillChips = brainSkillChips.filter((chip) => {
+    const age = (nowMs - chip.spawnedAt) / 1000;
+    const pos = brainNodeBasePos[chip.nodeId];
+    if (age > BRAIN_SKILL_CHIP_TTL_S || !pos) {
+      chip.group.remove();
+      return false;
+    }
+    const spun = brainApplyRingSpin(chip.nodeId, pos.x, pos.y);
+    const proj = project3D(spun.x, spun.y, pos.z);
+    const floatUp = age * 6; // deriva lenta hacia arriba mientras vive, nunca clavado
+    chip.group.setAttribute(
+      "transform",
+      `translate(${proj.x.toFixed(1)} ${(proj.y - 22 - floatUp).toFixed(1)}) scale(${Math.max(0.5, proj.scale).toFixed(2)})`
+    );
+    const fadeIn = Math.min(1, age / 0.3);
+    const fadeOut = Math.max(0, 1 - (age - (BRAIN_SKILL_CHIP_TTL_S - 1)));
+    chip.group.style.opacity = Math.min(fadeIn, fadeOut).toFixed(2);
+    return true;
+  });
 }
 
 function applyBrainSnapshot(snap, spawnPulses) {
@@ -5048,11 +5220,18 @@ function applyBrainSnapshot(snap, spawnPulses) {
     const node = nodes[id] || { count: 0, last_timestamp: null };
     const isSpecialist = BRAIN_SPECIALIST_ORDER.includes(id);
     const isInput = BRAIN_INPUT_ORDER.includes(id);
+    // Fase 9.2 (ADR 0147): los 7 sub-nodos del board son deliberadamente
+    // chicos (satélites orbitando a su padre) — mismo criterio de "cuenta
+    // real → tamaño real" pero en una escala más chica, nunca compitiendo
+    // visualmente con el anillo principal de especialistas.
+    const isExecutiveRole = BRAIN_EXECUTIVE_ROLE_NODES.includes(id);
     const r = id === "orchestrator"
       ? brainNodeRadius(node.count, 24, 40, 5)
-      : isSpecialist || isInput
-        ? brainNodeRadius(node.count, 12, 24, 3)
-        : brainNodeRadius(node.count, 9, 24, 4);
+      : isExecutiveRole
+        ? brainNodeRadius(node.count, 5, 10, 1.5)
+        : isSpecialist || isInput
+          ? brainNodeRadius(node.count, 12, 24, 3)
+          : brainNodeRadius(node.count, 9, 24, 4);
     brainNodeEls[id].setAttribute("r", r.toFixed(1));
 
     const stateCls = brainStateClass(node);
@@ -5330,10 +5509,18 @@ function updateAndDrawFlowParticle(ctx, p, dt) {
   const node = brainNodeEls[p.nodeId];
   if (!node) { p.done = true; return; }
   if (p.phase === "travel" && !activeBrainNodeIds.has(p.nodeId)) { p.done = true; return; }
-  const nx = parseFloat(node.getAttribute("cx"));
-  const ny = parseFloat(node.getAttribute("cy"));
+  // Fase 9.2 (ADR 0147): posición VIVA (girada por el anillo propio), re-
+  // calculada cada frame — mismo criterio que applyBrain3DProjection, así
+  // el flujo de partículas nunca se desincroniza del nodo real que anima.
+  const nodePos = brainNodeBasePos[p.nodeId];
+  const nSpun = brainApplyRingSpin(p.nodeId, parseFloat(node.getAttribute("cx")), parseFloat(node.getAttribute("cy")));
+  const nx = nSpun.x, ny = nSpun.y;
   const nz = brainZForNode(p.nodeId);
-  const cx = 250, cy = 250, cz = brainZForNode("orchestrator");
+  // Los sub-nodos del board ejecutivo fluyen desde su padre real, no desde
+  // el centro — mismo criterio que el edge que los dibuja.
+  const originPos = nodePos && nodePos.parentId ? brainNodeBasePos[nodePos.parentId] : null;
+  const originSpun = originPos ? brainApplyRingSpin(nodePos.parentId, originPos.x, originPos.y) : { x: 250, y: 250 };
+  const cx = originSpun.x, cy = originSpun.y, cz = originPos ? originPos.z : brainZForNode("orchestrator");
   const whiteColor = brainCssColor("white");
 
   let worldX, worldY, worldZ, alpha, radiusMul, color;
@@ -5385,8 +5572,11 @@ function updateAndDrawFlowParticle(ctx, p, dt) {
 function spawnBrainBurst(nodeId, isError) {
   const node = brainNodeEls[nodeId];
   if (!node) return;
-  const cx = parseFloat(node.getAttribute("cx"));
-  const cy = parseFloat(node.getAttribute("cy"));
+  // Fase 9.2 (ADR 0147): nace en la posición VIVA (ya girada) del nodo —
+  // sin esto, el estallido aparecería en la posición vieja mientras el
+  // nodo ya rotó a otro lado del anillo.
+  const spun = brainApplyRingSpin(nodeId, parseFloat(node.getAttribute("cx")), parseFloat(node.getAttribute("cy")));
+  const cx = spun.x, cy = spun.y;
   if (Number.isNaN(cx) || Number.isNaN(cy)) return;
   const color = isError ? brainCssColor("red") : getComputedStyle(node).color;
   const z = brainZForNode(nodeId);
@@ -5417,8 +5607,8 @@ function spawnBrainBurst(nodeId, isError) {
 function triggerBrainCameraFocus(nodeId) {
   const node = brainNodeEls[nodeId];
   if (!node) return;
-  const cx = parseFloat(node.getAttribute("cx"));
-  const cy = parseFloat(node.getAttribute("cy"));
+  const spun = brainApplyRingSpin(nodeId, parseFloat(node.getAttribute("cx")), parseFloat(node.getAttribute("cy")));
+  const cx = spun.x, cy = spun.y;
   if (Number.isNaN(cx) || Number.isNaN(cy)) return;
   // El origen de la escala se mezcla hacia el centro (no va 100% al nodo) y
   // el zoom es moderado — un foco total sobre un nodo del anillo externo
@@ -5506,10 +5696,39 @@ function spawnActiveFlowParticles(dt) {
 // posición estática original).
 const BRAIN_RING_Z = { orchestrator: 90, input: 40, specialist: -20, capability: -110 };
 function brainZForNode(id) {
-  if (id === "orchestrator") return BRAIN_RING_Z.orchestrator;
-  if (BRAIN_INPUT_ORDER.includes(id)) return BRAIN_RING_Z.input;
-  if (BRAIN_SPECIALIST_ORDER.includes(id)) return BRAIN_RING_Z.specialist;
-  return BRAIN_RING_Z.capability;
+  return BRAIN_RING_Z[tierForNode(id)];
+}
+// Fase 9.2 (ADR 0147) — "giroscopio": cada anillo gira además sobre su
+// propio eje, independiente de la vuelta de cámara compartida
+// (brainCamera3D.rotY, sin tocar) — la composición de ambas rotaciones es
+// lo que da la sensación real de giroscopio (varios aros girando cada uno
+// a su ritmo, no un objeto rígido rotando entero). Signos/velocidades
+// distintos a propósito para que se note independiente. orchestrator no
+// gira (un solo nodo central, no tiene sentido).
+const BRAIN_RING_SPIN_BASE = { orchestrator: 0, input: 0.09, specialist: -0.13, capability: 0.06 };
+let brainRingSpinAngle = { orchestrator: 0, input: 0, specialist: 0, capability: 0 };
+// Actividad real reciente (mismo criterio que BRAIN_ACTIVE_WINDOW_S, ya
+// reflejado en activeBrainNodeIds por applyBrainSnapshot) acelera
+// momentáneamente el anillo correspondiente — nunca decorativo al azar,
+// responde a datos reales.
+function brainTierHasRecentActivity(tier) {
+  for (const id of activeBrainNodeIds) {
+    if (tierForNode(id) === tier) return true;
+  }
+  return false;
+}
+// Rota (x,y) alrededor del centro del grafo por el ángulo propio del
+// anillo de `id` — se aplica ANTES de project3D (que sigue proyectando
+// exactamente igual que antes, nunca tocado). Reusado tanto para los
+// nodos (SVG) como para bursts/flujo de partículas (canvas), así ambas
+// capas quedan sincronizadas igual que ya garantiza project3D para la
+// rotación de cámara compartida.
+function brainApplyRingSpin(id, x, y) {
+  const angle = brainRingSpinAngle[tierForNode(id)] || 0;
+  if (!angle) return { x, y };
+  const dx = x - 250, dy = y - 250;
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  return { x: 250 + dx * cos - dy * sin, y: 250 + dx * sin + dy * cos };
 }
 const brainCamera3D = {
   rotY: 0, // la vuelta principal — avanza sola, sin parar, ver updateBrainRotation
@@ -5563,17 +5782,25 @@ function brainLerpColor(colorA, colorB, t) {
 // ambas capas comparten exactamente la misma geometría, siempre.
 function applyBrain3DProjection() {
   const centerProj = project3D(250, 250, brainNodeBasePos.orchestrator.z);
+  // Fase 9.2 (ADR 0147): proyección real del padre del board ejecutivo —
+  // sus 7 hijos dibujan su edge hacia ACÁ (la posición viva, ya girada, del
+  // padre), nunca hacia el centro — jerarquía real, no decorativa.
+  const boardPos = brainNodeBasePos[BRAIN_EXECUTIVE_ROLE_PARENT];
+  const boardSpun = boardPos ? brainApplyRingSpin(BRAIN_EXECUTIVE_ROLE_PARENT, boardPos.x, boardPos.y) : null;
+  const boardProj = boardSpun ? project3D(boardSpun.x, boardSpun.y, boardPos.z) : centerProj;
   Object.entries(brainNodeGroupEls).forEach(([id, group]) => {
     const node = brainNodeEls[id];
     const pos = brainNodeBasePos[id];
     if (!node || !pos) return;
     const baseR = brainNodeBaseRadius[id] || 11;
-    const proj = project3D(pos.x, pos.y, pos.z);
+    const spun = brainApplyRingSpin(id, pos.x, pos.y);
+    const proj = project3D(spun.x, spun.y, pos.z);
     group.setAttribute("transform", `translate(${(proj.x - pos.x).toFixed(2)} ${(proj.y - pos.y).toFixed(2)})`);
     node.setAttribute("r", (baseR * proj.scale).toFixed(2));
     group.style.opacity = Math.max(0.4, Math.min(1, proj.scale)).toFixed(2);
     if (id === "orchestrator") return;
-    const d = `M ${centerProj.x.toFixed(1)} ${centerProj.y.toFixed(1)} L ${proj.x.toFixed(1)} ${proj.y.toFixed(1)}`;
+    const origin = pos.parentId ? boardProj : centerProj;
+    const d = `M ${origin.x.toFixed(1)} ${origin.y.toFixed(1)} L ${proj.x.toFixed(1)} ${proj.y.toFixed(1)}`;
     const edge = brainEdgePaths[id];
     const flow = brainEdgeFlowPaths[id];
     if (edge) edge.setAttribute("d", d);
@@ -5601,8 +5828,15 @@ function renderBrainFrame(ts) {
   // mismo frame: SVG y canvas quedan garantizados en sincronía (nunca un
   // frame de desfasaje entre ambas capas).
   brainCamera3D.rotY += dt * brainCamera3D.autoRotSpeed;
+  // Fase 9.2 (ADR 0147): cada anillo avanza también su propia rotación —
+  // más rápido mientras tenga actividad real reciente (giroscopio).
+  Object.keys(BRAIN_RING_SPIN_BASE).forEach((tier) => {
+    const speedMultiplier = brainTierHasRecentActivity(tier) ? 1.8 : 1;
+    brainRingSpinAngle[tier] += dt * BRAIN_RING_SPIN_BASE[tier] * speedMultiplier;
+  });
   updateBrainRotTrig();
   applyBrain3DProjection();
+  updateBrainSkillChips(ts);
 
   const ctx = brainParticlesCanvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;

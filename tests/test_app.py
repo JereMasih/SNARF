@@ -477,6 +477,12 @@ def test_dashboard_brain_returns_nodes_and_events(client, monkeypatch):
     assert data["nodes"]["drive"]["count"] == 1
     assert data["nodes"]["knowledge"]["count"] == 1
     assert len(data["events"]) == 2
+    # Fase 9.2 (ADR 0147): verbo temático real, mismo que ya usa
+    # /dashboard/telemetry_feed — etiqueta los chips del anillo de skills.
+    drive_event = next(e for e in data["events"] if e["node"] == "drive")
+    from snarf.telemetry import verbs
+
+    assert drive_event["verbo"] == verbs.verbo_tematico("drive", "capability", "completo", skill="drive_list_files")
 
 
 def test_dashboard_brain_since_param_filters_to_new_events_only(client, monkeypatch):

@@ -178,6 +178,32 @@ TOOL_TO_NODE: dict[str, str] = {
     "skill_factory_status": "specialist_skill_factory",
 }
 
+# Fase 9.2 del plan de observabilidad/n8n (ver ROADMAP_OBSERVABILIDAD_MULTIUSUARIO_N8N.md, ADR 0147):
+# los 7 roles reales del board de Inteligencia Ejecutiva (snarf/executive/roles.py::ROLE_CONFIGS) hoy
+# colapsan en un único nodo (specialist_executive_board, ver TOOL_TO_NODE arriba) — invisibles entre sí
+# pese a que la telemetría real YA los distingue (spans.start_agent(role) abre agent.started/finished
+# con skill=<rol>, ver snarf/telemetry/spans.py). No entran a TOOL_TO_NODE (no despachan una tool nueva
+# del Orchestrator — executive_board_consult sigue siendo la única) ni requieren nodo propio en
+# activity_log; su actividad real llega vía snapshot(lifecycle_entries=...) más abajo, filtrando por
+# event_type "agent.finished"/"agent.failed" (brain.py no puede importar snarf.telemetry.events — import
+# circular, events.py ya importa este módulo — esos dos strings son AGENT_FINISHED/AGENT_FAILED
+# mantenidos en sync a mano).
+EXECUTIVE_ROLE_TO_NODE: dict[str, str] = {
+    "cto": "specialist_executive_board_cto",
+    "coo": "specialist_executive_board_coo",
+    "research": "specialist_executive_board_research",
+    "ceo": "specialist_executive_board_ceo",
+    "cfo": "specialist_executive_board_cfo",
+    "cmo": "specialist_executive_board_cmo",
+    "creative": "specialist_executive_board_creative",
+}
+
+# Primera (y a propósito única) jerarquía padre/hijo real del cerebro — el resto de la taxonomía es
+# plana adrede (protocolo de crecimiento de arriba). El frontend usa esto para dibujar los 7 roles como
+# un sub-cluster orbitando specialist_executive_board, nunca sueltos en el anillo principal de
+# especialistas (eso los volvería indistinguibles del resto, el problema real que motivó esta ADR).
+NODE_PARENT: dict[str, str] = {node_id: "specialist_executive_board" for node_id in EXECUTIVE_ROLE_TO_NODE.values()}
+
 # gemini/openai/xai/groq_llama son los 4 proveedores de LLM alternativos a
 # Anthropic (ADR 0067/0068, snarf/runtime/llm_routing.py) — todos ruteables
 # al mismo rol de conversación/especialista, así que caen en el mismo nodo
@@ -236,6 +262,13 @@ NODE_TIER: dict[str, str] = {
     "specialist_projects_tasks": "specialist",
     "specialist_projects_conversations": "specialist",
     "specialist_executive_board": "specialist",
+    "specialist_executive_board_cto": "specialist",
+    "specialist_executive_board_coo": "specialist",
+    "specialist_executive_board_research": "specialist",
+    "specialist_executive_board_ceo": "specialist",
+    "specialist_executive_board_cfo": "specialist",
+    "specialist_executive_board_cmo": "specialist",
+    "specialist_executive_board_creative": "specialist",
     "specialist_skill_factory": "specialist",
     "memory": "capability",
     "drive": "capability",
@@ -265,6 +298,7 @@ def snapshot(
     manifest_summary: dict | None = None,
     since: float | None = None,
     event_limit: int = 100,
+    lifecycle_entries: list[dict] | None = None,
 ) -> dict:
     """Reagrupa activity_log + usage_log + input_log + el manifiesto de
     indexación ya persistido en la forma nodos/eventos del cerebro de Snarf.
@@ -276,7 +310,20 @@ def snapshot(
     Capacidad individual — sumar todos los nodos duplica esa cuenta. El total
     correcto de eventos es nodes["orchestrator"] + nodes["llm"] + nodes["stt"]
     + nodes["tts"] (despachos + las Capacidades que nunca pasan por
-    _handle_tool)."""
+    _handle_tool). Fase 9.2 (ADR 0147): nodes["specialist_executive_board"]
+    ahora se superpone también, legítimamente, con sus 7 hijos
+    (specialist_executive_board_<rol>) — un despacho real de
+    executive_board_consult vía activity_entries, más el fan-out interno a
+    cada rol vía lifecycle_entries, nunca 8 despachos reales del
+    Orchestrator.
+
+    `lifecycle_entries` (opcional, Fase 9.2): filas reales de
+    data/telemetry_events.jsonl con event_type "agent.finished"/
+    "agent.failed" (ver snarf/telemetry/events.py — nunca importado acá
+    directo, import circular real: events.py ya importa este módulo, los
+    dos strings de abajo son AGENT_FINISHED/AGENT_FAILED mantenidos en
+    sync a mano) — hoy la única fuente real de actividad por rol del board
+    de Inteligencia Ejecutiva (ver EXECUTIVE_ROLE_TO_NODE arriba)."""
     manifest_summary = manifest_summary or {}
     nodes = {node_id: {"count": 0, "errors": 0, "last_timestamp": None} for node_id in NODE_IDS}
     events: list[dict] = []
@@ -346,6 +393,32 @@ def snapshot(
                 "node": node_id,
                 "label": entry.get("category") or entry.get("channel", ""),
                 "status": "ok",
+            }
+        )
+
+    # Fase 9.2 (ADR 0147): actividad real por rol del board ejecutivo —
+    # nunca vuelve a tocar CENTER_NODE (el Orchestrator ya se contó una
+    # sola vez arriba, vía activity_entries, por el despacho real de
+    # executive_board_consult; los 7 roles son fan-out interno, no 7
+    # despachos nuevos). Solo cuenta en finalización, mismo criterio que
+    # activity_entries/usage_entries (nunca ".started").
+    for entry in lifecycle_entries or []:
+        if entry.get("nodo") != "specialist_executive_board":
+            continue
+        event_type = entry.get("event_type")
+        if event_type not in ("agent.finished", "agent.failed"):
+            continue
+        node_id = EXECUTIVE_ROLE_TO_NODE.get(entry.get("skill"))
+        if node_id is None:
+            continue
+        ts = entry["timestamp"]
+        _touch(node_id, ts, is_error=(event_type == "agent.failed"))
+        events.append(
+            {
+                "timestamp": ts,
+                "node": node_id,
+                "label": entry.get("skill", ""),
+                "status": "error" if event_type == "agent.failed" else "ok",
             }
         )
 

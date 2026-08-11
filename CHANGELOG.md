@@ -18,6 +18,28 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
   reinició nada de producción sin decisión explícita del fundador en el momento).
 - 5 tests nuevos (`tests/test_app.py`). 1282/1282 tests de la suite completa.
 
+## [2026-08-11] Fase 9.2: el cerebro como "giroscopio" — anillos independientes + junta directiva real (ADR 0147)
+
+- 7 nodos reales nuevos para la junta directiva (`snarf/telemetry/brain.py::EXECUTIVE_ROLE_TO_NODE`/
+  `NODE_PARENT`, primera jerarquía padre/hijo real del cerebro) — la telemetría ya distinguía cada rol,
+  el gap era pura taxonomía. Gap real cerrado en el camino: `agent.finished`/`agent.failed` no estaban en
+  `LEGACY_EVENT_TYPES`, quedaban invisibles en todos lados por default.
+- `/dashboard/brain` suma el verbo temático real (`verbs.verbo_tematico`, mismo que ya usa
+  `/dashboard/telemetry_feed`) — etiqueta los chips nuevos del anillo de skills.
+- Cada anillo del cerebro (`web/index.html`) gana rotación PROPIA, independiente de la vuelta de cámara
+  compartida que ya existía — se acelera con actividad real reciente. Compuesta sobre el motor 3D
+  existente, nunca reemplazado. Bursts/foco de cámara/flujo de partículas sincronizados con el spin real
+  (gap encontrado y cerrado: sin esto, aparecían en la posición vieja del nodo).
+- Anillo 4 (skills): chips reales transitorios, sin taxonomía nueva — cuelgan del nodo padre real que
+  disparó el evento, label = verbo real, TTL 5s.
+- Junta directiva: mini-anillo propio orbitando `specialist_executive_board`, edges desde el padre real.
+- Real-time vía SSE deliberadamente NO esta ronda — aísla el rediseño visual de una migración de datos.
+- Límite honesto documentado: la malla de partículas ambiente no sigue el spin de su anillo todavía.
+- 7 tests nuevos. Verificado con Playwright real contra datos de producción (servidor aislado, puerto
+  8001): 41 nodos, cluster de 7 roles confirmado, rotación por anillo confirmada numéricamente, chips
+  con exclusión/TTL correctos, drill-down sin regresión, resize sin crash. 1288/1288 tests de la suite
+  completa.
+
 ## [2026-08-11] Reapertura: n8n puede escribir prompts/config directo (ADR 0145)
 
 - Decisión explícita del fundador (presentada con 3 opciones reales: solo lectura, HITL, o escritura

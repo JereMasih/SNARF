@@ -10,15 +10,20 @@
 ## Estado actual (retomar una sesión nueva desde acá)
 
 **Última actualización:** 2026-08-11. **Hechas: Fases 0-7 + Fase 8/1 (HITL) + Fase 9.1 (parcial) + Fase
-9.3 (completa)** — Fase 9.1 (`adr/0146-*`) hecha, testeada Y verificada con Playwright, **todavía sin
-commitear** — ver "Trabajo pendiente de commit" abajo. Todo lo anterior commiteado, sin pushear a
-`origin/master` en este momento — confirmar `git push` con el fundador antes de asumirlo hecho. Suite
-completa en verde: 1282/1282 tests (`.venv/bin/python -m pytest -q`). **Fase 8 parte 2/2 (decisión de
-stack de observability/Langfuse) NO se ejecutó** — condicionada al rollout de usuarios de prueba, que
-todavía no pasó (ver Fase 3). **Fase 9.2 (cerebro rediseñado) y las otras dos deudas de 9.1 ("ver logs
-desde la UI", asistente de migración a VPS) tampoco** — 9.2 necesita dirección visual real del fundador
-(mismo patrón que el rediseño del dock, SESSION_STATE.md); las otras dos son features aparte, no
-adelantadas esta ronda.
+9.2 (primer corte) + Fase 9.3 (completa)** — Fase 9.2 (`adr/0147-*`) hecha, testeada y verificada con
+Playwright, **todavía sin commitear** — ver "Trabajo pendiente de commit" abajo. Todo lo anterior
+commiteado y pusheado a `origin/master` (`8fbb659`). Suite completa en verde: 1288/1288 tests
+(`.venv/bin/python -m pytest -q`). **Fase 8 parte 2/2 (decisión de stack de observability/Langfuse) NO se
+ejecutó** — condicionada al rollout de usuarios de prueba, que todavía no pasó (ver Fase 3). **Las otras
+dos deudas de 9.1 ("ver logs desde la UI", asistente de migración a VPS) tampoco** — features aparte.
+
+**Fase 9.2 — el fundador mandó las referencias reales del HUD de Iron Man (Jarvis/Ultron) y confirmó dos
+decisiones antes de construir**: (1) los "skills" son un 4to anillo agrupado por familia, nunca un nodo
+por tool; (2) la junta directiva suma 7 nodos reales — confirmado factible porque la telemetría YA
+distinguía cada rol, faltaba taxonomía, no instrumentación. Primer corte visual completo: anillos con
+rotación propia (compuesta sobre el motor 3D ya existente, nunca reemplazado), junta directiva como
+mini-anillo real, anillo 4 con chips reales. **Mismo criterio que el dock (ADR 0086-0088): tratar este
+primer corte como iterable, esperar feedback visual real del fundador antes de seguir puliendo.**
 
 **Decisión de gobernanza real tomada esta ronda**: el fundador decidió que n8n puede escribir
 prompts/config directo (`N8N_CONTROL_TOKEN`, sin aprobación humana) — reabre puntualmente, solo para esa
@@ -42,11 +47,12 @@ el detalle completo de diseño/riesgos/tests):**
   (solo founder, con confirmación de dos pasos, `com.snarf.server` excluido de auto-reinicio)
   (`adr/0138-*`).
 
-**Trabajo pendiente de commit:** Fase 9.1 parcial (vista real de control de infraestructura, `adr/0146-*`)
-— hecha, testeada (1282/1282) y verificada con Playwright en servidor aislado, sin commitear todavía.
-Archivos: cambios en `app.py` (2 endpoints `/ops/processes` nuevos), `web/index.html` (sección nueva en
-Configuración), `tests/test_app.py`, `CHANGELOG.md`, este documento — sin archivos nuevos aparte del ADR.
-**No commitear sin pedido explícito del fundador.**
+**Trabajo pendiente de commit:** Fase 9.2 (cerebro "giroscopio", `adr/0147-*`) — hecha, testeada
+(1288/1288) y verificada con Playwright contra datos reales de producción, sin commitear todavía.
+Archivos: `snarf/telemetry/brain.py` (`EXECUTIVE_ROLE_TO_NODE`/`NODE_PARENT` nuevos), `app.py`
+(`lifecycle_entries` + `verbo` en `dashboard_brain`), `web/index.html` (motor de rotación por anillo,
+mini-anillo del board, anillo 4), `tests/test_brain.py`, `tests/test_app.py`, `CHANGELOG.md`, este
+documento. **No commitear sin pedido explícito del fundador.**
 
 **Estado real de infraestructura en esta Mac** (verificar que sigue así al retomar, puede haber
 cambiado):
@@ -269,11 +275,17 @@ pasos, `com.snarf.server` excluido de auto-reinicio), nombres de proceso reales 
 infraestructura" en Configuración, `GET/POST /ops/processes`, verificado con Playwright — ver ADR 0146).
 **Falta todavía**: ver logs desde la UI, asistente guiado de migración a VPS.
 
-### 9.2 — Cerebro rediseñado ("entidad cognitiva digital"), founder-preview primero
+### 9.2 — Cerebro como "giroscopio" ⚠️ PRIMER CORTE HECHO PERO SIN COMMITEAR (`adr/0147-*`)
 
-Evolución de `brain.py`/vista HUD (mismo protocolo de crecimiento de nodos), gateado por
-`is_founder`/rol (mismo mecanismo del toggle clásico/HUD, ADR 0090), promovido a todos cuando el
-fundador apruebe.
+Alcance real, confirmado con el fundador antes de construir (referencias del HUD de Iron Man/Jarvis/
+Ultron, nunca la Vista HUD del dashboard — features distintas): 7 nodos reales para la junta directiva
+(antes 1 solo nodo), cada anillo del grafo con rotación propia independiente (compuesta sobre el motor
+3D existente, nunca reemplazado) acelerada por actividad real, y un 4to anillo de skills (chips
+transitorios reales, sin taxonomía nueva). Real-time vía SSE deliberadamente diferido a una fase aparte.
+**Sin gate `is_founder`** — a diferencia del toggle clásico/HUD del dashboard (ADR 0090), `#brainPanel`
+ya era visible para cualquier usuario logueado antes de este rediseño; se extendió en el lugar, no como
+preview nueva. Verificado con Playwright contra datos reales de producción — primer corte deliberadamente
+iterable (mismo criterio que el dock, ADR 0086-0088: esperar feedback visual real antes de pulir más).
 
 ### 9.3 — Escritura real de prompts/config ✅ HECHO, COMPLETO (`adr/0144-*`, `adr/0145-*`)
 

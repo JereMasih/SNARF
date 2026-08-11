@@ -723,7 +723,25 @@ def dashboard_brain(since: float | None = None, user_id: str = Depends(require_u
         input_log.recent(n=10000),
         manifest_summary,
         since=since,
+        # Fase 9.2 (ADR 0147): única fuente real de actividad por rol del
+        # board ejecutivo — agent.finished/failed quedan invisibles por
+        # default (no están en LEGACY_EVENT_TYPES), include_lifecycle=True
+        # es obligatorio acá o los 7 nodos nuevos nunca ven actividad.
+        lifecycle_entries=events.recent(n=10000, include_lifecycle=True),
     )
+    # Fase 9.2 (ADR 0147): mismo verbo temático determinístico que ya usa
+    # dashboard_telemetry_feed (verbs.py — nunca generado por el LLM), acá
+    # para poder etiquetar los chips reales del anillo de skills del
+    # cerebro. brain.snapshot() usa su propio shape de evento (node/label/
+    # status, no nodo/agente/skill/estado) — se traduce acá, nunca una
+    # segunda implementación del cálculo del verbo en sí.
+    for ev in snap["events"]:
+        ev["verbo"] = verbs.verbo_tematico(
+            ev["node"],
+            brain.NODE_TIER.get(ev["node"], ev["node"]),
+            events.TOOL_STATUS_TO_ESTADO.get(ev["status"], "error"),
+            skill=ev["label"],
+        )
     return {"server_time": time.time(), **snap}
 
 
