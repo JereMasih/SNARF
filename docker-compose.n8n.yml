@@ -1,0 +1,35 @@
+# n8n self-hosted (Fase 4 del plan de observabilidad/multi-usuario, ADR
+# 0139) — capa de operación visual y automatización, NUNCA un segundo
+# orquestador ni dueño de lógica de negocio (ver ADR 0093, mismo principio
+# ya vigente para MCP): observa eventos reales que Snarf empuja
+# (snarf/telemetry/n8n_webhook_sink.py) y puede pedirle cosas a Snarf a
+# través de una API de control propia autenticada por token (nunca la
+# cookie de sesión del founder) — la lógica real siempre vive del lado de
+# Snarf.
+#
+# Solo localhost a propósito ("nunca expuesto públicamente", ver plan
+# aprobado) — para acceso remoto real desde otro dispositivo del tailnet,
+# usar `tailscale serve --bg 5678` por separado (mismo mecanismo ya usado
+# para exponer el server principal, ver VPS_MIGRATION.md), nunca bindear
+# este puerto a 0.0.0.0.
+#
+# Arrancar:  docker compose -f docker-compose.n8n.yml up -d
+# Ver logs:  docker compose -f docker-compose.n8n.yml logs -f n8n
+# Apagar:    docker compose -f docker-compose.n8n.yml down
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:1.121.0
+    container_name: snarf-n8n
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - N8N_HOST=127.0.0.1
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://127.0.0.1:5678/
+      - GENERIC_TIMEZONE=America/Argentina/Buenos_Aires
+      - N8N_RUNNERS_ENABLED=true
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+    restart: unless-stopped

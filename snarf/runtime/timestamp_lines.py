@@ -14,6 +14,14 @@ import time
 
 
 def main() -> None:
+    # Nombre real reconocible (2026-08-10) — sin esto aparece como "Python"
+    # genérico en Activity Monitor/ps, igual que cualquier otro proceso.
+    try:
+        import setproctitle
+
+        setproctitle.setproctitle("snarf-server-logs")
+    except ImportError:
+        pass
     for line in sys.stdin:
         sys.stdout.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {line}")
         sys.stdout.flush()

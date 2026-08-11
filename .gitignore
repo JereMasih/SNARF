@@ -34,3 +34,4 @@ credentials/
 server.log
 server_8002.log
 logs/
+n8n_data/

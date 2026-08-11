@@ -1,4 +1,5 @@
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import app as app_module
@@ -6,6 +7,7 @@ from snarf.memory.episodic import EpisodicMemory
 from snarf.runtime.web_auth import (
     SESSION_COOKIE_NAME,
     create_session_token,
+    require_n8n_token,
     verify_session_token,
 )
 
@@ -150,3 +152,32 @@ def test_verify_session_token_rejects_wrong_secret():
 
 def test_verify_session_token_rejects_garbage():
     assert verify_session_token("a-secret", "esto-no-es-un-token-real") is None
+
+
+# --- Fase 4 del plan de multi-usuario/observabilidad: token de n8n --------
+
+
+def test_require_n8n_token_fails_closed_without_the_token_configured(monkeypatch):
+    monkeypatch.delenv("N8N_CONTROL_TOKEN", raising=False)
+    with pytest.raises(HTTPException) as exc_info:
+        require_n8n_token("cualquier-cosa")
+    assert exc_info.value.status_code == 503
+
+
+def test_require_n8n_token_rejects_a_missing_header(monkeypatch):
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    with pytest.raises(HTTPException) as exc_info:
+        require_n8n_token(None)
+    assert exc_info.value.status_code == 401
+
+
+def test_require_n8n_token_rejects_a_wrong_token(monkeypatch):
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    with pytest.raises(HTTPException) as exc_info:
+        require_n8n_token("un-token-incorrecto")
+    assert exc_info.value.status_code == 401
+
+
+def test_require_n8n_token_accepts_the_real_token(monkeypatch):
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    require_n8n_token("el-token-real")  # no debe levantar
