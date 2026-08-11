@@ -5738,6 +5738,14 @@ const BRAIN_RING_TILT = {
 };
 const BRAIN_RING_SPIN_BASE = { orchestrator: 0, input: 0.09, specialist: -0.13, capability: 0.06, executive_board: 0.22 };
 let brainRingSpinAngle = { orchestrator: 0, input: 0, specialist: 0, capability: 0, executive_board: 0 };
+// Dirección real de la órbita de cada anillo (±1, arranca con el signo de
+// BRAIN_RING_SPIN_BASE) — pedido explícito del fundador: no solo la
+// velocidad debe reaccionar a actividad real, la DIRECCIÓN también, cuando
+// llega una ráfaga nueva de datos (ver brainMaybeFlipRingDirection, que
+// flipea en el flanco real ocioso→activo, nunca en cada evento individual
+// ni al azar decorativo).
+let brainRingDirection = { orchestrator: 1, input: 1, specialist: 1, capability: 1, executive_board: 1 };
+let brainTierWasActive = { orchestrator: false, input: false, specialist: false, capability: false, executive_board: false };
 // Actividad real reciente (mismo criterio que BRAIN_ACTIVE_WINDOW_S, ya
 // reflejado en activeBrainNodeIds por applyBrainSnapshot) acelera
 // momentáneamente el anillo correspondiente — nunca decorativo al azar,
@@ -5878,11 +5886,17 @@ function renderBrainFrame(ts) {
   // mismo frame: SVG y canvas quedan garantizados en sincronía (nunca un
   // frame de desfasaje entre ambas capas).
   brainCamera3D.rotY += dt * brainCamera3D.autoRotSpeed;
-  // Fase 9.2 (ADR 0147): cada anillo avanza también su propia rotación —
-  // más rápido mientras tenga actividad real reciente (giroscopio).
+  // Fase 9.2 (ADR 0149): cada anillo avanza también su propia rotación —
+  // más rápido mientras tenga actividad real reciente, Y la DIRECCIÓN
+  // cambia real (no solo la velocidad) en el flanco ocioso→activo de cada
+  // ráfaga nueva de datos — nunca en cada evento individual (sería un
+  // tembleque, no una reacción real legible) ni al azar decorativo.
   Object.keys(BRAIN_RING_SPIN_BASE).forEach((tier) => {
-    const speedMultiplier = brainTierHasRecentActivity(tier) ? 1.8 : 1;
-    brainRingSpinAngle[tier] += dt * BRAIN_RING_SPIN_BASE[tier] * speedMultiplier;
+    const busyNow = brainTierHasRecentActivity(tier);
+    if (busyNow && !brainTierWasActive[tier]) brainRingDirection[tier] *= -1;
+    brainTierWasActive[tier] = busyNow;
+    const speedMultiplier = busyNow ? 1.8 : 1;
+    brainRingSpinAngle[tier] += dt * Math.abs(BRAIN_RING_SPIN_BASE[tier]) * brainRingDirection[tier] * speedMultiplier;
   });
   updateBrainRotTrig();
   applyBrain3DProjection();

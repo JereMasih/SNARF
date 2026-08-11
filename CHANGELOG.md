@@ -18,6 +18,18 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
   reinició nada de producción sin decisión explícita del fundador en el momento).
 - 5 tests nuevos (`tests/test_app.py`). 1282/1282 tests de la suite completa.
 
+## [2026-08-11] Cerebro "giroscopio": dirección orbital reactiva + regla de crecimiento ampliada (ADR 0149)
+
+- Cada anillo gana dirección orbital real (`brainRingDirection`, ±1) que se invierte en el flanco
+  ocioso→activo de una ráfaga nueva de datos — antes la actividad real solo modulaba velocidad, nunca
+  dirección. Deliberadamente no flipea en cada evento individual (sería un tembleque, no una reacción
+  legible).
+- `snarf/telemetry/brain.py`: protocolo de crecimiento del cerebro (ADR 0054) gana un punto 6 — cualquier
+  funcionalidad nueva real se incorpora al cerebro como parte de construirla, en el mismo cambio, nunca
+  una tarea de UI aparte para después.
+- Sin cambios de backend. Verificado con Playwright: dirección estable en reposo, invertida en cada
+  transición ociosa→activa real, estable mientras sigue activo. 1288/1288 tests de la suite completa.
+
 ## [2026-08-11] Cerebro "giroscopio" v2: planos de órbita inclinados reales (ADR 0148)
 
 - Feedback real del fundador sobre ADR 0147 (antes de llegar a producción): los anillos giraban todos

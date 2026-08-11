@@ -37,6 +37,14 @@ CENTER_NODE = "orchestrator"
 # 5. MASTER_MAP.md ("Regla de crecimiento") ya dice que algo nuevo primero
 #    evoluciona el mapa antes de encajar a la fuerza — este protocolo es la
 #    misma regla, aplicada específicamente al cerebro.
+# 6. Pedido explícito del fundador (ver ADR 0149): esto no es solo "mapear
+#    la tool nueva" — CUALQUIER funcionalidad nueva real de Snarf (un rol
+#    nuevo, una capa de visualización, un sub-agente, lo que sea) se
+#    incorpora al cerebro COMO PARTE de construirla, en el mismo cambio,
+#    nunca como una tarea de UI aparte para "después". El caso real que
+#    motivó esto: la junta directiva de Inteligencia Ejecutiva existía
+#    hacía rondas enteras antes de tener sus 7 nodos reales (ADR 0147) —
+#    ese lag es justo lo que este punto existe para evitar la próxima vez.
 # ---------------------------------------------------------------------------
 TOOL_TO_NODE: dict[str, str] = {
     "get_current_datetime": "utility",
