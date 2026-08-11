@@ -35,7 +35,7 @@ from pydantic import BaseModel
 from snarf.capabilities import google_auth
 from snarf.capabilities.elevenlabs_tts import ElevenLabsTTS
 from snarf.capabilities.google_auth import TOKENS_DIR as GOOGLE_TOKENS_DIR
-from snarf.core.orchestrator import DEFAULT_USER_ID, LOCAL_FILES_DATA_DIR, Orchestrator
+from snarf.core.orchestrator import DEFAULT_USER_ID, LOCAL_FILES_DATA_DIR, PROMPT_DEFAULTS, Orchestrator
 from snarf.memory.audio_store import MIME_BY_EXT, AudioStore
 from snarf.runtime import google_identity
 from snarf.runtime.dashboard_prefs import load_prefs, save_prefs
@@ -45,6 +45,7 @@ from snarf.runtime import llm_routing
 from snarf.runtime import data_backup
 from snarf.runtime import ops_health
 from snarf.runtime import process_control
+from snarf.runtime import generation_config
 from snarf.runtime import introspection
 from snarf.runtime import prompt_registry
 from snarf.knowledge.extraction import categorize_mime
@@ -1007,6 +1008,101 @@ def put_llm_routing(payload: dict[str, dict], user_id: str = Depends(require_use
     # solos (factory), no necesitan este refresh.
     orch.refresh_llm_routing()
     return {"routing": routing, "available_providers": llm_routing.available_providers()}
+
+
+# --- Fase 9.3 del plan de observabilidad/n8n (ADR 0144): escritura real de --
+# Prompt Registry (Fase 6) y Configuración dinámica (Fase 7) desde el
+# cockpit del fundador. Solo `require_user` (founder) por ahora — darle
+# este mismo poder a n8n es una decisión de gobernanza aparte, todavía no
+# tomada (ver ADR 0144, "Fuera de alcance"), no algo que esta ronda decida
+# unilateralmente.
+
+
+@app.get("/prompts")
+def get_prompts(user_id: str = Depends(require_user)):
+    return {
+        prompt_id: {
+            "active_text": prompt_registry.get_active_text(prompt_id, default),
+            "versions": prompt_registry.history(prompt_id, default),
+        }
+        for prompt_id, default in PROMPT_DEFAULTS.items()
+    }
+
+
+@app.put("/prompts/{prompt_id}")
+def put_prompt(prompt_id: str, payload: dict, user_id: str = Depends(require_user)):
+    if prompt_id not in PROMPT_DEFAULTS:
+        raise HTTPException(404, f"prompt_id desconocido: {prompt_id}")
+    text = payload.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise HTTPException(400, "'text' es obligatorio y no puede estar vacío")
+    entry = prompt_registry.save_new_version(prompt_id, text, PROMPT_DEFAULTS[prompt_id])
+    return {"prompt_id": prompt_id, "active_text": text, "versions": entry["versions"]}
+
+
+@app.post("/prompts/{prompt_id}/rollback")
+def rollback_prompt(prompt_id: str, payload: dict, user_id: str = Depends(require_user)):
+    if prompt_id not in PROMPT_DEFAULTS:
+        raise HTTPException(404, f"prompt_id desconocido: {prompt_id}")
+    version = payload.get("version")
+    if not isinstance(version, int):
+        raise HTTPException(400, "'version' (entero) es obligatorio")
+    try:
+        entry = prompt_registry.rollback(prompt_id, version, PROMPT_DEFAULTS[prompt_id])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    active_text = prompt_registry.get_active_text(prompt_id, PROMPT_DEFAULTS[prompt_id])
+    return {"prompt_id": prompt_id, "active_text": active_text, "versions": entry["versions"]}
+
+
+@app.get("/generation-config")
+def get_generation_config(user_id: str = Depends(require_user)):
+    routing = llm_routing.load_routing()
+    result = {}
+    for role in llm_routing.ROLES:
+        provider = routing.get(role, llm_routing.DEFAULT_ROUTING[role])["provider"]
+        default = llm_routing.default_generation_config(provider)
+        result[role] = {"active": generation_config.get_active_config(role, default), "versions": generation_config.history(role, default)}
+    return result
+
+
+@app.put("/generation-config/{role}")
+def put_generation_config(role: str, payload: dict, user_id: str = Depends(require_user)):
+    if role not in llm_routing.ROLES:
+        raise HTTPException(404, f"rol desconocido: {role}")
+    overrides = {k: v for k, v in payload.items() if k in generation_config.FIELDS}
+    if not overrides:
+        raise HTTPException(400, f"payload debe incluir al menos uno de: {generation_config.FIELDS}")
+    routing = llm_routing.load_routing()
+    provider = routing.get(role, llm_routing.DEFAULT_ROUTING[role])["provider"]
+    default = llm_routing.default_generation_config(provider)
+    entry = generation_config.save_new_version(role, overrides, default)
+    # Mismo motivo que refresh_llm_routing() en PUT /llm-routing: los roles
+    # "orchestrator"/"conversation_title" cachean su Capacidad de LLM una
+    # sola vez en self._llm/_title_llm — sin esto, un cambio acá no se
+    # aplicaría hasta el próximo reinicio del servidor.
+    orch = get_orchestrator(user_id)
+    orch.refresh_llm_routing()
+    return {"role": role, "active": generation_config.get_active_config(role, default), "versions": entry["versions"]}
+
+
+@app.post("/generation-config/{role}/rollback")
+def rollback_generation_config(role: str, payload: dict, user_id: str = Depends(require_user)):
+    if role not in llm_routing.ROLES:
+        raise HTTPException(404, f"rol desconocido: {role}")
+    version = payload.get("version")
+    if not isinstance(version, int):
+        raise HTTPException(400, "'version' (entero) es obligatorio")
+    routing = llm_routing.load_routing()
+    provider = routing.get(role, llm_routing.DEFAULT_ROUTING[role])["provider"]
+    default = llm_routing.default_generation_config(provider)
+    try:
+        entry = generation_config.rollback(role, version, default)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    orch = get_orchestrator(user_id)
+    orch.refresh_llm_routing()
+    return {"role": role, "active": generation_config.get_active_config(role, default), "versions": entry["versions"]}
 
 
 @app.get("/llm-routing/fallback_events")

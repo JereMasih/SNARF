@@ -1682,3 +1682,124 @@ def test_n8n_introspect_returns_real_agents_tools_board_and_session_count(monkey
     assert len(body["executive_board"]) == 7
     assert isinstance(body["tools"], list) and len(body["tools"]) > 0
     assert body["active_user_sessions"] == 2
+
+
+# --- Fase 9.3: escritura real de Prompt Registry / Configuración dinámica (ADR 0144) ---
+
+
+def test_get_prompts_returns_the_real_default_when_nothing_was_ever_saved(client, tmp_path, monkeypatch):
+    from snarf.core.orchestrator import PROMPT_DEFAULTS
+    from snarf.runtime import prompt_registry
+
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    res = client.get("/prompts")
+    assert res.status_code == 200
+    body = res.json()
+    assert set(body.keys()) == set(PROMPT_DEFAULTS.keys())
+    assert body["gmail_digest"]["active_text"] == PROMPT_DEFAULTS["gmail_digest"]
+    assert len(body["gmail_digest"]["versions"]) == 1
+
+
+def test_put_prompt_then_get_roundtrip(client, tmp_path, monkeypatch):
+    from snarf.runtime import prompt_registry
+
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    put_res = client.put("/prompts/gmail_digest", json={"text": "prompt editado real"})
+    assert put_res.status_code == 200
+    assert put_res.json()["active_text"] == "prompt editado real"
+
+    get_res = client.get("/prompts")
+    assert get_res.json()["gmail_digest"]["active_text"] == "prompt editado real"
+    assert len(get_res.json()["gmail_digest"]["versions"]) == 2
+
+
+def test_put_prompt_rejects_an_empty_text(client, tmp_path, monkeypatch):
+    from snarf.runtime import prompt_registry
+
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    res = client.put("/prompts/gmail_digest", json={"text": "   "})
+    assert res.status_code == 400
+
+
+def test_put_prompt_rejects_an_unknown_prompt_id(client, tmp_path, monkeypatch):
+    from snarf.runtime import prompt_registry
+
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    res = client.put("/prompts/rol_inventado", json={"text": "x"})
+    assert res.status_code == 404
+
+
+def test_prompt_rollback_reactivates_the_original_default(client, tmp_path, monkeypatch):
+    from snarf.runtime import prompt_registry
+
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    client.put("/prompts/gmail_digest", json={"text": "v2 real"})
+    rollback_res = client.post("/prompts/gmail_digest/rollback", json={"version": 1})
+    assert rollback_res.status_code == 200
+    from snarf.core.orchestrator import PROMPT_DEFAULTS
+
+    assert rollback_res.json()["active_text"] == PROMPT_DEFAULTS["gmail_digest"]
+
+
+def test_prompt_rollback_rejects_a_version_that_never_existed(client, tmp_path, monkeypatch):
+    from snarf.runtime import prompt_registry
+
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    res = client.post("/prompts/gmail_digest/rollback", json={"version": 99})
+    assert res.status_code == 400
+
+
+def test_get_generation_config_returns_the_real_default_when_nothing_was_ever_saved(client, tmp_path, monkeypatch):
+    from snarf.runtime import generation_config
+
+    monkeypatch.setattr(generation_config, "GENERATION_CONFIG_PATH", tmp_path / "generation_config.json")
+    res = client.get("/generation-config")
+    assert res.status_code == 200
+    body = res.json()
+    assert set(body.keys()) == set(llm_routing.ROLES)
+    assert body["gmail_digest"]["active"]["max_output_tokens"] == 16000
+
+
+def test_put_generation_config_partial_override_then_get_roundtrip(client, tmp_path, monkeypatch):
+    from snarf.runtime import generation_config
+
+    monkeypatch.setattr(generation_config, "GENERATION_CONFIG_PATH", tmp_path / "generation_config.json")
+    monkeypatch.setattr(app_module.orchestrator, "_llm", app_module.orchestrator._llm)
+    monkeypatch.setattr(app_module.orchestrator, "_title_llm", app_module.orchestrator._title_llm)
+
+    put_res = client.put("/generation-config/gmail_digest", json={"temperature": 0.4})
+    assert put_res.status_code == 200
+    assert put_res.json()["active"]["temperature"] == 0.4
+    assert put_res.json()["active"]["max_output_tokens"] == 16000  # no tocado -> default real
+
+    get_res = client.get("/generation-config")
+    assert get_res.json()["gmail_digest"]["active"]["temperature"] == 0.4
+
+
+def test_put_generation_config_rejects_an_unknown_field(client, tmp_path, monkeypatch):
+    from snarf.runtime import generation_config
+
+    monkeypatch.setattr(generation_config, "GENERATION_CONFIG_PATH", tmp_path / "generation_config.json")
+    res = client.put("/generation-config/gmail_digest", json={"campo_inventado": 1})
+    assert res.status_code == 400
+
+
+def test_put_generation_config_rejects_an_unknown_role(client, tmp_path, monkeypatch):
+    from snarf.runtime import generation_config
+
+    monkeypatch.setattr(generation_config, "GENERATION_CONFIG_PATH", tmp_path / "generation_config.json")
+    res = client.put("/generation-config/rol_inventado", json={"temperature": 0.1})
+    assert res.status_code == 404
+
+
+def test_generation_config_rollback_reactivates_the_real_default(client, tmp_path, monkeypatch):
+    from snarf.runtime import generation_config
+
+    monkeypatch.setattr(generation_config, "GENERATION_CONFIG_PATH", tmp_path / "generation_config.json")
+    monkeypatch.setattr(app_module.orchestrator, "_llm", app_module.orchestrator._llm)
+    monkeypatch.setattr(app_module.orchestrator, "_title_llm", app_module.orchestrator._title_llm)
+
+    client.put("/generation-config/gmail_digest", json={"max_output_tokens": 4000})
+    rollback_res = client.post("/generation-config/gmail_digest/rollback", json={"version": 1})
+    assert rollback_res.status_code == 200
+    assert rollback_res.json()["active"]["max_output_tokens"] == 16000

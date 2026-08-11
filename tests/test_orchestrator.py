@@ -1,7 +1,7 @@
 import pytest
 
 from snarf.capabilities.anthropic_llm import LLMResponse
-from snarf.core.orchestrator import DEFAULT_USER_ID, HISTORY_REPLAY_MAX_CHARS, Orchestrator
+from snarf.core.orchestrator import DEFAULT_USER_ID, HISTORY_REPLAY_MAX_CHARS, PROMPT_DEFAULTS, Orchestrator
 from snarf.knowledge.extraction import ExtractionResult
 from snarf.runtime import llm_routing
 
@@ -1685,3 +1685,14 @@ def test_knowledge_index_status_with_domain_conversations_reads_the_conversation
 
 def test_conversations_indexer_property_returns_the_real_instance(orchestrator):
     assert orchestrator.conversations_indexer is orchestrator._conversations_indexer
+
+
+def test_prompt_defaults_covers_every_prompt_registry_id():
+    """Fase 9.3 (ADR 0144): PROMPT_DEFAULTS es el mapeo real que GET /prompts
+    usa para mostrar el default de cada prompt — nunca debe desalinearse de
+    la lista real de ids que Prompt Registry conoce (mismo protocolo de
+    cobertura que TOOL_TO_NODE/VERB_BY_SKILL, ADR 0054)."""
+    from snarf.runtime.prompt_registry import PROMPT_IDS
+
+    assert set(PROMPT_DEFAULTS.keys()) == set(PROMPT_IDS)
+    assert all(isinstance(text, str) and text.strip() for text in PROMPT_DEFAULTS.values())

@@ -35,6 +35,11 @@ from snarf.knowledge.document_publisher import DocumentPublisher
 from snarf.knowledge.drive_indexer import DriveIndexer
 from snarf.knowledge.episodic_conversation_source import EpisodicConversationSource
 from snarf.knowledge.extraction import VISION_SYSTEM_PROMPT, ContentExtractor
+# DASHBOARD_CURATOR_SYSTEM_PROMPT: DashboardCuratorSpecialist en sí se
+# construye en app.py (no acá, ver ADR 0090), pero PROMPT_DEFAULTS de más
+# abajo necesita el default real de los 20 prompts reales en un solo lugar
+# para Fase 9.3 (ADR 0144) — este import es solo para ese mapeo.
+from snarf.specialists.dashboard_curator import DASHBOARD_CURATOR_SYSTEM_PROMPT
 from snarf.knowledge.indexer import KnowledgeIndexer
 from snarf.knowledge.local_repo_source import LocalRepoKnowledgeSource
 from snarf.knowledge.vector_store import VectorStore
@@ -1675,6 +1680,36 @@ def _hard_cut_for_replay(text: str) -> str:
         "el resultado completo ya se entregó y sigue disponible en pantalla; no hace falta "
         "rehacer la tarea, alcanza con recordar que ya se hizo ...]"
     )
+
+
+# Fase 9.3 del plan de observabilidad/n8n (ADR 0144) — mapeo completo
+# prompt_id -> texto default real, mismo listado que
+# snarf/runtime/prompt_registry.py::PROMPT_IDS (ver ADR 0141 para la
+# correspondencia original archivo/constante). Vive acá porque este módulo
+# ya importa los 20 textos reales para wirear cada Specialist — un solo
+# lugar, nunca una segunda copia de estos textos.
+PROMPT_DEFAULTS: dict[str, str] = {
+    "orchestrator_system_prefix": SYSTEM_PREFIX,
+    "conversation_title": CONVERSATION_TITLE_SYSTEM_PROMPT,
+    "history_compaction": HISTORY_COMPACTION_SYSTEM_PROMPT,
+    "drive_vision": VISION_SYSTEM_PROMPT,
+    "gmail_digest": GMAIL_DIGEST_SYSTEM_PROMPT,
+    "dashboard_curator": DASHBOARD_CURATOR_SYSTEM_PROMPT,
+    "project_manager_subfolder_suggestion": SUBFOLDER_SUGGESTION_SYSTEM_PROMPT,
+    "project_manager_summary": PROJECT_SUMMARY_SYSTEM_PROMPT,
+    "calendar_brief": CALENDAR_BRIEF_SYSTEM_PROMPT,
+    "morning_routine_classify": MORNING_ROUTINE_CLASSIFY_SYSTEM_PROMPT,
+    "morning_routine_synthesize": MORNING_ROUTINE_SYNTHESIZE_SYSTEM_PROMPT,
+    "research_deep_research": DEEP_RESEARCH_CONFIG.system_prompt,
+    "research_trend_scan": TREND_SCAN_CONFIG.system_prompt,
+    "research_competitor_watch": COMPETITOR_WATCH_CONFIG.system_prompt,
+    "content_blog_post": BLOG_POST_CONFIG.system_prompt,
+    "content_social_post": SOCIAL_POST_CONFIG.system_prompt,
+    "content_newsletter": NEWSLETTER_CONFIG.system_prompt,
+    "client_status": CLIENT_STATUS_SYSTEM_PROMPT,
+    "books_categorize": BOOKS_CATEGORIZE_SYSTEM_PROMPT,
+    "sponsor_inbox_triage": SPONSOR_INBOX_TRIAGE_SYSTEM_PROMPT,
+}
 
 
 class Orchestrator:

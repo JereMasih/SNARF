@@ -275,18 +275,24 @@ def available_providers() -> list[str]:
     return [p for p, env_var in _PROVIDER_API_KEY_ENV.items() if env_var is None or os.environ.get(env_var)]
 
 
-def _build(provider: str, model: str, role: str):
+def default_generation_config(provider: str) -> dict:
+    """Config de generación "de código" para `provider` — las constantes de
+    siempre de cada Capacidad, antes de aplicar cualquier override real de
+    `generation_config.py` (Fase 7, ADR 0142/0144). Expuesta (no solo usada
+    adentro de `_build`) para que `GET /generation-config` pueda mostrarle al
+    fundador contra qué default real se compara cada override."""
     preset = PROVIDER_PRESETS[provider]
-    # Fase 7 (ADR 0142): config de generación versionada por rol, mismo
-    # criterio que Prompt Registry (Fase 6) — un rol nunca tocado usa
-    # exactamente las constantes de siempre de cada Capacidad.
-    default_gen_config = {
+    return {
         "max_output_tokens": MAX_OUTPUT_TOKENS,
         "temperature": None,
         "timeout_seconds": LOCAL_TIMEOUT_SECONDS if preset.get("local") else None,
         "max_continuations": MAX_CONTINUATIONS,
     }
-    gen = generation_config.get_active_config(role, default_gen_config)
+
+
+def _build(provider: str, model: str, role: str):
+    preset = PROVIDER_PRESETS[provider]
+    gen = generation_config.get_active_config(role, default_generation_config(provider))
     if preset["capability"] == "anthropic":
         return AnthropicLLM(
             model=model,

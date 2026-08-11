@@ -2,6 +2,26 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-11] Fase 9.3: escritura real de Prompt Registry y Configuración dinámica (ADR 0144)
+
+- 6 endpoints nuevos (`app.py`), mismo patrón que `GET/PUT /llm-routing`: `GET/PUT /prompts/{id}` +
+  `POST /prompts/{id}/rollback`, `GET/PUT /generation-config/{role}` +
+  `POST /generation-config/{role}/rollback` — cierran el caso de uso "el founder edita el prompt/config
+  activo de un agente, con historial y rollback" que las Fases 6/7 dejaron sin endpoint a propósito.
+- `snarf/core/orchestrator.py::PROMPT_DEFAULTS` (nuevo): mapeo real de los 20 `prompt_id` a su texto
+  default, garantizado en cobertura por test contra `prompt_registry.PROMPT_IDS`.
+- `snarf/runtime/llm_routing.py::default_generation_config()` (nuevo, extraído de `_build()` sin
+  cambiar su comportamiento): el default de generación depende del proveedor actual del rol.
+- Mismo refresh real ya necesario para `/llm-routing` (`orch.refresh_llm_routing()`): sin él, un cambio
+  de `/generation-config` para los roles `orchestrator`/`conversation_title` no tendría efecto hasta
+  reiniciar el servidor.
+- **Solo `require_user` (founder), nunca `require_n8n_token`** — darle a n8n escritura real sobre
+  prompts/config es una autoridad distinta de lo que tiene hoy (leer estado), necesita su propia
+  decisión de gobernanza explícita (mismo criterio que el Track B del dashboard curator,
+  `CONSTITUTION.md` Art. III/V). Sin UI nueva en `web/index.html` — eso es Fase 9.2.
+- 12 tests nuevos (11 en `tests/test_app.py` + 1 de cobertura en `tests/test_orchestrator.py`).
+  1271/1271 tests de la suite completa.
+
 ## [2026-08-11] Fase 8 (parte 1/2): HITL genérico sobre el event bus (ADR 0143)
 
 - `snarf/telemetry/events.py`: dos `event_type` nuevos — `approval.requested`/`approval.granted` —

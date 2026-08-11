@@ -9,13 +9,15 @@
 
 ## Estado actual (retomar una sesión nueva desde acá)
 
-**Última actualización:** 2026-08-11. **Hechas: Fases 0-7 + Fase 8 parte 1/2 (HITL)** (más un adelanto
-real de la Fase 9.1) — Fase 8/1 (`adr/0143-*`) hecha y testeada, **todavía sin commitear** — ver "Trabajo
-pendiente de commit" abajo. Fases 0-7 commiteadas, sin pushear a `origin/master` en este momento —
-confirmar `git push` con el fundador antes de asumirlo hecho. Suite completa en verde: 1259/1259 tests
-(`.venv/bin/python -m pytest -q`). **Fase 8 parte 2/2 (decisión de stack de observability/Langfuse) NO
-se ejecutó** — el propio plan la condiciona a que arranque el rollout de usuarios de prueba, que todavía
-no pasó (ver Fase 3).
+**Última actualización:** 2026-08-11. **Hechas: Fases 0-7 + Fase 8/1 (HITL) + Fase 9.3** (más el
+adelanto real de la Fase 9.1) — Fase 9.3 (`adr/0144-*`) hecha y testeada, **todavía sin commitear** — ver
+"Trabajo pendiente de commit" abajo. Fases 0-8/1 commiteadas, sin pushear a `origin/master` en este
+momento — confirmar `git push` con el fundador antes de asumirlo hecho. Suite completa en verde:
+1271/1271 tests (`.venv/bin/python -m pytest -q`). **Fase 8 parte 2/2 (decisión de stack de
+observability/Langfuse) NO se ejecutó** — condicionada al rollout de usuarios de prueba, que todavía no
+pasó (ver Fase 3). **Fase 9.2 (cerebro rediseñado) y la parte visual de 9.1 tampoco** — necesitan
+dirección visual real del fundador y verificación con Playwright, no solo backend (ver CLAUDE.md);
+9.3 se adelantó primero por ser puro backend, mismo tipo de trabajo que las Fases 5-8.
 
 **Hecho y commiteado, con ADR real por cada fase (leer el ADR antes de tocar código relacionado, tiene
 el detalle completo de diseño/riesgos/tests):**
@@ -35,11 +37,11 @@ el detalle completo de diseño/riesgos/tests):**
   (solo founder, con confirmación de dos pasos, `com.snarf.server` excluido de auto-reinicio)
   (`adr/0138-*`).
 
-**Trabajo pendiente de commit:** Fase 8 parte 1/2 (HITL genérico, `adr/0143-*`) — hecha, testeada
-(1259/1259), sin commitear todavía. Archivos: cambios en `snarf/telemetry/events.py`,
-`snarf/core/orchestrator.py`, `tests/test_telemetry_events.py`, `tests/test_orchestrator.py`,
-`CHANGELOG.md`, este documento — sin archivos nuevos esta vez. **No commitear sin pedido explícito del
-fundador.**
+**Trabajo pendiente de commit:** Fase 9.3 (escritura real de prompts/config, `adr/0144-*`) — hecha,
+testeada (1271/1271), sin commitear todavía. Archivos: cambios en `app.py`, `snarf/core/orchestrator.py`
+(`PROMPT_DEFAULTS` nuevo), `snarf/runtime/llm_routing.py` (`default_generation_config` nuevo),
+`tests/test_app.py`, `tests/test_orchestrator.py`, `CHANGELOG.md`, este documento — sin archivos nuevos.
+**No commitear sin pedido explícito del fundador.**
 
 **Estado real de infraestructura en esta Mac** (verificar que sigue así al retomar, puede haber
 cambiado):
@@ -60,12 +62,14 @@ orquestación, la inferencia local sigue viajando a esta Mac por Tailscale) — 
 porque MLX es específico de Apple Silicon y una migración completa perdería el costo ~$0 de inferencia
 local. Pendiente de que el fundador decida si/cuándo.
 
-**Qué preguntar/confirmar apenas se retome:** (1) ¿se commitea el trabajo de Fase 8/1 tal cual está? (2)
-¿seguimos con la Fase 9 (cockpit del fundador — 9.1 ya adelantada, quedan 9.2/9.3), o el fundador quiere
-reordenar/saltar a otra fase (recordar: Fase 8/2 sigue bloqueada hasta que haya rollout de usuarios de
-prueba real)? La instrucción vigente de sesiones anteriores fue "continuá con las fases siguientes, no
-hace falta que preguntes" — sigue aplicando salvo que el fundador diga lo contrario, pero **no** cubre
-commits (esos siempre se piden explícitamente) ni gasto real/infraestructura paga.
+**Qué preguntar/confirmar apenas se retome:** (1) ¿se commitea el trabajo de Fase 9.3 tal cual está? (2)
+¿el fundador quiere decidir ya la gobernanza de "n8n escribe prompts/config" (mitad pendiente de 9.3), o
+seguir con 9.1 (vista visual)/9.2 (cerebro rediseñado) — ambas necesitan frontend real + Playwright, y
+9.2 necesita dirección visual del fundador (mismo patrón que el rediseño del dock, SESSION_STATE.md)? La
+instrucción vigente de sesiones anteriores fue "continuá con las fases siguientes, no hace falta que
+preguntes" — sigue aplicando salvo que el fundador diga lo contrario, pero **no** cubre commits (esos
+siempre se piden explícitamente), gasto real/infraestructura paga, ni decisiones de gobernanza nuevas
+(autoridad de n8n) — esas siempre se confirman con el fundador explícitamente.
 
 ---
 
@@ -234,7 +238,7 @@ de clase, no solo de `__init__`.
 
 ## Fase 8 — Aprobación humana genérica (HITL) + decisión de stack de observability
 
-**Parte 1/2 — HITL ✅ HECHO PERO SIN COMMITEAR (`adr/0143-*`):** generalizó el protocolo de dos pasos
+**Parte 1/2 — HITL ✅ HECHO (`adr/0143-*`):** generalizó el protocolo de dos pasos
 ad-hoc de `HIGH_IMPACT_TOOLS`/`BULK_READ_GATED_TOOLS` (ADR 0015) en dos `event_type` reales
 (`approval.requested`/`approval.granted`) sobre el event bus de Fase 2, emitidos desde el chokepoint
 único `_handle_tool` — consumible desde n8n sin que n8n pase a decidir nada. Sin `approval.rejected`
@@ -266,11 +270,16 @@ Evolución de `brain.py`/vista HUD (mismo protocolo de crecimiento de nodos), ga
 `is_founder`/rol (mismo mecanismo del toggle clásico/HUD, ADR 0090), promovido a todos cuando el
 fundador apruebe.
 
-### 9.3 — Escritura desde n8n hacia agentes existentes
+### 9.3 — Escritura real de prompts/config ✅ HECHO PERO SIN COMMITEAR, PARCIAL (`adr/0144-*`)
 
-Cierra el caso de uso de la Fase 4: desde el cockpit o desde un flujo de n8n, el founder puede abrir el
-prompt/config activo de un agente (Fase 6/7), editarlo, y activar la nueva versión, con historial y
-rollback.
+Cierra la mitad "cockpit" del caso de uso de la Fase 4: `GET/PUT /prompts/{id}` +
+`POST /prompts/{id}/rollback`, mismo trío para `/generation-config/{role}` — el founder ya puede abrir
+el prompt/config activo de un agente (Fase 6/7), editarlo, y activar la nueva versión, con historial y
+rollback real. **La mitad "n8n"** (que un flujo de n8n pueda proponer/aplicar el mismo cambio) queda
+explícitamente sin resolver — darle a n8n escritura real sobre los prompts/config de Snarf es una
+autoridad distinta a lo que tiene hoy (solo lectura), necesita su propia decisión de gobernanza con el
+fundador, no algo que esta ronda decida sola (ver ADR 0144). Sin UI nueva en `web/index.html` — eso
+sigue siendo 9.2.
 
 ---
 
