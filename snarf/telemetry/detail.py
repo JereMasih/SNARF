@@ -405,6 +405,12 @@ def _telemetry_cost_summary(i, r):
     return None
 
 
+def _system_introspect(i, r):
+    if isinstance(r, dict):
+        return _truncate(f"{len(r.get('agents', []))} agentes, {len(r.get('tools', []))} tools reales")
+    return None
+
+
 def _ops_system_health(i, r):
     if isinstance(r, dict):
         return _truncate(f"LLM {'ok' if r.get('llm_available') else 'caído'}, {r.get('recent_error_count', 0)} errores recientes")
@@ -457,6 +463,7 @@ DETAIL_EXTRACTORS = {
     "get_current_datetime": _get_current_datetime,
     "measure_text_length": _measure_text_length,
     "telemetry_cost_summary": _telemetry_cost_summary,
+    "system_introspect": _system_introspect,
     "ops_system_health": _ops_system_health,
     "ops_backup_now": _ops_backup_now,
     "ops_process_status": _ops_process_status,

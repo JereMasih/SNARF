@@ -10,15 +10,14 @@
 ## Estado actual (retomar una sesión nueva desde acá)
 
 **Última actualización:** 2026-08-11. **Hechas: Fases 0-7 + Fase 8/1 (HITL) + Fase 9.1 (parcial) + Fase
-9.2 (4 rondas de iteración real) + Fase 9.3 (completa) + Fase 10 (primer corte, ver abajo)**. Fase 9.2
-completa hasta `adr/0150-*` ya commiteada y pusheada (`4144c59`). La ronda más reciente, `adr/0151-*`
-(Fase 10: conversación continua manos libres, VAD client-side, sin WebSocket — ver sección de la Fase 10
-más abajo), hecha, verificada con Playwright (mic simulado), **todavía sin commitear** — ver "Trabajo
-pendiente de commit" abajo. Suite completa backend en verde (sin cambios de backend en esta ronda).
-**Fase 8 parte 2/2 (decisión de stack de observability/Langfuse) NO se ejecutó** — condicionada al
-rollout de usuarios de prueba, que todavía no pasó (ver Fase 3). **Las otras dos deudas de 9.1 ("ver logs
-desde la UI", asistente de migración a VPS) tampoco** — features aparte. Fases 11 (extensión MCP) y 12
-(replay/debugging) siguen sin arrancar.
+9.2 (4 rondas de iteración real) + Fase 9.3 (completa) + Fase 10 (primer corte) + Fase 11 (completa)**.
+Fase 9.2 completa + Fase 10 ya commiteadas y pusheadas (`c4bb4ff`). La ronda más reciente, `adr/0152-*`
+(Fase 11: tool real `system_introspect`, expuesto por MCP — ver sección de la Fase 11 más abajo), hecha,
+suite completa verde, **todavía sin commitear** — ver "Trabajo pendiente de commit" abajo. Sin cambios de
+frontend esta ronda (backend puro). **Fase 8 parte 2/2 (decisión de stack de observability/Langfuse) NO
+se ejecutó** — condicionada al rollout de usuarios de prueba, que todavía no pasó (ver Fase 3). **Las
+otras dos deudas de 9.1 ("ver logs desde la UI", asistente de migración a VPS) tampoco** — features
+aparte. Fase 12 (replay/debugging) sigue sin arrancar.
 
 **Fase 9.2 — el fundador mandó las referencias reales del HUD de Iron Man (Jarvis/Ultron) y confirmó dos
 decisiones antes de construir**: (1) los "skills" son un 4to anillo agrupado por familia, nunca un nodo
@@ -50,10 +49,10 @@ el detalle completo de diseño/riesgos/tests):**
   (solo founder, con confirmación de dos pasos, `com.snarf.server` excluido de auto-reinicio)
   (`adr/0138-*`).
 
-**Trabajo pendiente de commit:** `adr/0151-*` (Fase 10: conversación continua manos libres — botón nuevo
-`#continuousModeBtn`, VAD client-side por RMS, barge-in real, sin WebSocket ni endpoints backend nuevos)
-— hecho y verificado con Playwright (mic simulado), esperando confirmación explícita del fundador antes
-de commitear/pushear/reiniciar el server real, mismo criterio que todas las rondas anteriores.
+**Trabajo pendiente de commit:** `adr/0152-*` (Fase 11: tool real `system_introspect`, expuesto por MCP —
+sin subset de rol para Claude Code, decisión explícita documentada) — hecho, suite completa en verde
+(1290/1290), esperando confirmación explícita del fundador antes de commitear/pushear/reiniciar el server
+real, mismo criterio que todas las rondas anteriores.
 
 **Estado real de infraestructura en esta Mac** (verificar que sigue así al retomar, puede haber
 cambiado):
@@ -316,9 +315,17 @@ WebSocket — no antes.
 
 ---
 
-## Fase 11 — Extensión Claude Code / MCP
+## Fase 11 — Extensión Claude Code / MCP ✅ HECHO (`adr/0152-*`)
 
-El servidor MCP ya existe y ya expone un allowlist a un segundo consumidor real. Sumar tools de introspección de solo lectura (Fase 5) a `MCP_EXPOSED_TOOLS`, evaluando un subset de rol propio para Claude Code — siempre delegando a `Orchestrator._handle_tool()`.
+Corrección real encontrada al ejecutar esta fase: la Fase 5 nunca había creado tools de introspección
+reales (solo funciones puras detrás de `GET /n8n/introspect`) — se creó el tool real `system_introspect`
+(delega a la misma `introspection.system_snapshot()`, nunca una segunda implementación) y se sumó a
+`MCP_EXPOSED_TOOLS`. Decisión explícita de NO crear un subset de rol propio para Claude Code: la
+restricción por rol (`ROLE_TOOL_SUBSETS`) se aplica del lado del cliente (`_MCPToolBridge`, mecanismo
+interno de la Inteligencia Ejecutiva) — no hay identidad de consumidor del lado del servidor, así que un
+subset sin punto real de aplicación sería scaffolding decorativo. Conectar esta sesión de Claude Code al
+servidor MCP de este repo (`.mcp.json`) queda fuera de alcance — es la política "Skills vs. MCP" de
+`CLAUDE.md`, que hoy no identifica ningún candidato real para eso.
 
 ---
 

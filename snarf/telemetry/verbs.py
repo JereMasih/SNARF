@@ -30,6 +30,7 @@ VERB_BY_SKILL: dict[str, str] = {
     "get_current_datetime": "chequeando la hora",
     "measure_text_length": "midiendo el texto",
     "telemetry_cost_summary": "revisando el gasto real",
+    "system_introspect": "mirando su propio catálogo",
     "ops_system_health": "revisando el estado real",
     "ops_backup_now": "haciendo un backup real",
     "ops_process_status": "mirando sus propios procesos",

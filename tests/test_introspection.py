@@ -1,7 +1,9 @@
-from snarf.core.orchestrator import HIGH_IMPACT_TOOLS, TOOLS
+from snarf.core.orchestrator import BULK_READ_GATED_TOOLS, HIGH_IMPACT_TOOLS, TOOLS
 from snarf.executive.roles import ROLE_CONFIGS
 from snarf.mcp.tools import MCP_EXPOSED_TOOLS
 from snarf.runtime import introspection, llm_routing
+
+_SAFE_TOOL_NAMES = MCP_EXPOSED_TOOLS - HIGH_IMPACT_TOOLS - BULK_READ_GATED_TOOLS
 
 
 def test_agents_snapshot_reports_the_real_routed_model_per_role(monkeypatch, tmp_path):
@@ -28,18 +30,18 @@ def test_agents_snapshot_tags_executive_board_roles(monkeypatch, tmp_path):
 
 
 def test_tools_snapshot_never_exposes_a_high_impact_tool():
-    names = {t["name"] for t in introspection.tools_snapshot()}
+    names = {t["name"] for t in introspection.tools_snapshot(TOOLS, _SAFE_TOOL_NAMES)}
     assert names.isdisjoint(HIGH_IMPACT_TOOLS)
 
 
 def test_tools_snapshot_only_contains_names_from_the_mcp_allowlist():
-    names = {t["name"] for t in introspection.tools_snapshot()}
+    names = {t["name"] for t in introspection.tools_snapshot(TOOLS, _SAFE_TOOL_NAMES)}
     assert names <= MCP_EXPOSED_TOOLS
 
 
 def test_tools_snapshot_returns_the_real_description_from_orchestrator_tools():
     tools_by_name = {t["name"]: t for t in TOOLS}
-    snapshot = introspection.tools_snapshot()
+    snapshot = introspection.tools_snapshot(TOOLS, _SAFE_TOOL_NAMES)
     assert len(snapshot) > 0
     for entry in snapshot:
         assert entry["description"] == tools_by_name[entry["name"]]["description"]
@@ -54,9 +56,20 @@ def test_executive_board_snapshot_lists_all_seven_real_roles():
 def test_system_snapshot_combines_agents_tools_board_and_active_sessions(monkeypatch, tmp_path):
     monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
 
-    snapshot = introspection.system_snapshot(active_user_sessions=3)
+    snapshot = introspection.system_snapshot(tools=TOOLS, safe_tool_names=_SAFE_TOOL_NAMES, active_user_sessions=3)
 
     assert snapshot["active_user_sessions"] == 3
     assert len(snapshot["agents"]) == len(llm_routing.ROLES)
     assert len(snapshot["executive_board"]) == 7
     assert isinstance(snapshot["tools"], list)
+
+
+def test_system_snapshot_active_user_sessions_defaults_to_none_when_not_provided(monkeypatch, tmp_path):
+    # El consumidor MCP (system_introspect, ADR 0152) no tiene forma real de
+    # saber cuántas sesiones web activas hay -- None es la respuesta honesta,
+    # nunca un cero inventado.
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+
+    snapshot = introspection.system_snapshot(tools=TOOLS, safe_tool_names=_SAFE_TOOL_NAMES)
+
+    assert snapshot["active_user_sessions"] is None

@@ -44,7 +44,17 @@ from snarf.knowledge.indexer import KnowledgeIndexer
 from snarf.knowledge.local_repo_source import LocalRepoKnowledgeSource
 from snarf.knowledge.vector_store import VectorStore
 from snarf.memory.episodic import EpisodicMemory
-from snarf.runtime import data_backup, llm_routing, ops_health, personality_prefs, process_control, prompt_registry, user_profile
+from snarf.mcp.tools import MCP_EXPOSED_TOOLS
+from snarf.runtime import (
+    data_backup,
+    introspection,
+    llm_routing,
+    ops_health,
+    personality_prefs,
+    process_control,
+    prompt_registry,
+    user_profile,
+)
 from snarf.executive.specialist import ExecutiveBoardSpecialist
 from snarf.specialists.gmail_digest import SYSTEM_PROMPT as GMAIL_DIGEST_SYSTEM_PROMPT, GmailDigestSpecialist
 from snarf.specialists.project_manager import (
@@ -1102,6 +1112,16 @@ TOOLS = [
         },
     },
     {
+        "name": "system_introspect",
+        "description": (
+            "Catálogo real de Snarf en este momento: ruteo de modelo/proveedor por rol (incluida la "
+            "junta ejecutiva), qué tools están disponibles (nombre + descripción, nunca el input_schema "
+            "completo), y los 7 roles reales del board asesor. Mismo dato real que ya usa GET "
+            "/n8n/introspect (ADR 0140) — solo lectura, ninguna implementación nueva de ningún dato."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "executive_board_consult",
         "description": (
             "Convoca al board asesor de Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094/0098) — "
@@ -2045,6 +2065,9 @@ class Orchestrator:
             "knowledge_index_start": lambda i: self._knowledge_index_start(i["domain"]),
             "knowledge_index_status": lambda i: self._knowledge_index_status(i["domain"]),
             "telemetry_cost_summary": lambda i: usage_tracker.summarize(recent_days=i.get("recent_days", 7)),
+            "system_introspect": lambda i: introspection.system_snapshot(
+                tools=TOOLS, safe_tool_names=MCP_EXPOSED_TOOLS - HIGH_IMPACT_TOOLS - BULK_READ_GATED_TOOLS
+            ),
             "executive_board_consult": lambda i: self._executive_board.consult(i["question"], i.get("roles")),
             "skill_factory_build": self._tool_skill_factory_build,
             "skill_factory_activate": self._tool_skill_factory_activate,

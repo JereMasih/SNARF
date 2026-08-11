@@ -2,6 +2,29 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-11] Fase 11: `system_introspect`, primer tool MCP de introspección real (ADR 0152)
+
+- Nuevo tool real `system_introspect` (sin parámetros) en `Orchestrator.TOOLS` — delega a
+  `introspection.system_snapshot()`, el mismo dato real que ya usa `GET /n8n/introspect` (Fase 5, ADR
+  0140), nunca una segunda implementación. Sumado a `MCP_EXPOSED_TOOLS` — ya queda expuesto por el
+  servidor MCP a cualquier consumidor conectado (incluido Claude Code, si se configura).
+- Corrección real encontrada al investigar: la Fase 5 nunca había creado tools de introspección
+  reales — solo funciones puras consumidas por un endpoint HTTP aparte. Había que crearlo, no solo
+  allowlistearlo.
+- `snarf/runtime/introspection.py` refactorizado para romper un ciclo de import real
+  (`orchestrator.py → introspection.py → orchestrator.py`): `tools`/`safe_tool_names` pasan a ser
+  parámetros en vez de importados. `active_user_sessions` pasa a ser opcional (`None` por default) — un
+  consumidor MCP de sesión única no tiene forma real de saberlo, `None` es la respuesta honesta.
+- Protocolo de crecimiento aplicado en 3 registros reales, no solo el cerebro: `TOOL_TO_NODE`
+  (`brain.py`), `DETAIL_EXTRACTORS` (`detail.py`), `VERB_BY_SKILL` (`verbs.py`) — los dos últimos
+  aparecieron como regresiones reales al correr la suite completa, mismo tipo de test de cobertura
+  total sobre `orchestrator.TOOLS` que ya existía para el cerebro.
+- Decisión explícita, documentada, de NO crear un `ROLE_TOOL_SUBSETS["claude_code"]`: la restricción por
+  rol de `ROLE_TOOL_SUBSETS` se aplica del lado del cliente (`_MCPToolBridge`, específico de la
+  Inteligencia Ejecutiva), no hay mecanismo real de identidad de consumidor del lado del servidor —
+  inventar un subset sin punto de aplicación real sería scaffolding decorativo.
+- 1290/1290 tests de la suite completa (1288 previos + 2 nuevos).
+
 ## [2026-08-11] Fase 10: conversación continua manos libres (ADR 0151)
 
 - Botón nuevo (`#continuousModeBtn`, a la derecha del mic actual, que sigue funcionando exactamente

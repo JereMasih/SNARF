@@ -35,7 +35,16 @@ from pydantic import BaseModel
 from snarf.capabilities import google_auth
 from snarf.capabilities.elevenlabs_tts import ElevenLabsTTS
 from snarf.capabilities.google_auth import TOKENS_DIR as GOOGLE_TOKENS_DIR
-from snarf.core.orchestrator import DEFAULT_USER_ID, LOCAL_FILES_DATA_DIR, PROMPT_DEFAULTS, Orchestrator
+from snarf.core.orchestrator import (
+    BULK_READ_GATED_TOOLS,
+    DEFAULT_USER_ID,
+    HIGH_IMPACT_TOOLS,
+    LOCAL_FILES_DATA_DIR,
+    PROMPT_DEFAULTS,
+    TOOLS,
+    Orchestrator,
+)
+from snarf.mcp.tools import MCP_EXPOSED_TOOLS
 from snarf.memory.audio_store import MIME_BY_EXT, AudioStore
 from snarf.runtime import google_identity
 from snarf.runtime.dashboard_prefs import load_prefs, save_prefs
@@ -516,7 +525,10 @@ def n8n_introspect(_: None = Depends(require_n8n_token)):
     lectura, ningún tool invocable desde acá."""
     with _orchestrators_lock:
         active_user_sessions = len(_orchestrators)
-    return introspection.system_snapshot(active_user_sessions=active_user_sessions)
+    safe_tool_names = MCP_EXPOSED_TOOLS - HIGH_IMPACT_TOOLS - BULK_READ_GATED_TOOLS
+    return introspection.system_snapshot(
+        tools=TOOLS, safe_tool_names=safe_tool_names, active_user_sessions=active_user_sessions
+    )
 
 
 @app.post("/transcribe")

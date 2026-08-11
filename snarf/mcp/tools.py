@@ -28,6 +28,7 @@ MCP_EXPOSED_TOOLS: frozenset[str] = frozenset({
     "notion_read_page",
     "codebase_search",
     "telemetry_cost_summary",
+    "system_introspect",
 })
 
 # Sub-allowlist por rol de Inteligencia Ejecutiva (ver ADR 0094, Fase E del

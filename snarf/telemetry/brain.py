@@ -50,6 +50,7 @@ TOOL_TO_NODE: dict[str, str] = {
     "get_current_datetime": "utility",
     "measure_text_length": "utility",
     "telemetry_cost_summary": "utility",
+    "system_introspect": "utility",
     "list_conversations": "memory",
     "get_conversation": "memory",
     "search_memory": "memory",

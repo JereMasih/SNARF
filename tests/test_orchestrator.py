@@ -732,6 +732,19 @@ def test_handle_tool_reports_unknown_tool(orchestrator):
     assert result == {"error": "herramienta desconocida: herramienta_inexistente"}
 
 
+def test_system_introspect_tool_delegates_to_introspection_snapshot(orchestrator):
+    result = orchestrator._handle_tool("system_introspect", {})
+    assert isinstance(result["agents"], list)
+    assert isinstance(result["tools"], list)
+    assert len(result["executive_board"]) == 7
+    # Vía el dispatch normal del Orchestrator (no un consumidor MCP externo
+    # de sesión única) no hay razón real para no conocer las sesiones
+    # activas -- pero system_snapshot() nunca las calcula sola (ver
+    # introspection.py), así que sin pasarlas explícitamente queda None,
+    # la respuesta honesta, no un cero inventado.
+    assert result["active_user_sessions"] is None
+
+
 def test_handle_tool_catches_handler_exceptions(orchestrator, monkeypatch):
     def boom(_input):
         raise RuntimeError("fallo simulado")
