@@ -42,16 +42,30 @@ class ProjectManager:
     `GmailDigestSpecialist`: compone una Capacidad (Drive) más un llamado a
     LLM, sin importar `snarf.core`/`snarf.runtime` (ver ADR 0026)."""
 
-    def __init__(self, drive, indexer, llm_factory, user_id: str):
+    def __init__(
+        self,
+        drive,
+        indexer,
+        llm_factory,
+        user_id: str,
+        subfolder_system_prompt_provider=None,
+        summary_system_prompt_provider=None,
+    ):
         # llm_factory: callable sin argumentos, ver el mismo criterio
         # documentado en GmailDigestSpecialist.__init__ — nunca una
         # instancia fija, para que el ruteo de LLM configurado en caliente
-        # se refleje sin reiniciar el servidor.
+        # se refleje sin reiniciar el servidor. Mismo criterio para los dos
+        # providers de prompt (Prompt Registry, ADR 0141) — inyectados por
+        # quien construye este Specialist, nunca importados acá (ADR 0026).
         self._drive = drive
         self._indexer = indexer
         self._llm_factory = llm_factory
         self._user_id = user_id
         self._root_folder_id: str | None = None
+        self._subfolder_system_prompt_provider = subfolder_system_prompt_provider or (
+            lambda: SUBFOLDER_SUGGESTION_SYSTEM_PROMPT
+        )
+        self._summary_system_prompt_provider = summary_system_prompt_provider or (lambda: SUMMARY_SYSTEM_PROMPT)
 
     def _root_folder(self) -> str:
         # Mismo patrón lazy-cached que DocumentPublisher.folder_id(): la
@@ -131,7 +145,7 @@ class ProjectManager:
             return ["Archivos"]
         try:
             response = llm.generate(
-                system=SUBFOLDER_SUGGESTION_SYSTEM_PROMPT, messages=[{"role": "user", "content": name}]
+                system=self._subfolder_system_prompt_provider(), messages=[{"role": "user", "content": name}]
             )
             names = [n.strip() for n in response.text.split(",") if n.strip()][:4]
             return names or ["Archivos"]
@@ -259,7 +273,8 @@ class ProjectManager:
             ]
             try:
                 summary_text = llm.generate(
-                    system=SUMMARY_SYSTEM_PROMPT, messages=[{"role": "user", "content": "\n".join(context_lines)}]
+                    system=self._summary_system_prompt_provider(),
+                    messages=[{"role": "user", "content": "\n".join(context_lines)}],
                 ).text
             except Exception as exc:
                 summary_text = f"No se pudo generar el resumen: {exc}"

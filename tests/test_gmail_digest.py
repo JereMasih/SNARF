@@ -21,13 +21,15 @@ class FakeLLM:
         return LLMResponse(text=self._response, speech=self._response)
 
 
-def make_specialist(tmp_path, monkeypatch, messages=None, llm_available=True, llm_response="interpretado"):
+def make_specialist(
+    tmp_path, monkeypatch, messages=None, llm_available=True, llm_response="interpretado", system_prompt_provider=None
+):
     from snarf.specialists import gmail_digest as module
 
     monkeypatch.setattr(module, "CACHE_DIR", tmp_path / "gmail_digest")
     gmail = FakeGmail(messages or [])
     llm = FakeLLM(available=llm_available, response=llm_response)
-    return GmailDigestSpecialist(gmail, lambda: llm, "fundador"), llm
+    return GmailDigestSpecialist(gmail, lambda: llm, "fundador", system_prompt_provider), llm
 
 
 def test_cached_digest_is_none_before_any_refresh(tmp_path, monkeypatch):
@@ -73,6 +75,17 @@ def test_handle_returns_digest_text_directly(tmp_path, monkeypatch):
     messages = [{"from": "a@b.com", "subject": "x", "snippet": "y"}]
     specialist, _ = make_specialist(tmp_path, monkeypatch, messages=messages, llm_response="el resumen")
     assert specialist.handle("interpretar", {}) == "el resumen"
+
+
+def test_refresh_uses_the_injected_system_prompt_provider(tmp_path, monkeypatch):
+    messages = [{"from": "a@b.com", "subject": "x", "snippet": "y"}]
+    specialist, llm = make_specialist(
+        tmp_path, monkeypatch, messages=messages, system_prompt_provider=lambda: "prompt editado real"
+    )
+    specialist.refresh()
+
+    sent_system, _ = llm.calls[0]
+    assert sent_system == "prompt editado real"
 
 
 def test_refresh_records_latest_message_id_for_cheap_staleness_checks(tmp_path, monkeypatch):

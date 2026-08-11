@@ -34,23 +34,37 @@ from snarf.core.identity import load_identity
 from snarf.knowledge.document_publisher import DocumentPublisher
 from snarf.knowledge.drive_indexer import DriveIndexer
 from snarf.knowledge.episodic_conversation_source import EpisodicConversationSource
-from snarf.knowledge.extraction import ContentExtractor
+from snarf.knowledge.extraction import VISION_SYSTEM_PROMPT, ContentExtractor
 from snarf.knowledge.indexer import KnowledgeIndexer
 from snarf.knowledge.local_repo_source import LocalRepoKnowledgeSource
 from snarf.knowledge.vector_store import VectorStore
 from snarf.memory.episodic import EpisodicMemory
-from snarf.runtime import data_backup, llm_routing, ops_health, personality_prefs, process_control, user_profile
+from snarf.runtime import data_backup, llm_routing, ops_health, personality_prefs, process_control, prompt_registry, user_profile
 from snarf.executive.specialist import ExecutiveBoardSpecialist
-from snarf.specialists.gmail_digest import GmailDigestSpecialist
-from snarf.specialists.project_manager import ProjectManager
-from snarf.specialists.productivity.calendar_brief import CalendarBriefSpecialist
-from snarf.specialists.productivity.morning_routine import MorningRoutineSpecialist
-from snarf.specialists.sales.sponsor_inbox_triage import SponsorInboxTriageSpecialist
+from snarf.specialists.gmail_digest import SYSTEM_PROMPT as GMAIL_DIGEST_SYSTEM_PROMPT, GmailDigestSpecialist
+from snarf.specialists.project_manager import (
+    SUBFOLDER_SUGGESTION_SYSTEM_PROMPT,
+    SUMMARY_SYSTEM_PROMPT as PROJECT_SUMMARY_SYSTEM_PROMPT,
+    ProjectManager,
+)
+from snarf.specialists.productivity.calendar_brief import SYSTEM_PROMPT as CALENDAR_BRIEF_SYSTEM_PROMPT, CalendarBriefSpecialist
+from snarf.specialists.productivity.morning_routine import (
+    CLASSIFY_SYSTEM_PROMPT as MORNING_ROUTINE_CLASSIFY_SYSTEM_PROMPT,
+    SYNTHESIZE_SYSTEM_PROMPT as MORNING_ROUTINE_SYNTHESIZE_SYSTEM_PROMPT,
+    MorningRoutineSpecialist,
+)
+from snarf.specialists.sales.sponsor_inbox_triage import (
+    SYSTEM_PROMPT as SPONSOR_INBOX_TRIAGE_SYSTEM_PROMPT,
+    SponsorInboxTriageSpecialist,
+)
 from snarf.specialists.content.mode import BLOG_POST_CONFIG, NEWSLETTER_CONFIG, SOCIAL_POST_CONFIG
 from snarf.specialists.content.specialist import ContentSpecialist
-from snarf.specialists.agency.client_status import ClientStatusSpecialist
+from snarf.specialists.agency.client_status import SYSTEM_PROMPT as CLIENT_STATUS_SYSTEM_PROMPT, ClientStatusSpecialist
 from snarf.specialists.community.pulse import CommunityPulseSpecialist
-from snarf.specialists.finance.books_categorize import BooksCategorizeSpecialist
+from snarf.specialists.finance.books_categorize import (
+    SYSTEM_PROMPT as BOOKS_CATEGORIZE_SYSTEM_PROMPT,
+    BooksCategorizeSpecialist,
+)
 from snarf.specialists.finance.monthly_pnl import MonthlyPnLSpecialist
 from snarf.specialists.research.mode import COMPETITOR_WATCH_CONFIG, DEEP_RESEARCH_CONFIG, TREND_SCAN_CONFIG
 from snarf.specialists.research.specialist import ResearchSpecialist
@@ -1715,11 +1729,19 @@ class Orchestrator:
         # ruteo desde configuración se aplica sin reiniciar el servidor
         # (bug real encontrado en esta misma ronda: antes quedaba fijo al
         # momento de construir el Orchestrator).
-        self._gmail_digest = GmailDigestSpecialist(self._gmail, lambda: llm_routing.build_resilient_llm("gmail_digest"), user_id)
+        self._gmail_digest = GmailDigestSpecialist(
+            self._gmail,
+            lambda: llm_routing.build_resilient_llm("gmail_digest"),
+            user_id,
+            lambda: prompt_registry.get_active_text("gmail_digest", GMAIL_DIGEST_SYSTEM_PROMPT),
+        )
         # Fase I, rama Productivity (ver plan de expansión) — mismo patrón
         # cache-first que GmailDigestSpecialist.
         self._calendar_brief = CalendarBriefSpecialist(
-            self._calendar, lambda: llm_routing.build_resilient_llm("calendar_brief"), user_id
+            self._calendar,
+            lambda: llm_routing.build_resilient_llm("calendar_brief"),
+            user_id,
+            lambda: prompt_registry.get_active_text("calendar_brief", CALENDAR_BRIEF_SYSTEM_PROMPT),
         )
         # Compone gmail+calendar en una sola rutina, con el cuerpo real ya
         # leído para los correos prioritarios (ver ADR de esta ronda) — no
@@ -1728,19 +1750,30 @@ class Orchestrator:
         # tenemos hoy" combinado sin depender de que el Orchestrator
         # encadene bien varias tool calls en el mismo turno.
         self._morning_routine = MorningRoutineSpecialist(
-            self._gmail, self._calendar, lambda: llm_routing.build_resilient_llm("morning_routine"), user_id
+            self._gmail,
+            self._calendar,
+            lambda: llm_routing.build_resilient_llm("morning_routine"),
+            user_id,
+            lambda: prompt_registry.get_active_text("morning_routine_classify", MORNING_ROUTINE_CLASSIFY_SYSTEM_PROMPT),
+            lambda: prompt_registry.get_active_text("morning_routine_synthesize", MORNING_ROUTINE_SYNTHESIZE_SYSTEM_PROMPT),
         )
         # Fase I, rama Sales — mismo patrón cache-first, búsqueda de Gmail
         # acotada a oportunidades reales de sponsor/partnership.
         self._sponsor_inbox_triage = SponsorInboxTriageSpecialist(
-            self._gmail, lambda: llm_routing.build_resilient_llm("sponsor_inbox_triage"), user_id
+            self._gmail,
+            lambda: llm_routing.build_resilient_llm("sponsor_inbox_triage"),
+            user_id,
+            lambda: prompt_registry.get_active_text("sponsor_inbox_triage", SPONSOR_INBOX_TRIAGE_SYSTEM_PROMPT),
         )
         # Fase I, rama Finance — v1 sin vendor nuevo: una Google Sheet real
         # que el fundador mantiene, leída vía GoogleDrive.read_file_text()
         # (ya exporta un Sheet real como CSV). monthly_pnl es determinístico,
         # nunca un LLM.
         self._books_categorize = BooksCategorizeSpecialist(
-            self._drive, lambda: llm_routing.build_resilient_llm("books_categorize"), user_id
+            self._drive,
+            lambda: llm_routing.build_resilient_llm("books_categorize"),
+            user_id,
+            lambda: prompt_registry.get_active_text("books_categorize", BOOKS_CATEGORIZE_SYSTEM_PROMPT),
         )
         self._monthly_pnl = MonthlyPnLSpecialist()
         # Fase I, rama Community — vendor decidido (Discord), lazy-client
@@ -1763,6 +1796,7 @@ class Orchestrator:
             docx_extractor=DocxExtractor(),
             pptx_extractor=PptxExtractor(),
             xlsx_extractor=XlsxExtractor(),
+            vision_system_prompt_provider=lambda: prompt_registry.get_active_text("drive_vision", VISION_SYSTEM_PROMPT),
         )
         self._content_extractor = content_extractor
         user_index_dir = DRIVE_INDEX_DATA_DIR / user_id
@@ -1824,6 +1858,7 @@ class Orchestrator:
                 self._document_publisher,
                 lambda role=config.llm_routing_role: llm_routing.build_resilient_llm(role),
                 user_id,
+                lambda cfg=config: prompt_registry.get_active_text(cfg.llm_routing_role, cfg.system_prompt),
             )
             for config in (DEEP_RESEARCH_CONFIG, TREND_SCAN_CONFIG, COMPETITOR_WATCH_CONFIG)
         }
@@ -1836,19 +1871,31 @@ class Orchestrator:
                 self._document_publisher,
                 lambda role=config.llm_routing_role: llm_routing.build_resilient_llm(role),
                 user_id,
+                lambda cfg=config: prompt_registry.get_active_text(cfg.llm_routing_role, cfg.system_prompt),
             )
             for config in (BLOG_POST_CONFIG, SOCIAL_POST_CONFIG, NEWSLETTER_CONFIG)
         }
         # Mismo criterio que GmailDigestSpecialist: modelo barato para una
         # tarea acotada (sugerir 2-4 nombres de subcarpeta por proyecto).
         self._projects = ProjectManager(
-            self._drive, self._drive_indexer, lambda: llm_routing.build_resilient_llm("project_summary"), user_id
+            self._drive,
+            self._drive_indexer,
+            lambda: llm_routing.build_resilient_llm("project_summary"),
+            user_id,
+            lambda: prompt_registry.get_active_text(
+                "project_manager_subfolder_suggestion", SUBFOLDER_SUGGESTION_SYSTEM_PROMPT
+            ),
+            lambda: prompt_registry.get_active_text("project_manager_summary", PROJECT_SUMMARY_SYSTEM_PROMPT),
         )
         # Fase I, rama Agency — único código genuinamente nuevo (el resto
         # ya está cubierto por conversación + drive_create_document, mismo
         # criterio que Proposal Drafts en la rama Sales).
         self._client_status = ClientStatusSpecialist(
-            self._projects, self._document_publisher, lambda: llm_routing.build_resilient_llm("client_status"), user_id
+            self._projects,
+            self._document_publisher,
+            lambda: llm_routing.build_resilient_llm("client_status"),
+            user_id,
+            lambda: prompt_registry.get_active_text("client_status", CLIENT_STATUS_SYSTEM_PROMPT),
         )
         # Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094/0098): cada rol
         # corre en su propio proceso MCP (snarf/executive/process.py), nunca
@@ -2418,7 +2465,8 @@ class Orchestrator:
             llm = llm_routing.build_resilient_llm("history_compaction")
             if not llm.available:
                 raise RuntimeError("history_compaction no disponible")
-            result = llm.generate(system=HISTORY_COMPACTION_SYSTEM_PROMPT, messages=[{"role": "user", "content": text}])
+            system = prompt_registry.get_active_text("history_compaction", HISTORY_COMPACTION_SYSTEM_PROMPT)
+            result = llm.generate(system=system, messages=[{"role": "user", "content": text}])
             summary = result.text.strip()
             if summary:
                 return summary
@@ -2497,7 +2545,7 @@ class Orchestrator:
                     )
                     response = LLMResponse(text=echo_text, speech=fallback_speech(echo_text))
                 else:
-                    system = SYSTEM_PREFIX + self._identity
+                    system = prompt_registry.get_active_text("orchestrator_system_prefix", SYSTEM_PREFIX) + self._identity
                     # Se relee en cada turno (no se cachea en __init__ como
                     # self._identity) — a diferencia de los documentos de identidad,
                     # este valor puede cambiar a mitad de una conversación (desde
@@ -2627,7 +2675,10 @@ class Orchestrator:
         # turno principal, que para entonces ya terminó y devolvió su
         # respuesta.
         turn = spans.start_workflow("conversation_title", detalle=detail.truncate_detalle(listing))
-        title_kwargs = {"system": CONVERSATION_TITLE_SYSTEM_PROMPT, "messages": [{"role": "user", "content": listing}]}
+        title_kwargs = {
+            "system": prompt_registry.get_active_text("conversation_title", CONVERSATION_TITLE_SYSTEM_PROMPT),
+            "messages": [{"role": "user", "content": listing}],
+        }
         title = None
         try:
             with spans.active(turn):

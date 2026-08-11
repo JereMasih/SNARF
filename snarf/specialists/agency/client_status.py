@@ -31,11 +31,14 @@ class ClientStatusSpecialist(Specialist):
     name = "client_status"
     domain = "agency"
 
-    def __init__(self, projects, document_publisher, llm_factory, user_id: str):
+    def __init__(self, projects, document_publisher, llm_factory, user_id: str, system_prompt_provider=None):
         self._projects = projects
         self._document_publisher = document_publisher
         self._llm_factory = llm_factory
         self._user_id = user_id
+        # system_prompt_provider: ver el criterio documentado en
+        # GmailDigestSpecialist.__init__ (Prompt Registry, ADR 0141).
+        self._system_prompt_provider = system_prompt_provider or (lambda: SYSTEM_PROMPT)
 
     def generate(self, project_id: str) -> dict:
         project = self._projects.get(project_id)
@@ -55,7 +58,7 @@ class ClientStatusSpecialist(Specialist):
             f"Tareas pendientes ({len(pending)}): {'; '.join(pending) or 'ninguna'}\n"
             f"Notas recientes: {'; '.join(notes[-5:]) or 'ninguna'}"
         )
-        response = llm.generate(system=SYSTEM_PROMPT, messages=[{"role": "user", "content": listing}])
+        response = llm.generate(system=self._system_prompt_provider(), messages=[{"role": "user", "content": listing}])
         status_text = response.text
 
         document = self._document_publisher.create_document(

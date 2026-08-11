@@ -48,7 +48,16 @@ class ResearchSpecialist(Specialist):
 
     domain = "research"
 
-    def __init__(self, config: ResearchModeConfig, web_search, youtube, document_publisher, llm_factory, user_id: str):
+    def __init__(
+        self,
+        config: ResearchModeConfig,
+        web_search,
+        youtube,
+        document_publisher,
+        llm_factory,
+        user_id: str,
+        system_prompt_provider=None,
+    ):
         self.name = config.mode
         self._config = config
         self._web_search = web_search
@@ -56,6 +65,9 @@ class ResearchSpecialist(Specialist):
         self._document_publisher = document_publisher
         self._llm_factory = llm_factory
         self._user_id = user_id
+        # system_prompt_provider: ver el criterio documentado en
+        # GmailDigestSpecialist.__init__ (Prompt Registry, ADR 0141).
+        self._system_prompt_provider = system_prompt_provider or (lambda: config.system_prompt)
 
     def _gather_sources(self, topic: str, video_urls: list[str]) -> list[dict]:
         sources: list[dict] = []
@@ -105,7 +117,7 @@ class ResearchSpecialist(Specialist):
             f"FUENTE ({s['type']}) — {s['title']} ({s['url']}):\n{s['content']}" for s in real_sources
         )
         response = llm.generate(
-            system=self._config.system_prompt,
+            system=self._system_prompt_provider(),
             messages=[{"role": "user", "content": f"Tema: {topic}\n\n{listing}"}],
         )
         report_text = response.text

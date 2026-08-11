@@ -66,9 +66,24 @@ class ContentExtractor:
     según el tipo. Recibe todo por inyección — sin importar snarf.core ni
     snarf.runtime (ver ADR 0026 y tests/test_architecture_boundaries.py)."""
 
-    def __init__(self, drive, pdf_extractor, vision_llm_factory, stt, ffmpeg_audio, docx_extractor=None, pptx_extractor=None, xlsx_extractor=None):
+    def __init__(
+        self,
+        drive,
+        pdf_extractor,
+        vision_llm_factory,
+        stt,
+        ffmpeg_audio,
+        docx_extractor=None,
+        pptx_extractor=None,
+        xlsx_extractor=None,
+        vision_system_prompt_provider=None,
+    ):
         # vision_llm_factory: callable sin argumentos, mismo criterio que
         # GmailDigestSpecialist/ProjectManager — nunca una instancia fija.
+        # vision_system_prompt_provider: mismo criterio, conectado al Prompt
+        # Registry por quien construye este extractor (ADR 0141) — este
+        # módulo (snarf/knowledge/) no importa snarf.runtime directo (ADR
+        # 0026, tests/test_architecture_boundaries.py).
         self._drive = drive
         self._pdf = pdf_extractor
         self._vision_llm_factory = vision_llm_factory
@@ -78,6 +93,7 @@ class ContentExtractor:
         self._pptx = pptx_extractor
         self._xlsx = xlsx_extractor
         self._binary_extractors = {PDF_MIME: self._pdf, DOCX_MIME: self._docx, PPTX_MIME: self._pptx, XLSX_MIME: self._xlsx}
+        self._vision_system_prompt_provider = vision_system_prompt_provider or (lambda: VISION_SYSTEM_PROMPT)
 
     def extract(self, file: dict) -> ExtractionResult:
         mime = file.get("mimeType", "") or ""
@@ -113,7 +129,9 @@ class ContentExtractor:
             },
             {"type": "text", "text": VISION_PROMPT},
         ]
-        text = vision_llm.generate(system=VISION_SYSTEM_PROMPT, messages=[{"role": "user", "content": content}]).text
+        text = vision_llm.generate(
+            system=self._vision_system_prompt_provider(), messages=[{"role": "user", "content": content}]
+        ).text
         return ExtractionResult(text)
 
     def _extract_audio(self, file_id: str) -> ExtractionResult:

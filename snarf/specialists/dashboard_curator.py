@@ -184,7 +184,7 @@ class DashboardCuratorSpecialist(Specialist):
     name = "dashboard_curator"
     domain = "dashboard"
 
-    def __init__(self, snapshot_provider, llm_factory, user_id: str):
+    def __init__(self, snapshot_provider, llm_factory, user_id: str, system_prompt_provider=None):
         # snapshot_provider: callable() -> el dict real de
         # widget_summary.curation_snapshot() — inyectado (no llamado acá
         # adentro con imports directos a events.py) para que el Specialist
@@ -192,6 +192,12 @@ class DashboardCuratorSpecialist(Specialist):
         self._snapshot_provider = snapshot_provider
         self._llm_factory = llm_factory
         self._user_id = user_id
+        # system_prompt_provider: mismo criterio que llm_factory/
+        # snapshot_provider — callable inyectado por quien construye este
+        # Specialist (conectado al Prompt Registry, ADR 0141), nunca un
+        # import directo a snarf.runtime acá (ADR 0026,
+        # tests/test_architecture_boundaries.py).
+        self._system_prompt_provider = system_prompt_provider or (lambda: DASHBOARD_CURATOR_SYSTEM_PROMPT)
 
     def _cache_path(self) -> Path:
         return CACHE_DIR / f"{self._user_id}.json"
@@ -246,7 +252,7 @@ class DashboardCuratorSpecialist(Specialist):
             valid_node_ids = {n["node_id"] for n in nodes}
             tier_by_node = {n["node_id"]: n["size_tier"] for n in nodes}
             prompt = _build_curation_prompt(summaries, cost_alert, recent_errors)
-            response = llm.generate(system=DASHBOARD_CURATOR_SYSTEM_PROMPT, messages=[{"role": "user", "content": prompt}])
+            response = llm.generate(system=self._system_prompt_provider(), messages=[{"role": "user", "content": prompt}])
             headline, node_captions, raw_node_templates, template_proposals = _parse_curation_response(
                 response.text, valid_node_ids
             )

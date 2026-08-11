@@ -45,7 +45,7 @@ class FakeDocumentPublisher:
         return {"id": "doc-1", "title": title}
 
 
-def make_specialist(web_search=None, youtube=None, llm=None, publisher=None):
+def make_specialist(web_search=None, youtube=None, llm=None, publisher=None, system_prompt_provider=None):
     llm = llm or FakeLLM()
     return (
         ResearchSpecialist(
@@ -55,6 +55,7 @@ def make_specialist(web_search=None, youtube=None, llm=None, publisher=None):
             publisher or FakeDocumentPublisher(),
             lambda: llm,
             "fundador",
+            system_prompt_provider,
         ),
         llm,
     )
@@ -112,3 +113,11 @@ def test_research_a_web_search_failure_never_crashes_and_is_recorded():
 def test_handle_returns_report_text_directly():
     specialist, _ = make_specialist(llm=FakeLLM(response="el informe"))
     assert specialist.handle("tema", {}) == "el informe"
+
+
+def test_research_uses_the_injected_system_prompt_provider():
+    specialist, llm = make_specialist(system_prompt_provider=lambda: "prompt de investigación editado")
+    specialist.research("tema")
+
+    sent_system, _ = llm.calls[0]
+    assert sent_system == "prompt de investigación editado"

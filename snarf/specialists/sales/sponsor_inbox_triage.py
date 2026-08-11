@@ -47,10 +47,13 @@ class SponsorInboxTriageSpecialist(Specialist):
     name = "sponsor_inbox_triage"
     domain = "sales"
 
-    def __init__(self, gmail, llm_factory, user_id: str):
+    def __init__(self, gmail, llm_factory, user_id: str, system_prompt_provider=None):
         self._gmail = gmail
         self._llm_factory = llm_factory
         self._user_id = user_id
+        # system_prompt_provider: ver el criterio documentado en
+        # GmailDigestSpecialist.__init__ (Prompt Registry, ADR 0141).
+        self._system_prompt_provider = system_prompt_provider or (lambda: SYSTEM_PROMPT)
 
     def _cache_path(self) -> Path:
         return CACHE_DIR / f"{self._user_id}.json"
@@ -74,7 +77,7 @@ class SponsorInboxTriageSpecialist(Specialist):
                     f"- De: {m.get('from', '')} | Asunto: {m.get('subject', '')} | {m.get('snippet', '')[:160]}"
                     for m in messages
                 )
-                response = llm.generate(system=SYSTEM_PROMPT, messages=[{"role": "user", "content": listing}])
+                response = llm.generate(system=self._system_prompt_provider(), messages=[{"role": "user", "content": listing}])
                 triage_text = response.text
 
         triage = {

@@ -43,10 +43,13 @@ class BooksCategorizeSpecialist(Specialist):
     name = "books_categorize"
     domain = "finance"
 
-    def __init__(self, drive, llm_factory, user_id: str):
+    def __init__(self, drive, llm_factory, user_id: str, system_prompt_provider=None):
         self._drive = drive
         self._llm_factory = llm_factory
         self._user_id = user_id
+        # system_prompt_provider: ver el criterio documentado en
+        # GmailDigestSpecialist.__init__ (Prompt Registry, ADR 0141).
+        self._system_prompt_provider = system_prompt_provider or (lambda: SYSTEM_PROMPT)
 
     def categorize(self, file_id: str) -> dict:
         csv_text = self._drive.read_file_text(file_id, "application/vnd.google-apps.spreadsheet")
@@ -63,7 +66,7 @@ class BooksCategorizeSpecialist(Specialist):
             }
 
         listing = "\n".join(f"{i}. {t.date} | {t.description} | {t.amount}" for i, t in enumerate(transactions, 1))
-        response = llm.generate(system=SYSTEM_PROMPT, messages=[{"role": "user", "content": listing}])
+        response = llm.generate(system=self._system_prompt_provider(), messages=[{"role": "user", "content": listing}])
         categories = _parse_categories(response.text, len(transactions))
 
         categorized = [

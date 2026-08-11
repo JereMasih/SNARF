@@ -101,6 +101,25 @@ def test_handle_stores_the_llm_speech_field_on_the_memory_entry(orchestrator, mo
     assert entry["speech"] == "versión hablada corta"
 
 
+def test_handle_uses_the_prompt_registry_override_for_the_system_prefix(orchestrator, monkeypatch, tmp_path):
+    from snarf.runtime import prompt_registry
+
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    prompt_registry.save_new_version("orchestrator_system_prefix", "PREFIJO EDITADO REAL", default="lo que sea")
+
+    captured = {}
+
+    def fake_generate(**kwargs):
+        captured["system"] = kwargs["system"]
+        return LLMResponse(text="respuesta", speech="")
+
+    monkeypatch.setattr(orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
+    orchestrator.handle("text", "hola", conversation_id="c1")
+
+    assert captured["system"].startswith("PREFIJO EDITADO REAL")
+
+
 def test_handle_tags_the_llm_role_as_orchestrator_during_the_real_call_and_clears_it_after(orchestrator, monkeypatch):
     from snarf.telemetry import context
 
@@ -946,6 +965,29 @@ def test_capped_for_replay_uses_a_real_summary_when_the_compaction_role_is_avail
     assert first == "resumen fiel y compacto"
     assert second == "resumen fiel y compacto"
     assert len(calls) == 1
+
+
+def test_capped_for_replay_uses_the_prompt_registry_override_for_history_compaction(orchestrator, monkeypatch, tmp_path):
+    from snarf.runtime import prompt_registry
+
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    prompt_registry.save_new_version("history_compaction", "instrucción de resumen editada", default="lo que sea")
+
+    calls = []
+
+    class FakeSummarizer:
+        available = True
+
+        def generate(self, **kwargs):
+            calls.append(kwargs)
+            return LLMResponse(text="resumen", speech="ok")
+
+    monkeypatch.setattr(llm_routing, "build_resilient_llm", lambda role: FakeSummarizer())
+    long_text = "x" * (HISTORY_REPLAY_MAX_CHARS + 500)
+
+    orchestrator._capped_for_replay(long_text)
+
+    assert calls[0]["system"] == "instrucción de resumen editada"
 
 
 def test_capped_for_replay_skips_the_llm_entirely_for_an_extreme_entry(orchestrator, monkeypatch):

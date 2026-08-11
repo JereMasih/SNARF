@@ -9,10 +9,10 @@
 
 ## Estado actual (retomar una sesión nueva desde acá)
 
-**Última actualización:** 2026-08-10. **Hechas: Fases 0-4** (más un adelanto real de la Fase 9.1) —
-commiteadas y pusheadas (`origin/master`). **Fase 5 (API de introspección) ya implementada también**
-(`adr/0140-*`, `snarf/runtime/introspection.py`, `GET /n8n/introspect`) pero **todavía sin commitear** —
-ver "Trabajo pendiente de commit" abajo. Suite completa en verde: 1221/1221 tests
+**Última actualización:** 2026-08-10. **Hechas: Fases 0-6** (más un adelanto real de la Fase 9.1) —
+Fase 6 (Prompt Registry, `adr/0141-*`) hecha y testeada, **todavía sin commitear** — ver "Trabajo
+pendiente de commit" abajo. Fases 0-5 commiteadas, sin pushear a `origin/master` en este momento —
+confirmar `git push` con el fundador antes de asumirlo hecho. Suite completa en verde: 1233/1233 tests
 (`.venv/bin/python -m pytest -q`).
 
 **Hecho y commiteado, con ADR real por cada fase (leer el ADR antes de tocar código relacionado, tiene
@@ -33,15 +33,12 @@ el detalle completo de diseño/riesgos/tests):**
   (solo founder, con confirmación de dos pasos, `com.snarf.server` excluido de auto-reinicio)
   (`adr/0138-*`).
 
-**Trabajo pendiente de commit (hecho, testeado, pero no en `origin/master` todavía):**
-- ⚠️ Fase 5 — API de introspección de solo lectura (`adr/0140-*`): `GET /n8n/introspect` (mismo token
-  `N8N_CONTROL_TOKEN` que `GET /n8n/status`), expone ruteo real de modelo por rol
-  (`llm_routing.load_routing()`), tools reales filtrados por el mismo allowlist que usa el servidor MCP,
-  los 7 roles reales del board de Inteligencia Ejecutiva, y conteo de sesiones de `Orchestrator` activas
-  por usuario. Archivos sin commitear: `snarf/runtime/introspection.py`, `tests/test_introspection.py`,
-  `adr/0140-*.md`, más cambios en `app.py`, `tests/test_app.py`, `CHANGELOG.md`. **Antes de seguir a la
-  Fase 6, decidir con el fundador si se commitea este trabajo tal cual o se revisa primero** — no
-  commitear código sin que el fundador lo pida explícitamente (regla dura de esta sesión).
+**Trabajo pendiente de commit:** Fase 6 (Prompt Registry, `adr/0141-*`) — hecha, testeada (1233/1233),
+sin commitear todavía. Archivos: `snarf/runtime/prompt_registry.py` (nuevo),
+`tests/test_prompt_registry.py` (nuevo), `adr/0141-*.md` (nuevo), más cambios en
+`snarf/core/orchestrator.py`, `app.py`, `CHANGELOG.md`, este documento, y los ~13 archivos de
+`snarf/specialists/`/`snarf/knowledge/` wireados (ver ADR 0141 para el detalle completo). **No
+commitear sin pedido explícito del fundador.**
 
 **Estado real de infraestructura en esta Mac** (verificar que sigue así al retomar, puede haber
 cambiado):
@@ -62,8 +59,8 @@ orquestación, la inferencia local sigue viajando a esta Mac por Tailscale) — 
 porque MLX es específico de Apple Silicon y una migración completa perdería el costo ~$0 de inferencia
 local. Pendiente de que el fundador decida si/cuándo.
 
-**Qué preguntar/confirmar apenas se retome:** (1) ¿se commitea el trabajo de Fase 5 tal cual está? (2)
-¿seguimos con la Fase 6 (Prompt Registry), o el fundador quiere reordenar/saltar a otra fase? La
+**Qué preguntar/confirmar apenas se retome:** (1) ¿se commitea el trabajo de Fase 6 tal cual está? (2)
+¿seguimos con la Fase 7 (Configuración dinámica), o el fundador quiere reordenar/saltar a otra fase? La
 instrucción vigente de sesiones anteriores fue "continuá con las fases siguientes, no hace falta que
 preguntes" — sigue aplicando salvo que el fundador diga lo contrario, pero **no** cubre commits (esos
 siempre se piden explícitamente) ni gasto real/infraestructura paga.
@@ -200,18 +197,25 @@ founder desde el frontend — nunca una segunda implementación de esa lógica d
 
 ---
 
-## Fase 5 — API de introspección (solo lectura) ⚠️ HECHO PERO SIN COMMITEAR (`adr/0140-*`)
+## Fase 5 — API de introspección (solo lectura) ✅ HECHO (`adr/0140-*`)
 
 Expone lo que ya es autodescriptivo en código: `orchestrator.TOOLS`, ruteo real por rol
 (`llm_routing.ROLES`), los 7 roles del board de Inteligencia Ejecutiva, conteo de sesiones activas por
-usuario. `GET /n8n/introspect`, mismo token que `GET /n8n/status`. Ver "Trabajo pendiente de commit"
-arriba antes de seguir — no commitear sin pedido explícito del fundador.
+usuario. `GET /n8n/introspect`, mismo token que `GET /n8n/status`.
 
 ---
 
-## Fase 6 — Prompt Registry
+## Fase 6 — Prompt Registry ✅ HECHO PERO SIN COMMITEAR (`adr/0141-*`)
 
-Migra los ~11 prompts hardcodeados (`SYSTEM_PREFIX` en `orchestrator.py` + system prompt propio de cada Specialist) a almacenamiento versionado bajo `data/prompts/` (mismo estilo JSON-por-entidad que `llm_routing.json`) con: versión activa, historial, rollback. El texto actual se migra como v1 — nada cambia de comportamiento el día del corte. Esto es lo que habilita técnicamente el caso de uso de n8n de la Fase 4 (editar el prompt de un agente existente) y la comparación de versiones que hace valiosa a Langfuse en la Fase 8.
+Migró los prompts hardcodeados (`SYSTEM_PREFIX` en `orchestrator.py` + system prompt propio de cada
+Specialist — 20 constantes reales, más de las "~11" estimadas acá, ver ADR 0141 para el mapeo completo)
+a `data/prompts.json`, mismo estilo JSON-por-entidad que `llm_routing.json`: versión activa, historial,
+rollback. El texto actual se migró como v1 — nada cambia de comportamiento el día del corte. Corrección
+real encontrada en el camino: los Specialists no pueden importar `snarf.runtime` (ADR 0026,
+`tests/test_architecture_boundaries.py`) — se resolvió con inyección de un `system_prompt_provider`
+callable, mismo patrón que `llm_factory`. Ningún endpoint HTTP para editar todavía (eso es Fase 9.3) —
+esto habilita técnicamente el caso de uso de n8n de la Fase 4 y la comparación de versiones que hace
+valiosa a Langfuse en la Fase 8, pero no los construye.
 
 ---
 

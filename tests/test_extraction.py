@@ -158,6 +158,19 @@ def test_extract_image_uses_vision_llm_when_available():
     assert len(vision.calls) == 1
 
 
+def test_extract_image_uses_the_injected_vision_system_prompt_provider():
+    vision = FakeVisionLLM()
+    extractor = make_extractor(
+        drive=FakeDrive(bytes_map={"i1": b"png-bytes"}),
+        vision_llm=vision,
+        vision_system_prompt_provider=lambda: "prompt de visión editado",
+    )
+    extractor.extract({"id": "i1", "mimeType": "image/png"})
+
+    sent_system, _ = vision.calls[0]
+    assert sent_system == "prompt de visión editado"
+
+
 def test_extract_image_is_skipped_when_vision_unavailable():
     extractor = make_extractor(vision_llm=FakeVisionLLM(available=False))
     result = extractor.extract({"id": "i1", "mimeType": "image/png"})

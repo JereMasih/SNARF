@@ -110,11 +110,25 @@ class MorningRoutineSpecialist(Specialist):
     name = "morning_routine"
     domain = "productivity"
 
-    def __init__(self, gmail, calendar, llm_factory, user_id: str):
+    def __init__(
+        self,
+        gmail,
+        calendar,
+        llm_factory,
+        user_id: str,
+        classify_system_prompt_provider=None,
+        synthesize_system_prompt_provider=None,
+    ):
         self._gmail = gmail
         self._calendar = calendar
         self._llm_factory = llm_factory
         self._user_id = user_id
+        # Ver el criterio documentado en GmailDigestSpecialist.__init__
+        # (Prompt Registry, ADR 0141).
+        self._classify_system_prompt_provider = classify_system_prompt_provider or (lambda: CLASSIFY_SYSTEM_PROMPT)
+        self._synthesize_system_prompt_provider = synthesize_system_prompt_provider or (
+            lambda: SYNTHESIZE_SYSTEM_PROMPT
+        )
 
     def _cache_path(self) -> Path:
         return CACHE_DIR / f"{self._user_id}.json"
@@ -150,7 +164,7 @@ class MorningRoutineSpecialist(Specialist):
             ) or "(sin eventos próximos)"
             classify_input = f"CORREOS:\n{message_listing}\n\nAGENDA:\n{event_listing}"
             classify_response = llm.generate(
-                system=CLASSIFY_SYSTEM_PROMPT, messages=[{"role": "user", "content": classify_input}]
+                system=self._classify_system_prompt_provider(), messages=[{"role": "user", "content": classify_input}]
             )
             known_ids = {m["id"] for m in messages if m.get("id")}
             routine_text, priority_ids = _extract_priority_ids(classify_response.text, known_ids)
@@ -170,7 +184,8 @@ class MorningRoutineSpecialist(Specialist):
                     f"CORREOS PRIORITARIOS (contenido real completo):\n\n{priority_bodies}"
                 )
                 synthesize_response = llm.generate(
-                    system=SYNTHESIZE_SYSTEM_PROMPT, messages=[{"role": "user", "content": synthesize_input}]
+                    system=self._synthesize_system_prompt_provider(),
+                    messages=[{"role": "user", "content": synthesize_input}],
                 )
                 routine_text = synthesize_response.text
 

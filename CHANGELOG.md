@@ -2,6 +2,28 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-10] Fase 6: Prompt Registry (ADR 0141)
+
+- `snarf/runtime/prompt_registry.py` (nuevo): almacenamiento versionado real para prompts, mismo estilo
+  que `llm_routing.json` — `get_active_text`/`save_new_version`/`rollback`/`history`. Un prompt nunca
+  tocado sigue usando el texto hardcodeado de siempre (v1 implícito) — "nada cambia el día del corte".
+- Migrados los 20 prompts reales encontrados en el código (más de los "~11" estimados en el plan — ver
+  ADR 0141 para el mapeo completo y por qué el número real es mayor): `SYSTEM_PREFIX`,
+  `conversation_title`, `history_compaction` (`orchestrator.py`), `drive_vision`
+  (`knowledge/extraction.py`), y los prompts propios de 10 Specialists (`gmail_digest`,
+  `dashboard_curator`, `project_manager` ×2, `calendar_brief`, `morning_routine` ×2, `research` ×3,
+  `content` ×3, `client_status`, `books_categorize`, `sponsor_inbox_triage`).
+- **Corrección de arquitectura encontrada a mitad de camino**: la primera versión hacía que cada
+  Specialist importara `prompt_registry` directo — `tests/test_architecture_boundaries.py` (ADR 0026)
+  lo rechazó (Capacidades/Especialistas deben ser reusables fuera de Snarf, sin importar
+  `snarf.runtime`). Corregido a inyección de un `system_prompt_provider` callable, mismo patrón ya
+  usado por `llm_factory` — `Orchestrator`/`app.py` (que sí pueden importar `snarf.runtime`) son quienes
+  conectan cada Specialist al Prompt Registry.
+- Ningún endpoint HTTP para editar todavía — eso es Fase 9.3 del roadmap, no esta ADR.
+- 12 tests nuevos (`tests/test_prompt_registry.py` + wiring representativo en `test_orchestrator.py`,
+  `test_gmail_digest.py`, `test_research_specialist.py`, `test_extraction.py`). 1233/1233 tests de la
+  suite completa.
+
 ## [2026-08-10] Fase 5: API de introspección real (agentes, tools, board ejecutivo) (ADR 0140)
 
 - `GET /n8n/introspect` (nuevo, `app.py`): la API de introspección "más completa" que ADR 0139 había

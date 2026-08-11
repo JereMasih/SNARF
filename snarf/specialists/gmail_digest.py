@@ -36,7 +36,7 @@ class GmailDigestSpecialist(Specialist):
     name = "gmail_digest"
     domain = "email"
 
-    def __init__(self, gmail, llm_factory, user_id: str):
+    def __init__(self, gmail, llm_factory, user_id: str, system_prompt_provider=None):
         # llm_factory: callable sin argumentos que devuelve la Capacidad de
         # LLM vigente para este rol — nunca una instancia fija, para que un
         # cambio de proveedor/modelo en snarf/runtime/llm_routing.py se
@@ -45,6 +45,16 @@ class GmailDigestSpecialist(Specialist):
         self._gmail = gmail
         self._llm_factory = llm_factory
         self._user_id = user_id
+        # system_prompt_provider: mismo criterio que llm_factory — callable
+        # sin argumentos, releído en cada uso. Quien construye este
+        # Specialist (Orchestrator, que sí puede importar snarf.runtime) lo
+        # conecta al Prompt Registry (ver snarf/runtime/prompt_registry.py,
+        # ADR 0141); este módulo nunca importa snarf.runtime directo — debe
+        # seguir siendo reusable fuera de Snarf (ADR 0026,
+        # tests/test_architecture_boundaries.py). Default: el texto
+        # hardcodeado de siempre, para que instanciar sin este parámetro
+        # (tests, un consumidor externo futuro) siga funcionando igual.
+        self._system_prompt_provider = system_prompt_provider or (lambda: SYSTEM_PROMPT)
 
     def _cache_path(self) -> Path:
         return CACHE_DIR / f"{self._user_id}.json"
@@ -67,7 +77,9 @@ class GmailDigestSpecialist(Specialist):
                 f"- De: {m.get('from', '')} | Asunto: {m.get('subject', '')} | {m.get('snippet', '')[:160]}"
                 for m in messages
             )
-            digest_text = llm.generate(system=SYSTEM_PROMPT, messages=[{"role": "user", "content": listing}]).text
+            digest_text = llm.generate(
+                system=self._system_prompt_provider(), messages=[{"role": "user", "content": listing}]
+            ).text
 
         digest = {
             "generated_at": time.time(),

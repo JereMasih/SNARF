@@ -46,6 +46,7 @@ from snarf.runtime import data_backup
 from snarf.runtime import ops_health
 from snarf.runtime import process_control
 from snarf.runtime import introspection
+from snarf.runtime import prompt_registry
 from snarf.knowledge.extraction import categorize_mime
 from snarf.specialists import dashboard_curator as dashboard_curator_module
 from snarf.specialists.dashboard_curator import DashboardCuratorSpecialist
@@ -137,6 +138,9 @@ dashboard_curator = DashboardCuratorSpecialist(
     snapshot_provider=_dashboard_curation_snapshot,
     llm_factory=lambda: llm_routing.build_resilient_llm("dashboard_curator"),
     user_id=DEFAULT_USER_ID,
+    system_prompt_provider=lambda: prompt_registry.get_active_text(
+        "dashboard_curator", dashboard_curator_module.DASHBOARD_CURATOR_SYSTEM_PROMPT
+    ),
 )
 dashboard_curating_in_progress = False
 
