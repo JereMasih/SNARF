@@ -18,6 +18,21 @@ Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o a
   reinició nada de producción sin decisión explícita del fundador en el momento).
 - 5 tests nuevos (`tests/test_app.py`). 1282/1282 tests de la suite completa.
 
+## [2026-08-11] Cerebro "giroscopio" v2: planos de órbita inclinados reales (ADR 0148)
+
+- Feedback real del fundador sobre ADR 0147 (antes de llegar a producción): los anillos giraban todos
+  en el mismo plano XY, a distinta profundidad fija — se veían discos apilados, no una esfera de aros
+  cruzados. Fix real: `BRAIN_RING_TILT` (nuevo) — cada tier vive en su propio plano 3D inclinado,
+  distinto y no paralelo a los demás. `brainRingWorldPos()` (nuevo, reemplaza `BRAIN_RING_Z` +
+  `brainApplyRingSpin`) calcula la posición 3D viva real de cualquier nodo — la Z ya no es una constante
+  por tier, varía según en qué punto de su órbita inclinada está el nodo ahora mismo.
+- Mismo motor de cámara compartida (`project3D`) sin tocar — se compone, nunca se reemplaza.
+- Los 6 puntos de consumo ya sincronizados en ADR 0147 (nodos, bursts, foco de cámara, flujo de
+  partículas, chips del anillo 4, malla ambiente) migrados al mismo cálculo real, un solo lugar.
+- Sin cambios de backend. Verificado con Playwright: Z real con spread amplio por tier (confirma órbita
+  real, no solo giro en el plano), posición completa cambiando con el tiempo, planos distintos
+  confirmados. 1288/1288 tests de la suite completa.
+
 ## [2026-08-11] Fase 9.2: el cerebro como "giroscopio" — anillos independientes + junta directiva real (ADR 0147)
 
 - 7 nodos reales nuevos para la junta directiva (`snarf/telemetry/brain.py::EXECUTIVE_ROLE_TO_NODE`/

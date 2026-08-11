@@ -4881,6 +4881,7 @@ function buildBrainGraphSkeleton() {
   brainNodeGroupEls = {};
   brainNodeBaseRadius = {};
   brainNodeBasePos = {};
+  brainNodeRingInfo = {};
   brainEdgePaths = {};
   brainEdgeFlowPaths = {};
 
@@ -4915,7 +4916,7 @@ function buildBrainGraphSkeleton() {
   centerGroup.appendChild(centerCircle);
   brainNodeEls.orchestrator = centerCircle;
   brainNodeBaseRadius.orchestrator = 30;
-  brainNodeBasePos.orchestrator = { x: cx, y: cy, z: brainZForNode("orchestrator") };
+  brainNodeBasePos.orchestrator = { x: cx, y: cy };
 
   const centerIcon = createBrainNodeIconEl("orchestrator", cx, cy + 48, 22);
   centerIcon.classList.add("brain-color-white");
@@ -4994,7 +4995,18 @@ function createBrainGraphNode(id, x, y, edgeOriginX, edgeOriginY, edgesG, flowsG
   group.appendChild(circle);
   brainNodeEls[id] = circle;
   brainNodeBaseRadius[id] = radius;
-  brainNodeBasePos[id] = { x, y, z: brainZForNode(id), parentId: parentId || null };
+  // brainNodeBasePos: ancla ESTÁTICA (nunca cambia) — la posición del
+  // layout plano de siempre, usada solo para calcular el offset de
+  // transform del <g> (ver applyBrain3DProjection) y para el <circle>
+  // real del SVG. La posición VIVA real (la que orbita de verdad) vive en
+  // brainNodeRingInfo + brainRingWorldPos(), nunca acá.
+  brainNodeBasePos[id] = { x, y };
+  brainNodeRingInfo[id] = {
+    tier: tierForNode(id),
+    angle0: Math.atan2(y - edgeOriginY, x - edgeOriginX),
+    radius: Math.hypot(x - edgeOriginX, y - edgeOriginY),
+    parentId: parentId || null,
+  };
 
   const iconY = y + (y > edgeOriginY ? 24 : -18);
   const icon = createBrainNodeIconEl(id, x, iconY, iconSize);
@@ -5192,13 +5204,12 @@ function spawnSkillChip(ev) {
 function updateBrainSkillChips(nowMs) {
   brainSkillChips = brainSkillChips.filter((chip) => {
     const age = (nowMs - chip.spawnedAt) / 1000;
-    const pos = brainNodeBasePos[chip.nodeId];
-    if (age > BRAIN_SKILL_CHIP_TTL_S || !pos) {
+    if (age > BRAIN_SKILL_CHIP_TTL_S || !brainNodeRingInfo[chip.nodeId]) {
       chip.group.remove();
       return false;
     }
-    const spun = brainApplyRingSpin(chip.nodeId, pos.x, pos.y);
-    const proj = project3D(spun.x, spun.y, pos.z);
+    const world = brainRingWorldPos(chip.nodeId);
+    const proj = project3D(world.x, world.y, world.z);
     const floatUp = age * 6; // deriva lenta hacia arriba mientras vive, nunca clavado
     chip.group.setAttribute(
       "transform",
@@ -5308,10 +5319,10 @@ function brainViewboxToCanvas(x, y) {
     y: brainCanvasTransform.offsetY + y * brainCanvasTransform.scale,
   };
 }
-// BRAIN_DEPTH_Z_RANGE: mismo rango que BRAIN_RING_Z (ver el motor de
-// proyección más abajo) — las partículas ambiente/niebla se reparten al
-// azar en todo ese volumen para que también participen de la rotación 3D
-// real, no solo los nodos.
+// BRAIN_DEPTH_Z_RANGE: rango aproximado real de profundidad que ocupan los
+// anillos inclinados (ver BRAIN_RING_TILT/brainRingWorldPos más abajo) —
+// las partículas ambiente/niebla se reparten al azar en todo ese volumen
+// para que también participen de la rotación 3D real, no solo los nodos.
 const BRAIN_DEPTH_Z_RANGE = [-120, 100];
 function brainRandomZ() {
   return BRAIN_DEPTH_Z_RANGE[0] + Math.random() * (BRAIN_DEPTH_Z_RANGE[1] - BRAIN_DEPTH_Z_RANGE[0]);
@@ -5379,7 +5390,11 @@ function initBrainMesh() {
   Object.entries(brainNodeEls).forEach(([id, el]) => {
     const cx = parseFloat(el.getAttribute("cx")) || 250;
     const cy = parseFloat(el.getAttribute("cy")) || 250;
-    const z = brainZForNode(id); // los satélites orbitan a la misma profundidad que su nodo — se mueven juntos al rotar
+    // Fase 9.2: snapshot de la Z real (plano inclinado del anillo, en la
+    // pose inicial) — igual que antes, este "polvo" decorativo no sigue el
+    // giro en vivo de su anillo (límite honesto, documentado en ADR 0147),
+    // solo arranca en una profundidad real en vez de una constante fija.
+    const z = brainRingWorldPos(id).z;
     const color = getComputedStyle(el).color;
     for (let i = 0; i < BRAIN_MESH_SATELLITES_PER_NODE; i++) {
       const angle = Math.random() * Math.PI * 2;
@@ -5509,18 +5524,16 @@ function updateAndDrawFlowParticle(ctx, p, dt) {
   const node = brainNodeEls[p.nodeId];
   if (!node) { p.done = true; return; }
   if (p.phase === "travel" && !activeBrainNodeIds.has(p.nodeId)) { p.done = true; return; }
-  // Fase 9.2 (ADR 0147): posición VIVA (girada por el anillo propio), re-
-  // calculada cada frame — mismo criterio que applyBrain3DProjection, así
-  // el flujo de partículas nunca se desincroniza del nodo real que anima.
-  const nodePos = brainNodeBasePos[p.nodeId];
-  const nSpun = brainApplyRingSpin(p.nodeId, parseFloat(node.getAttribute("cx")), parseFloat(node.getAttribute("cy")));
-  const nx = nSpun.x, ny = nSpun.y;
-  const nz = brainZForNode(p.nodeId);
+  // Posición VIVA real, recalculada cada frame — mismo criterio que
+  // applyBrain3DProjection, así el flujo de partículas nunca se
+  // desincroniza del nodo real que anima.
+  const ringInfo = brainNodeRingInfo[p.nodeId];
+  const nodeWorld = brainRingWorldPos(p.nodeId);
+  const nx = nodeWorld.x, ny = nodeWorld.y, nz = nodeWorld.z;
   // Los sub-nodos del board ejecutivo fluyen desde su padre real, no desde
   // el centro — mismo criterio que el edge que los dibuja.
-  const originPos = nodePos && nodePos.parentId ? brainNodeBasePos[nodePos.parentId] : null;
-  const originSpun = originPos ? brainApplyRingSpin(nodePos.parentId, originPos.x, originPos.y) : { x: 250, y: 250 };
-  const cx = originSpun.x, cy = originSpun.y, cz = originPos ? originPos.z : brainZForNode("orchestrator");
+  const originWorld = ringInfo && ringInfo.parentId ? brainRingWorldPos(ringInfo.parentId) : { x: 250, y: 250, z: BRAIN_ORCHESTRATOR_Z };
+  const cx = originWorld.x, cy = originWorld.y, cz = originWorld.z;
   const whiteColor = brainCssColor("white");
 
   let worldX, worldY, worldZ, alpha, radiusMul, color;
@@ -5572,14 +5585,12 @@ function updateAndDrawFlowParticle(ctx, p, dt) {
 function spawnBrainBurst(nodeId, isError) {
   const node = brainNodeEls[nodeId];
   if (!node) return;
-  // Fase 9.2 (ADR 0147): nace en la posición VIVA (ya girada) del nodo —
-  // sin esto, el estallido aparecería en la posición vieja mientras el
-  // nodo ya rotó a otro lado del anillo.
-  const spun = brainApplyRingSpin(nodeId, parseFloat(node.getAttribute("cx")), parseFloat(node.getAttribute("cy")));
-  const cx = spun.x, cy = spun.y;
+  // Nace en la posición VIVA real del nodo (su órbita actual, no una
+  // posición vieja) — mismo brainRingWorldPos que dibuja el nodo en sí.
+  const world = brainRingWorldPos(nodeId);
+  const cx = world.x, cy = world.y, z = world.z;
   if (Number.isNaN(cx) || Number.isNaN(cy)) return;
   const color = isError ? brainCssColor("red") : getComputedStyle(node).color;
-  const z = brainZForNode(nodeId);
   for (let i = 0; i < 16; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 30 + Math.random() * 90;
@@ -5607,8 +5618,8 @@ function spawnBrainBurst(nodeId, isError) {
 function triggerBrainCameraFocus(nodeId) {
   const node = brainNodeEls[nodeId];
   if (!node) return;
-  const spun = brainApplyRingSpin(nodeId, parseFloat(node.getAttribute("cx")), parseFloat(node.getAttribute("cy")));
-  const cx = spun.x, cy = spun.y;
+  const world = brainRingWorldPos(nodeId);
+  const cx = world.x, cy = world.y;
   if (Number.isNaN(cx) || Number.isNaN(cy)) return;
   // El origen de la escala se mezcla hacia el centro (no va 100% al nodo) y
   // el zoom es moderado — un foco total sobre un nodo del anillo externo
@@ -5694,41 +5705,80 @@ function spawnActiveFlowParticles(dt) {
 // más queden desincronizados entre sí (bug real reportado: antes los edges
 // se recalculaban con el paralaje pero las partículas seguían leyendo la
 // posición estática original).
-const BRAIN_RING_Z = { orchestrator: 90, input: 40, specialist: -20, capability: -110 };
-function brainZForNode(id) {
-  return BRAIN_RING_Z[tierForNode(id)];
-}
-// Fase 9.2 (ADR 0147) — "giroscopio": cada anillo gira además sobre su
-// propio eje, independiente de la vuelta de cámara compartida
-// (brainCamera3D.rotY, sin tocar) — la composición de ambas rotaciones es
-// lo que da la sensación real de giroscopio (varios aros girando cada uno
-// a su ritmo, no un objeto rígido rotando entero). Signos/velocidades
-// distintos a propósito para que se note independiente. orchestrator no
-// gira (un solo nodo central, no tiene sentido).
-const BRAIN_RING_SPIN_BASE = { orchestrator: 0, input: 0.09, specialist: -0.13, capability: 0.06 };
-let brainRingSpinAngle = { orchestrator: 0, input: 0, specialist: 0, capability: 0 };
+// Profundidad fija SOLO del núcleo — el orquestador es un único nodo
+// central, nunca orbita, siempre el eje real del giroscopio.
+const BRAIN_ORCHESTRATOR_Z = 90;
+// Fase 9.2, iteración real tras feedback del fundador ("los anillos
+// orbitan pero no rotan de manera circular... deberíamos tener anillos
+// concéntricos que orbiten, giren y roten en todas direcciones, terminando
+// en una esfera holográfica"). La primera versión giraba cada anillo PLANO
+// (mismo plano XY, solo la cámara compartida lo inclinaba) — se veían
+// discos apilados girando en el mismo eje, no una esfera de aros cruzados
+// como un giroscopio real. Fix real: cada tier tiene su PROPIO plano de
+// órbita, inclinado en un ángulo distinto (BRAIN_RING_TILT) — el nodo
+// vive en ese plano inclinado (nunca en el plano XY plano) y gira DENTRO
+// de él (brainRingSpinAngle sigue siendo el ángulo de giro, ahora aplicado
+// en el plano inclinado real, no en XY). El resultado: la profundidad Z de
+// cada nodo ya no es una constante por tier, es real y depende de en qué
+// punto de su órbita inclinada está en este instante — eso es lo que hace
+// que de verdad "orbite" en vez de solo "girar en el lugar".
+const BRAIN_RING_TILT = {
+  // órbita casi vertical (ángulo grande alrededor de X) — la más "parada".
+  input: { tiltX: 1.05, tiltZ: 0.05 },
+  // diagonal, cruzando la de input — donde vive la mayor parte de la
+  // actividad real (los Especialistas), la más visible de las tres.
+  specialist: { tiltX: 0.4, tiltZ: 1.0 },
+  // diagonal opuesta — entre las tres, los planos quedan bien separados,
+  // como los aros reales de un giroscopio/esfera armilar, nunca paralelos.
+  capability: { tiltX: -0.55, tiltZ: -0.5 },
+  // Sub-anillo de la junta directiva: su propia inclinación, MÁS la
+  // posición viva de su padre (specialist_executive_board) — un giroscopio
+  // chico orbitando dentro del giroscopio grande.
+  executive_board: { tiltX: 0.7, tiltZ: -0.6 },
+};
+const BRAIN_RING_SPIN_BASE = { orchestrator: 0, input: 0.09, specialist: -0.13, capability: 0.06, executive_board: 0.22 };
+let brainRingSpinAngle = { orchestrator: 0, input: 0, specialist: 0, capability: 0, executive_board: 0 };
 // Actividad real reciente (mismo criterio que BRAIN_ACTIVE_WINDOW_S, ya
 // reflejado en activeBrainNodeIds por applyBrainSnapshot) acelera
 // momentáneamente el anillo correspondiente — nunca decorativo al azar,
 // responde a datos reales.
 function brainTierHasRecentActivity(tier) {
+  if (tier === "executive_board") return BRAIN_EXECUTIVE_ROLE_NODES.some((id) => activeBrainNodeIds.has(id));
   for (const id of activeBrainNodeIds) {
     if (tierForNode(id) === tier) return true;
   }
   return false;
 }
-// Rota (x,y) alrededor del centro del grafo por el ángulo propio del
-// anillo de `id` — se aplica ANTES de project3D (que sigue proyectando
-// exactamente igual que antes, nunca tocado). Reusado tanto para los
-// nodos (SVG) como para bursts/flujo de partículas (canvas), así ambas
-// capas quedan sincronizadas igual que ya garantiza project3D para la
-// rotación de cámara compartida.
-function brainApplyRingSpin(id, x, y) {
-  const angle = brainRingSpinAngle[tierForNode(id)] || 0;
-  if (!angle) return { x, y };
-  const dx = x - 250, dy = y - 250;
-  const cos = Math.cos(angle), sin = Math.sin(angle);
-  return { x: 250 + dx * cos - dy * sin, y: 250 + dx * sin + dy * cos };
+// Un nodo miembro de un anillo (nunca el orquestador) queda descrito por
+// su ángulo real dentro del anillo (angle0, fijo — la posición que le tocó
+// en el layout) + el radio real de su anillo + a qué tier/padre pertenece
+// — nunca por un (x,y) fijo. Poblado una vez en createBrainGraphNode.
+let brainNodeRingInfo = {};
+// Posición VIVA en 3D real (mundo, coordenadas absolutas del viewBox) de
+// cualquier nodo, este mismo frame — único punto real que combina "en qué
+// ángulo de su órbita está ahora" (angle0 + spin real) con "en qué plano
+// vive su anillo" (BRAIN_RING_TILT). Todo lo que necesita saber dónde está
+// un nodo (SVG, bursts, flujo de partículas, chips) pasa por acá — nunca
+// una segunda fórmula de posición.
+function brainRingWorldPos(id) {
+  if (id === "orchestrator") return { x: 250, y: 250, z: BRAIN_ORCHESTRATOR_Z };
+  const info = brainNodeRingInfo[id];
+  if (!info) return { x: 250, y: 250, z: 0 };
+  const spinKey = info.parentId ? "executive_board" : info.tier;
+  const theta = info.angle0 + (brainRingSpinAngle[spinKey] || 0);
+  const rx = info.radius * Math.cos(theta);
+  const ry = info.radius * Math.sin(theta);
+  const tilt = BRAIN_RING_TILT[spinKey] || { tiltX: 0, tiltZ: 0 };
+  // Rota el punto plano del anillo (rx, ry, 0) por la inclinación FIJA de
+  // este anillo — primero alrededor de X, después alrededor de Z — así
+  // cada tier queda en su propio plano real, nunca los tres apilados sobre
+  // el mismo plano XY.
+  const y1 = ry * Math.cos(tilt.tiltX);
+  const z1 = ry * Math.sin(tilt.tiltX);
+  const x2 = rx * Math.cos(tilt.tiltZ) - y1 * Math.sin(tilt.tiltZ);
+  const y2 = rx * Math.sin(tilt.tiltZ) + y1 * Math.cos(tilt.tiltZ);
+  const origin = info.parentId ? brainRingWorldPos(info.parentId) : { x: 250, y: 250, z: 0 };
+  return { x: origin.x + x2, y: origin.y + y2, z: origin.z + z1 };
 }
 const brainCamera3D = {
   rotY: 0, // la vuelta principal — avanza sola, sin parar, ver updateBrainRotation
@@ -5781,25 +5831,25 @@ function brainLerpColor(colorA, colorB, t) {
 // ANTES de dibujar el canvas del mismo frame (ver renderBrainFrame), así
 // ambas capas comparten exactamente la misma geometría, siempre.
 function applyBrain3DProjection() {
-  const centerProj = project3D(250, 250, brainNodeBasePos.orchestrator.z);
-  // Fase 9.2 (ADR 0147): proyección real del padre del board ejecutivo —
-  // sus 7 hijos dibujan su edge hacia ACÁ (la posición viva, ya girada, del
-  // padre), nunca hacia el centro — jerarquía real, no decorativa.
-  const boardPos = brainNodeBasePos[BRAIN_EXECUTIVE_ROLE_PARENT];
-  const boardSpun = boardPos ? brainApplyRingSpin(BRAIN_EXECUTIVE_ROLE_PARENT, boardPos.x, boardPos.y) : null;
-  const boardProj = boardSpun ? project3D(boardSpun.x, boardSpun.y, boardPos.z) : centerProj;
+  const centerProj = project3D(250, 250, BRAIN_ORCHESTRATOR_Z);
+  // Proyección real del padre del board ejecutivo — sus 7 hijos dibujan su
+  // edge hacia ACÁ (la posición viva real del padre, ya orbitando en su
+  // propio plano), nunca hacia el centro — jerarquía real, no decorativa.
+  const boardWorld = brainRingWorldPos(BRAIN_EXECUTIVE_ROLE_PARENT);
+  const boardProj = project3D(boardWorld.x, boardWorld.y, boardWorld.z);
   Object.entries(brainNodeGroupEls).forEach(([id, group]) => {
     const node = brainNodeEls[id];
     const pos = brainNodeBasePos[id];
     if (!node || !pos) return;
     const baseR = brainNodeBaseRadius[id] || 11;
-    const spun = brainApplyRingSpin(id, pos.x, pos.y);
-    const proj = project3D(spun.x, spun.y, pos.z);
+    const world = brainRingWorldPos(id);
+    const proj = project3D(world.x, world.y, world.z);
     group.setAttribute("transform", `translate(${(proj.x - pos.x).toFixed(2)} ${(proj.y - pos.y).toFixed(2)})`);
     node.setAttribute("r", (baseR * proj.scale).toFixed(2));
     group.style.opacity = Math.max(0.4, Math.min(1, proj.scale)).toFixed(2);
     if (id === "orchestrator") return;
-    const origin = pos.parentId ? boardProj : centerProj;
+    const info = brainNodeRingInfo[id];
+    const origin = info && info.parentId ? boardProj : centerProj;
     const d = `M ${origin.x.toFixed(1)} ${origin.y.toFixed(1)} L ${proj.x.toFixed(1)} ${proj.y.toFixed(1)}`;
     const edge = brainEdgePaths[id];
     const flow = brainEdgeFlowPaths[id];
