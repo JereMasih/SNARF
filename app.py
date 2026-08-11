@@ -1010,16 +1010,19 @@ def put_llm_routing(payload: dict[str, dict], user_id: str = Depends(require_use
     return {"routing": routing, "available_providers": llm_routing.available_providers()}
 
 
-# --- Fase 9.3 del plan de observabilidad/n8n (ADR 0144): escritura real de --
-# Prompt Registry (Fase 6) y Configuración dinámica (Fase 7) desde el
-# cockpit del fundador. Solo `require_user` (founder) por ahora — darle
-# este mismo poder a n8n es una decisión de gobernanza aparte, todavía no
-# tomada (ver ADR 0144, "Fuera de alcance"), no algo que esta ronda decida
-# unilateralmente.
+# --- Fase 9.3 del plan de observabilidad/n8n (ADR 0144, reapertura en ADR
+# 0145): escritura real de Prompt Registry (Fase 6) y Configuración dinámica
+# (Fase 7). Dos superficies reales sobre la misma lógica (nunca una segunda
+# implementación): `/prompts`/`/generation-config` para el founder
+# (`require_user`) y `/n8n/prompts`/`/n8n/generation-config` para n8n
+# (`require_n8n_token`, decisión explícita del fundador — ver ADR 0145,
+# reabre el "n8n nunca decide" de ADR 0093/0139 solo para esta superficie
+# puntual). `refresh_user_id` es DEFAULT_USER_ID para el camino de n8n (no
+# hay sesión de founder de la que sacar un user_id real) — mismo criterio ya
+# usado por `/n8n/status` (`_google_connected(DEFAULT_USER_ID)`).
 
 
-@app.get("/prompts")
-def get_prompts(user_id: str = Depends(require_user)):
+def _prompts_snapshot() -> dict:
     return {
         prompt_id: {
             "active_text": prompt_registry.get_active_text(prompt_id, default),
@@ -1029,8 +1032,7 @@ def get_prompts(user_id: str = Depends(require_user)):
     }
 
 
-@app.put("/prompts/{prompt_id}")
-def put_prompt(prompt_id: str, payload: dict, user_id: str = Depends(require_user)):
+def _put_prompt(prompt_id: str, payload: dict) -> dict:
     if prompt_id not in PROMPT_DEFAULTS:
         raise HTTPException(404, f"prompt_id desconocido: {prompt_id}")
     text = payload.get("text")
@@ -1040,8 +1042,7 @@ def put_prompt(prompt_id: str, payload: dict, user_id: str = Depends(require_use
     return {"prompt_id": prompt_id, "active_text": text, "versions": entry["versions"]}
 
 
-@app.post("/prompts/{prompt_id}/rollback")
-def rollback_prompt(prompt_id: str, payload: dict, user_id: str = Depends(require_user)):
+def _rollback_prompt(prompt_id: str, payload: dict) -> dict:
     if prompt_id not in PROMPT_DEFAULTS:
         raise HTTPException(404, f"prompt_id desconocido: {prompt_id}")
     version = payload.get("version")
@@ -1055,8 +1056,7 @@ def rollback_prompt(prompt_id: str, payload: dict, user_id: str = Depends(requir
     return {"prompt_id": prompt_id, "active_text": active_text, "versions": entry["versions"]}
 
 
-@app.get("/generation-config")
-def get_generation_config(user_id: str = Depends(require_user)):
+def _generation_config_snapshot() -> dict:
     routing = llm_routing.load_routing()
     result = {}
     for role in llm_routing.ROLES:
@@ -1066,8 +1066,7 @@ def get_generation_config(user_id: str = Depends(require_user)):
     return result
 
 
-@app.put("/generation-config/{role}")
-def put_generation_config(role: str, payload: dict, user_id: str = Depends(require_user)):
+def _put_generation_config(role: str, payload: dict, refresh_user_id: str) -> dict:
     if role not in llm_routing.ROLES:
         raise HTTPException(404, f"rol desconocido: {role}")
     overrides = {k: v for k, v in payload.items() if k in generation_config.FIELDS}
@@ -1081,13 +1080,11 @@ def put_generation_config(role: str, payload: dict, user_id: str = Depends(requi
     # "orchestrator"/"conversation_title" cachean su Capacidad de LLM una
     # sola vez en self._llm/_title_llm — sin esto, un cambio acá no se
     # aplicaría hasta el próximo reinicio del servidor.
-    orch = get_orchestrator(user_id)
-    orch.refresh_llm_routing()
+    get_orchestrator(refresh_user_id).refresh_llm_routing()
     return {"role": role, "active": generation_config.get_active_config(role, default), "versions": entry["versions"]}
 
 
-@app.post("/generation-config/{role}/rollback")
-def rollback_generation_config(role: str, payload: dict, user_id: str = Depends(require_user)):
+def _rollback_generation_config(role: str, payload: dict, refresh_user_id: str) -> dict:
     if role not in llm_routing.ROLES:
         raise HTTPException(404, f"rol desconocido: {role}")
     version = payload.get("version")
@@ -1100,9 +1097,68 @@ def rollback_generation_config(role: str, payload: dict, user_id: str = Depends(
         entry = generation_config.rollback(role, version, default)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    orch = get_orchestrator(user_id)
-    orch.refresh_llm_routing()
+    get_orchestrator(refresh_user_id).refresh_llm_routing()
     return {"role": role, "active": generation_config.get_active_config(role, default), "versions": entry["versions"]}
+
+
+@app.get("/prompts")
+def get_prompts(user_id: str = Depends(require_user)):
+    return _prompts_snapshot()
+
+
+@app.put("/prompts/{prompt_id}")
+def put_prompt(prompt_id: str, payload: dict, user_id: str = Depends(require_user)):
+    return _put_prompt(prompt_id, payload)
+
+
+@app.post("/prompts/{prompt_id}/rollback")
+def rollback_prompt(prompt_id: str, payload: dict, user_id: str = Depends(require_user)):
+    return _rollback_prompt(prompt_id, payload)
+
+
+@app.get("/generation-config")
+def get_generation_config(user_id: str = Depends(require_user)):
+    return _generation_config_snapshot()
+
+
+@app.put("/generation-config/{role}")
+def put_generation_config(role: str, payload: dict, user_id: str = Depends(require_user)):
+    return _put_generation_config(role, payload, user_id)
+
+
+@app.post("/generation-config/{role}/rollback")
+def rollback_generation_config(role: str, payload: dict, user_id: str = Depends(require_user)):
+    return _rollback_generation_config(role, payload, user_id)
+
+
+@app.get("/n8n/prompts")
+def n8n_get_prompts(_: None = Depends(require_n8n_token)):
+    return _prompts_snapshot()
+
+
+@app.put("/n8n/prompts/{prompt_id}")
+def n8n_put_prompt(prompt_id: str, payload: dict, _: None = Depends(require_n8n_token)):
+    return _put_prompt(prompt_id, payload)
+
+
+@app.post("/n8n/prompts/{prompt_id}/rollback")
+def n8n_rollback_prompt(prompt_id: str, payload: dict, _: None = Depends(require_n8n_token)):
+    return _rollback_prompt(prompt_id, payload)
+
+
+@app.get("/n8n/generation-config")
+def n8n_get_generation_config(_: None = Depends(require_n8n_token)):
+    return _generation_config_snapshot()
+
+
+@app.put("/n8n/generation-config/{role}")
+def n8n_put_generation_config(role: str, payload: dict, _: None = Depends(require_n8n_token)):
+    return _put_generation_config(role, payload, DEFAULT_USER_ID)
+
+
+@app.post("/n8n/generation-config/{role}/rollback")
+def n8n_rollback_generation_config(role: str, payload: dict, _: None = Depends(require_n8n_token)):
+    return _rollback_generation_config(role, payload, DEFAULT_USER_ID)
 
 
 @app.get("/llm-routing/fallback_events")

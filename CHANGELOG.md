@@ -2,6 +2,19 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-11] Reapertura: n8n puede escribir prompts/config directo (ADR 0145)
+
+- Decisión explícita del fundador (presentada con 3 opciones reales: solo lectura, HITL, o escritura
+  directa) — eligió que n8n pueda escribir prompts/config con su propio `N8N_CONTROL_TOKEN`, sin
+  aprobación humana de por medio. Reabre puntualmente, para esta superficie, el principio "n8n observa y
+  propone, nunca decide" de ADR 0093/0139 — mismo patrón de reapertura explícita ya usado antes en este
+  repo (ADR 0028 para multi-usuario).
+- 6 endpoints nuevos (`/n8n/prompts`, `/n8n/generation-config`, mismas operaciones que sus equivalentes
+  de founder) — nunca una segunda implementación: `app.py` extrae la lógica real a funciones privadas
+  compartidas entre ambos caminos de auth.
+- 6 tests nuevos en `tests/test_app.py`, incluido uno que confirma que ambos caminos escriben al mismo
+  storage real. 1277/1277 tests de la suite completa.
+
 ## [2026-08-11] Fase 9.3: escritura real de Prompt Registry y Configuración dinámica (ADR 0144)
 
 - 6 endpoints nuevos (`app.py`), mismo patrón que `GET/PUT /llm-routing`: `GET/PUT /prompts/{id}` +

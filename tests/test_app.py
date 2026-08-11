@@ -1803,3 +1803,95 @@ def test_generation_config_rollback_reactivates_the_real_default(client, tmp_pat
     rollback_res = client.post("/generation-config/gmail_digest/rollback", json={"version": 1})
     assert rollback_res.status_code == 200
     assert rollback_res.json()["active"]["max_output_tokens"] == 16000
+
+
+# --- Reapertura de n8n: escritura real vía N8N_CONTROL_TOKEN (ADR 0145) ---
+
+
+def test_n8n_prompts_endpoints_require_the_control_token(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        assert anonymous_client.get("/n8n/prompts").status_code == 401
+        assert anonymous_client.put("/n8n/prompts/gmail_digest", json={"text": "x"}).status_code == 401
+        assert anonymous_client.post("/n8n/prompts/gmail_digest/rollback", json={"version": 1}).status_code == 401
+
+
+def test_n8n_can_write_a_prompt_and_read_it_back(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from snarf.runtime import prompt_registry
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    headers = {"X-Snarf-Token": "el-token-real"}
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        put_res = anonymous_client.put("/n8n/prompts/gmail_digest", json={"text": "prompt de n8n"}, headers=headers)
+        assert put_res.status_code == 200
+        assert put_res.json()["active_text"] == "prompt de n8n"
+
+        get_res = anonymous_client.get("/n8n/prompts", headers=headers)
+        assert get_res.json()["gmail_digest"]["active_text"] == "prompt de n8n"
+
+
+def test_n8n_prompt_rollback_reactivates_the_original_default(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from snarf.core.orchestrator import PROMPT_DEFAULTS
+    from snarf.runtime import prompt_registry
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    headers = {"X-Snarf-Token": "el-token-real"}
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        anonymous_client.put("/n8n/prompts/gmail_digest", json={"text": "v2 real"}, headers=headers)
+        rollback_res = anonymous_client.post("/n8n/prompts/gmail_digest/rollback", json={"version": 1}, headers=headers)
+    assert rollback_res.status_code == 200
+    assert rollback_res.json()["active_text"] == PROMPT_DEFAULTS["gmail_digest"]
+
+
+def test_n8n_generation_config_endpoints_require_the_control_token(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        assert anonymous_client.get("/n8n/generation-config").status_code == 401
+        assert anonymous_client.put("/n8n/generation-config/gmail_digest", json={"temperature": 0.1}).status_code == 401
+
+
+def test_n8n_can_write_a_generation_config_override_and_read_it_back(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from snarf.runtime import generation_config
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    monkeypatch.setattr(generation_config, "GENERATION_CONFIG_PATH", tmp_path / "generation_config.json")
+    monkeypatch.setattr(app_module.orchestrator, "_llm", app_module.orchestrator._llm)
+    monkeypatch.setattr(app_module.orchestrator, "_title_llm", app_module.orchestrator._title_llm)
+    headers = {"X-Snarf-Token": "el-token-real"}
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        put_res = anonymous_client.put("/n8n/generation-config/gmail_digest", json={"temperature": 0.6}, headers=headers)
+        assert put_res.status_code == 200
+        assert put_res.json()["active"]["temperature"] == 0.6
+
+        get_res = anonymous_client.get("/n8n/generation-config", headers=headers)
+        assert get_res.json()["gmail_digest"]["active"]["temperature"] == 0.6
+
+
+def test_founder_and_n8n_write_paths_share_the_same_underlying_storage(monkeypatch, tmp_path):
+    """No hay una segunda implementación de la lógica de escritura — un
+    cambio hecho vía n8n es visible de inmediato para el founder y viceversa."""
+    from snarf.runtime import prompt_registry
+
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    prompt_registry.save_new_version("gmail_digest", "escrito por n8n", default="cualquier default")
+
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("SNARF_ACCESS_PASSWORD", "x")
+    monkeypatch.setenv("SESSION_SECRET", "y")
+    with TestClient(app_module.app, base_url="https://testserver") as c:
+        c.post("/login", json={"password": "x"})
+        res = c.get("/prompts")
+    assert res.json()["gmail_digest"]["active_text"] == "escrito por n8n"
