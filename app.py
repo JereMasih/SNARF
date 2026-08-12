@@ -1232,11 +1232,17 @@ def n8n_apply_agent_change(agent_id: str, payload: dict, _: None = Depends(requi
         raise HTTPException(409, str(exc))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    # Regeneración del mapa de n8n en background — best-effort, nunca puede
-    # tumbar una escritura que ya se aplicó de verdad a los registros (ver
-    # n8n_generator.sync_executive_board_safe, mismo criterio de
-    # resiliencia que n8n_webhook_sink.py).
-    threading.Thread(target=n8n_generator.sync_executive_board_safe, daemon=True).start()
+    # Regeneración automática DESACTIVADA (2026-08-12, ver nota real en el
+    # roadmap): el server real se colgó dos veces seguidas justo en esta
+    # ventana, ambas correlacionadas con una llamada real de n8n a este
+    # endpoint. Sospecha fundada, no confirmada: este handler, disparado por
+    # n8n, arrancaba un hilo en background que llamaba DE VUELTA a la propia
+    # API de n8n (push_workflow) mientras n8n todavía podía estar en medio
+    # de la ejecución que originó el pedido — un acoplamiento reentrante
+    # real que nunca se había ejercitado en vivo hasta esta ronda. Hasta
+    # investigarlo en un entorno aislado (nunca de nuevo directo contra
+    # producción), la regeneración del mapa vuelve a ser manual — correr la
+    # Skill n8n-map-sync a mano después de aplicar un cambio real.
     return recipe
 
 

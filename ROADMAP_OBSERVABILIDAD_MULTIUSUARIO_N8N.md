@@ -13,6 +13,28 @@
 9.2 (4 rondas de iteración real) + Fase 9.3 (completa) + Fase 10 (primer corte) + Fase 11 (completa) +
 Fase 14 (primer corte real, ver abajo)**.
 
+**Incidente real 2026-08-12 (post Fase 21, durante iteración de prototipo de UX en n8n) — server real
+colgado dos veces, mitigado, sin código propio todavía revertido a esto en un ADR:** probando en vivo un
+prototipo de canvas del Executive Board con nodos editables (`Set` → `Proponer` → `Aplicar` encadenados,
+disparados por el fundador desde n8n), el server real (puerto 8002) quedó no-responsivo dos veces
+seguidas — 0% CPU, sin excepciones en el log, ambas correlacionadas con una llamada real
+`POST /n8n/agent/{id}/apply`. Sospecha fundada, **no confirmada con certeza**: ese endpoint disparaba un
+hilo en background (`threading.Thread(target=n8n_generator.sync_executive_board_safe)`) que llamaba DE
+VUELTA a la propia API de n8n (`push_workflow`) — un acoplamiento reentrante real (n8n → Snarf → n8n)
+mientras n8n podía estar todavía en medio de la ejecución que originó el pedido, nunca antes ejercitado en
+vivo. **Mitigación aplicada ya:** se sacó ese disparo automático de `app.py::n8n_apply_agent_change`
+(código sin cambios en `n8n_generator.py` en sí — la función `sync_executive_board_safe()` sigue existiendo
+y sigue siendo invocable a mano vía la Skill `n8n-map-sync`, solo dejó de dispararse sola tras un apply
+real). Server reiniciado con confirmación explícita del fundador cada vez (tres reinicios reales en la
+ronda), verificado sano después de cada uno. **Cero cambios reales quedaron aplicados** a ningún agente en
+ninguno de los dos intentos fallidos (verificado directo contra `/n8n/agent/cto`: prompt sin tocar,
+historial en v1). **Pendiente real, sin resolver:** investigar la causa raíz de verdad en un entorno
+aislado (nunca de nuevo directo contra producción) antes de reactivar la regeneración automática — no se
+escribió ADR todavía para esto porque la investigación no está cerrada, solo mitigada. El prototipo de
+canvas en sí (nodos `Set` con checkboxes reales, cadena `Set→Proponer→Aplicar` con un trigger propio por
+rol) sigue siendo trabajo exploratorio con el fundador, sin decisión final tomada — ver conversación real
+de esta ronda para el detalle turno a turno si hace falta retomarlo.
+
 **Trabajo siguiente ya diseñado y aprobado (2026-08-12):** Fases 15-21 — n8n como control-plane completo de
 la construcción de agentes (no solo texto de prompt: también herramientas, ruteo, y conexiones/secuencia
 entre roles del Executive Board), con confirmación de dos pasos y una nueva ADR de gobernanza que

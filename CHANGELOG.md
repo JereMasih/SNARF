@@ -2,6 +2,25 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-12] Mitigación real: server de producción colgado dos veces (apply → regen automática de n8n)
+
+- Probando en vivo un prototipo de UX para el canvas del Executive Board (nodos editables en n8n), el
+  server real (puerto 8002) quedó no-responsivo dos veces seguidas — 0% CPU, sin excepciones en el log,
+  ambas correlacionadas con una llamada real `POST /n8n/agent/{id}/apply` disparada desde n8n.
+- Sospecha fundada, no confirmada con certeza: ese endpoint disparaba un hilo en background que llamaba
+  DE VUELTA a la propia API de n8n para regenerar el mapa — un acoplamiento reentrante (n8n → Snarf → n8n)
+  mientras n8n podía estar todavía en medio de la ejecución que originó el pedido.
+- Mitigación aplicada: se sacó ese disparo automático de `app.py::n8n_apply_agent_change` — la
+  regeneración del mapa vuelve a ser manual (Skill `n8n-map-sync`), sin cambios en `n8n_generator.py` en
+  sí. Server reiniciado con confirmación explícita del fundador cada vez (tres reinicios reales),
+  verificado sano después de cada uno.
+- Cero cambios reales quedaron aplicados a ningún agente en los dos intentos fallidos — verificado
+  directo contra `/n8n/agent/cto`: prompt sin tocar, historial en v1.
+- **Pendiente real, sin resolver:** investigar la causa raíz de verdad en un entorno aislado (nunca de
+  nuevo directo contra producción) antes de reactivar la regeneración automática. Sin ADR todavía —
+  mitigado, no cerrado. Ver nota completa en `ROADMAP_OBSERVABILIDAD_MULTIUSUARIO_N8N.md`.
+- 1384/1384 tests, sin cambios de comportamiento fuera del disparo removido.
+
 ## [2026-08-12] Skill Factory: alcance real (`files_written`) en vez de diff de git (ADR 0163)
 
 - Bug real encontrado por el fundador: un build de la Skill Factory (`document_to_reader_optimized`)
