@@ -15,12 +15,17 @@ Flujo real, cuatro pasos (ver plan de expansión, Fase H):
    que `gmail_send_message`.
 3. `build_skill()`: invoca al motor de escritura de código real
    (`LocalCodeWriter`, ADR 0130 — el modelo local del fundador, ya no el CLI
-   de Claude Code), verifica que el diff real (comparado contra el estado
-   sucio de ANTES de invocarlo, para tolerar que el working tree ya tenga
-   cambios reales de otra sesión en paralelo) solo tocó lo esperado, corre
-   la suite real completa. Esta verificación es independiente de qué motor
-   escribió el código — nunca confía en que el motor diga la verdad sobre
-   sí mismo.
+   de Claude Code), verifica que `result.files_written` (lo que el motor
+   realmente escribió, reportado por su propio gate de escritura — ver
+   `local_code_writer.py`) esté contenido en el alcance esperado, corre la
+   suite real completa. Esta verificación es independiente de qué motor
+   escribió el código — nunca confía en el texto libre del modelo sobre sí
+   mismo, pero SÍ confía en `files_written` porque es estructuralmente
+   imposible que contenga un path que no pasó el gate de escritura (ver
+   docstring de `local_code_writer.py` — bug real corregido acá 2026-08-12:
+   antes se re-derivaba esto comparando dos fotos de `git status` del repo
+   entero, que se rompía con cualquier trabajo concurrente en el mismo
+   working tree).
 4. Confirmación 2 (activar) — la hace `Orchestrator._tool_skill_factory_activate`
    antes de llamar a `activate()`, mismo patrón otra vez. Activar reinicia el
    server real (LaunchAgent `com.snarf.server`, ver CLAUDE.md) — nunca queda
@@ -71,26 +76,6 @@ def _slugify(name: str) -> str:
     return slug or "skill"
 
 
-def _default_git_dirty_files(repo_root: Path) -> set[str]:
-    # --untracked-files=all: sin esto, git colapsa un directorio NUEVO
-    # entero (ej. la primera skill de una rama que todavía no existía) en
-    # una sola línea "?? snarf/specialists/knowledge/" en vez de listar los
-    # archivos reales uno por uno — eso nunca matchea _expected_files()
-    # (que son paths de archivo exactos) y aborta builds válidos con un
-    # falso "tocó algo fuera del alcance". Confirmado reproduciendo el bug
-    # real con un repo git de prueba antes de este fix.
-    result = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all"], cwd=str(repo_root), capture_output=True, text=True
-    )
-    files = set()
-    for line in result.stdout.splitlines():
-        path = line[3:].strip()
-        if " -> " in path:
-            path = path.split(" -> ")[-1]
-        files.add(path)
-    return files
-
-
 def _default_run_tests(repo_root: Path) -> dict:
     result = subprocess.run(
         [str(repo_root / ".venv" / "bin" / "python"), "-m", "pytest", "-q"],
@@ -116,14 +101,12 @@ class SkillFactorySpecialist:
         self,
         code_writer: LocalCodeWriter,
         repo_root: Path,
-        git_dirty_files_fn=None,
         run_tests_fn=None,
         restart_fn=None,
         proposals_dir: Path = SKILL_PROPOSALS_DIR,
     ):
         self._code_writer = code_writer
         self._repo_root = repo_root
-        self._git_dirty_files_fn = git_dirty_files_fn or (lambda: _default_git_dirty_files(repo_root))
         self._run_tests_fn = run_tests_fn or (lambda: _default_run_tests(repo_root))
         self._restart_fn = restart_fn or _default_restart
         self._proposals_dir = proposals_dir
@@ -239,16 +222,18 @@ class SkillFactorySpecialist:
             self._save_manifest(proposal_id, manifest)
             return {"proposal_id": proposal_id, "status": "failed", "reason": manifest["abort_reason"]}
 
-        before = self._git_dirty_files_fn()
         prompt = self._build_prompt(branch, skill_name, description, clarifying_answers)
         result = self._code_writer.run(
             prompt,
             allowed_write_paths=self._new_files(branch, skill_name),
             allowed_edit_paths=_ALWAYS_ALLOWED_FILES,
         )
-
-        after = self._git_dirty_files_fn()
-        touched = after - before
+        # result.files_written (ver local_code_writer.py): lo que el motor
+        # REALMENTE escribió, reportado por su propio gate de escritura —
+        # nunca un diff de git contra el working tree completo, que se
+        # rompía con cualquier trabajo concurrente en el mismo repo (bug
+        # real corregido 2026-08-12).
+        touched = set(result.files_written)
 
         manifest["code_writer_session_id"] = result.session_id
         manifest["code_writer_cost_usd"] = result.cost_usd

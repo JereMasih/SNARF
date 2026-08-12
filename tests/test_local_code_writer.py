@@ -63,6 +63,59 @@ def test_write_file_within_scope_writes_the_real_file_and_succeeds(tmp_path):
     assert (tmp_path / "snarf/specialists/research/x.py").read_text(encoding="utf-8") == "contenido real"
 
 
+def test_files_written_reports_every_successful_write(tmp_path):
+    # files_written (ver docstring del módulo) es la única fuente de verdad
+    # que SkillFactorySpecialist usa ahora para decidir alcance — nunca un
+    # diff de git contra el working tree completo (bug real corregido
+    # 2026-08-12: se rompía con cualquier trabajo concurrente en el mismo
+    # repo).
+    writer, _ = make_writer(
+        tmp_path,
+        tool_calls=[
+            ("write_file", {"path": "snarf/specialists/research/x.py", "content": "contenido"}),
+            ("run_tests", {}),
+        ],
+    )
+    result = writer.run(
+        "prompt", allowed_write_paths={"snarf/specialists/research/x.py"}, allowed_edit_paths=set()
+    )
+    assert result.files_written == frozenset({"snarf/specialists/research/x.py"})
+
+
+def test_files_written_never_includes_a_write_rejected_for_being_out_of_scope(tmp_path):
+    writer, _ = make_writer(
+        tmp_path,
+        tool_calls=[
+            ("write_file", {"path": "snarf/core/orchestrator.py", "content": "malicioso"}),
+            ("run_tests", {}),
+        ],
+    )
+    result = writer.run("prompt", allowed_write_paths={"snarf/specialists/research/x.py"}, allowed_edit_paths=set())
+    assert result.files_written == frozenset()
+
+
+def test_files_written_includes_successful_edits_and_deduplicates_repeated_writes(tmp_path):
+    target = tmp_path / "snarf/core/orchestrator.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("ANCLA\n", encoding="utf-8")
+
+    writer, _ = make_writer(
+        tmp_path,
+        tool_calls=[
+            ("write_file", {"path": "snarf/specialists/research/x.py", "content": "v1"}),
+            ("write_file", {"path": "snarf/specialists/research/x.py", "content": "v2"}),  # autocorrección, mismo path
+            ("edit_file", {"path": "snarf/core/orchestrator.py", "old_string": "ANCLA", "new_string": "ANCLA\nnueva"}),
+            ("run_tests", {}),
+        ],
+    )
+    result = writer.run(
+        "prompt",
+        allowed_write_paths={"snarf/specialists/research/x.py"},
+        allowed_edit_paths={"snarf/core/orchestrator.py"},
+    )
+    assert result.files_written == frozenset({"snarf/specialists/research/x.py", "snarf/core/orchestrator.py"})
+
+
 def test_write_file_can_be_called_again_on_the_same_path_to_self_correct(tmp_path):
     # El motor descubre un error de sintaxis en el propio Specialist que
     # escribió y lo corrige volviendo a llamar write_file sobre el mismo

@@ -1,7 +1,5 @@
-import subprocess
-
 from snarf.capabilities.local_code_writer import LocalCodeWriterResult
-from snarf.specialists.skill_factory import SkillFactorySpecialist, _default_git_dirty_files
+from snarf.specialists.skill_factory import SkillFactorySpecialist
 
 
 class _FakeCodeWriter:
@@ -16,8 +14,10 @@ class _FakeCodeWriter:
         return self._result
 
 
-def _ok_result(**overrides) -> LocalCodeWriterResult:
-    base = dict(ok=True, result_text="LISTO", session_id=None, cost_usd=None, num_turns=6, raw={})
+def _ok_result(files_written=frozenset(), **overrides) -> LocalCodeWriterResult:
+    base = dict(
+        ok=True, result_text="LISTO", session_id=None, cost_usd=None, num_turns=6, raw={}, files_written=files_written
+    )
     base.update(overrides)
     return LocalCodeWriterResult(**base)
 
@@ -25,15 +25,9 @@ def _ok_result(**overrides) -> LocalCodeWriterResult:
 def _factory(
     tmp_path,
     code_writer=None,
-    dirty_files_sequence=None,
     tests_pass=True,
     restart_calls=None,
 ):
-    dirty_files_sequence = list(dirty_files_sequence or [set(), set()])
-
-    def dirty_files_fn():
-        return dirty_files_sequence.pop(0)
-
     def run_tests_fn():
         return {"passed": tests_pass, "output": "output real de pytest"}
 
@@ -44,7 +38,6 @@ def _factory(
     return SkillFactorySpecialist(
         code_writer=code_writer or _FakeCodeWriter(_ok_result()),
         repo_root=tmp_path,
-        git_dirty_files_fn=dirty_files_fn,
         run_tests_fn=run_tests_fn,
         restart_fn=restart_fn,
         proposals_dir=tmp_path / "skill_proposals",
@@ -52,42 +45,28 @@ def _factory(
 
 
 def test_build_skill_within_scope_succeeds(tmp_path):
-    before = set()
-    after = {
+    written = {
         "snarf/specialists/research/deep_research.py",
+        "snarf/specialists/research/__init__.py",
         "tests/test_deep_research.py",
         "snarf/core/orchestrator.py",
         "snarf/telemetry/brain.py",
         "snarf/telemetry/verbs.py",
         "snarf/telemetry/detail.py",
     }
-    factory = _factory(tmp_path, dirty_files_sequence=[before, after])
+    factory = _factory(tmp_path, code_writer=_FakeCodeWriter(_ok_result(files_written=frozenset(written))))
 
     result = factory.build_skill("research", "deep_research", "investiga temas a fondo")
 
     assert result["status"] == "built"
-    assert sorted(result["diff_files"]) == sorted(after)
+    assert sorted(result["diff_files"]) == sorted(written)
     manifest = factory.load_manifest(result["proposal_id"])
     assert manifest["status"] == "built"
 
 
 def test_build_skill_passes_the_scoped_allowed_paths_to_the_code_writer(tmp_path):
     writer = _FakeCodeWriter(_ok_result())
-    factory = _factory(
-        tmp_path,
-        code_writer=writer,
-        dirty_files_sequence=[
-            set(),
-            {
-                "snarf/specialists/research/x.py",
-                "tests/test_x.py",
-                "snarf/core/orchestrator.py",
-                "snarf/telemetry/brain.py",
-                "snarf/telemetry/verbs.py",
-                "snarf/telemetry/detail.py",
-            },
-        ],
-    )
+    factory = _factory(tmp_path, code_writer=writer)
 
     factory.build_skill("research", "x", "algo")
 
@@ -105,20 +84,47 @@ def test_build_skill_passes_the_scoped_allowed_paths_to_the_code_writer(tmp_path
     }
 
 
-def test_build_skill_tolerates_preexisting_dirty_files_from_another_session(tmp_path):
-    # El working tree YA tenía cambios reales sin commitear de otra sesión
-    # antes de esta construcción — no deben contarse como "tocados" por el
-    # motor de escritura, ni disparar un abort falso.
-    before = {"snarf/runtime/llm_routing.py", "app.py"}
-    after = before | {
+def test_build_skill_never_consults_git_or_the_working_tree_for_the_scope_decision(tmp_path, monkeypatch):
+    # Bug real corregido 2026-08-12: la decisión de alcance solía compararse
+    # contra dos fotos de `git status` del repo entero, que se rompía con
+    # cualquier trabajo concurrente en el mismo working tree (otra sesión de
+    # Claude Code, un `git` manual). Ahora se basa exclusivamente en
+    # result.files_written — build_skill() ni siquiera necesita que
+    # repo_root sea un repo git real para decidir el alcance correctamente.
+    import subprocess
+
+    def _no_git_allowed(*a, **kw):
+        raise AssertionError("build_skill() no debería invocar git para la decisión de alcance")
+
+    monkeypatch.setattr(subprocess, "run", _no_git_allowed)
+    written = {
+        "snarf/specialists/research/x.py",
+        "snarf/specialists/research/__init__.py",
+        "tests/test_x.py",
+    }
+    factory = _factory(tmp_path, code_writer=_FakeCodeWriter(_ok_result(files_written=frozenset(written))))
+
+    result = factory.build_skill("research", "x", "algo")
+
+    assert result["status"] == "built"
+
+
+def test_build_skill_ignores_files_touched_by_a_concurrent_session(tmp_path):
+    # Otra sesión (real: otra ventana de Claude Code) puede estar escribiendo
+    # archivos sin relación en el mismo repo mientras esta build corre — como
+    # el alcance ahora se basa en files_written (lo que el propio motor
+    # reportó haber escrito, nunca inferido del working tree), esos archivos
+    # ajenos ni siquiera entran en la decisión.
+    written = {
         "snarf/specialists/finance/receipts_tracker.py",
+        "snarf/specialists/finance/__init__.py",
         "tests/test_receipts_tracker.py",
         "snarf/core/orchestrator.py",
         "snarf/telemetry/brain.py",
         "snarf/telemetry/verbs.py",
         "snarf/telemetry/detail.py",
     }
-    factory = _factory(tmp_path, dirty_files_sequence=[before, after])
+    factory = _factory(tmp_path, code_writer=_FakeCodeWriter(_ok_result(files_written=frozenset(written))))
 
     result = factory.build_skill("finance", "receipts_tracker", "trackea recibos reales")
 
@@ -128,17 +134,13 @@ def test_build_skill_tolerates_preexisting_dirty_files_from_another_session(tmp_
 
 
 def test_build_skill_aborts_when_a_foundational_doc_is_touched(tmp_path):
-    before = set()
-    after = {
+    written = {
         "snarf/specialists/research/x.py",
+        "snarf/specialists/research/__init__.py",
         "tests/test_x.py",
-        "snarf/core/orchestrator.py",
-        "snarf/telemetry/brain.py",
-        "snarf/telemetry/verbs.py",
-        "snarf/telemetry/detail.py",
         "CONSTITUTION.md",
     }
-    factory = _factory(tmp_path, dirty_files_sequence=[before, after])
+    factory = _factory(tmp_path, code_writer=_FakeCodeWriter(_ok_result(files_written=frozenset(written))))
 
     result = factory.build_skill("research", "x", "algo")
 
@@ -149,17 +151,17 @@ def test_build_skill_aborts_when_a_foundational_doc_is_touched(tmp_path):
 
 
 def test_build_skill_aborts_when_an_unexpected_file_outside_scope_is_touched(tmp_path):
-    before = set()
-    after = {
+    # No debería poder pasar de verdad (LocalCodeWriter._write_file/_edit_file
+    # ya rechazan cualquier path fuera de allowed_write_paths/allowed_edit_paths
+    # antes de tocar disco) — esto verifica que si ese invariante alguna vez
+    # se rompe, build_skill() lo sigue detectando, no confía ciegamente.
+    written = {
         "snarf/specialists/research/x.py",
+        "snarf/specialists/research/__init__.py",
         "tests/test_x.py",
-        "snarf/core/orchestrator.py",
-        "snarf/telemetry/brain.py",
-        "snarf/telemetry/verbs.py",
-        "snarf/telemetry/detail.py",
         "snarf/capabilities/google_drive.py",  # nunca autorizado a tocar una Capacidad existente
     }
-    factory = _factory(tmp_path, dirty_files_sequence=[before, after])
+    factory = _factory(tmp_path, code_writer=_FakeCodeWriter(_ok_result(files_written=frozenset(written))))
 
     result = factory.build_skill("research", "x", "algo")
 
@@ -168,16 +170,14 @@ def test_build_skill_aborts_when_an_unexpected_file_outside_scope_is_touched(tmp
 
 
 def test_build_skill_fails_when_the_real_test_suite_does_not_pass(tmp_path):
-    before = set()
-    after = {
+    written = {
         "snarf/specialists/research/x.py",
+        "snarf/specialists/research/__init__.py",
         "tests/test_x.py",
-        "snarf/core/orchestrator.py",
-        "snarf/telemetry/brain.py",
-        "snarf/telemetry/verbs.py",
-        "snarf/telemetry/detail.py",
     }
-    factory = _factory(tmp_path, dirty_files_sequence=[before, after], tests_pass=False)
+    factory = _factory(
+        tmp_path, code_writer=_FakeCodeWriter(_ok_result(files_written=frozenset(written))), tests_pass=False
+    )
 
     result = factory.build_skill("research", "x", "algo")
 
@@ -200,7 +200,7 @@ def test_build_skill_fails_honestly_when_the_code_writer_itself_fails(tmp_path):
             raw={},
         )
     )
-    factory = _factory(tmp_path, code_writer=broken, dirty_files_sequence=[set(), set()])
+    factory = _factory(tmp_path, code_writer=broken)
 
     result = factory.build_skill("research", "x", "algo")
 
@@ -224,7 +224,7 @@ def test_build_skill_fails_when_the_code_writer_is_not_available(tmp_path):
 
 def test_activate_requires_a_built_proposal(tmp_path):
     restart_calls = []
-    factory = _factory(tmp_path, dirty_files_sequence=[set(), set()], restart_calls=restart_calls)
+    factory = _factory(tmp_path, restart_calls=restart_calls)
     built = factory.build_skill(
         "research",
         "x",
@@ -244,18 +244,16 @@ def test_activate_rejects_an_unknown_proposal(tmp_path):
 
 
 def test_activate_rejects_a_proposal_that_never_finished_building(tmp_path):
-    before = set()
-    after = {
+    written = {
         "snarf/specialists/research/x.py",
+        "snarf/specialists/research/__init__.py",
         "tests/test_x.py",
-        "snarf/core/orchestrator.py",
-        "snarf/telemetry/brain.py",
-        "snarf/telemetry/verbs.py",
-        "snarf/telemetry/detail.py",
         "CONSTITUTION.md",
     }
     restart_calls = []
-    factory = _factory(tmp_path, dirty_files_sequence=[before, after], restart_calls=restart_calls)
+    factory = _factory(
+        tmp_path, code_writer=_FakeCodeWriter(_ok_result(files_written=frozenset(written))), restart_calls=restart_calls
+    )
     aborted = factory.build_skill("research", "x", "algo")
 
     result = factory.activate(aborted["proposal_id"])
@@ -265,7 +263,7 @@ def test_activate_rejects_a_proposal_that_never_finished_building(tmp_path):
 
 
 def test_status_returns_the_persisted_manifest(tmp_path):
-    factory = _factory(tmp_path, dirty_files_sequence=[set(), set()])
+    factory = _factory(tmp_path)
     built = factory.build_skill("research", "x", "algo")
 
     status = factory.status(built["proposal_id"])
@@ -276,10 +274,10 @@ def test_status_returns_the_persisted_manifest(tmp_path):
 
 def test_build_skill_rejects_a_skill_name_with_path_traversal_before_touching_anything(tmp_path):
     # skill_name adversarial que intenta escapar snarf/specialists/ — tiene
-    # que rechazarse ANTES de tocar git o invocar el motor local, nunca
-    # dejar que LocalCodeWriter llegue a evaluarlo.
+    # que rechazarse ANTES de invocar el motor local, nunca dejar que
+    # LocalCodeWriter llegue a evaluarlo.
     writer = _FakeCodeWriter(_ok_result())
-    factory = _factory(tmp_path, code_writer=writer, dirty_files_sequence=[set(), set()])
+    factory = _factory(tmp_path, code_writer=writer)
 
     result = factory.build_skill("research", "../../../tmp/evil", "algo")
 
@@ -290,7 +288,7 @@ def test_build_skill_rejects_a_skill_name_with_path_traversal_before_touching_an
 
 def test_build_skill_rejects_a_branch_with_a_slash(tmp_path):
     writer = _FakeCodeWriter(_ok_result())
-    factory = _factory(tmp_path, code_writer=writer, dirty_files_sequence=[set(), set()])
+    factory = _factory(tmp_path, code_writer=writer)
 
     result = factory.build_skill("research/../../etc", "x", "algo")
 
@@ -301,7 +299,7 @@ def test_build_skill_rejects_a_branch_with_a_slash(tmp_path):
 
 def test_build_skill_rejects_names_outside_snake_case(tmp_path):
     writer = _FakeCodeWriter(_ok_result())
-    factory = _factory(tmp_path, code_writer=writer, dirty_files_sequence=[set(), set()])
+    factory = _factory(tmp_path, code_writer=writer)
 
     result = factory.build_skill("research", "Skill Con Espacios", "algo")
 
@@ -310,49 +308,20 @@ def test_build_skill_rejects_names_outside_snake_case(tmp_path):
 
 
 def test_build_skill_accepts_a_valid_snake_case_branch_and_skill_name(tmp_path):
-    before = set()
-    after = {
+    written = {
         "snarf/specialists/research/deep_research_v2.py",
+        "snarf/specialists/research/__init__.py",
         "tests/test_deep_research_v2.py",
-        "snarf/core/orchestrator.py",
-        "snarf/telemetry/brain.py",
-        "snarf/telemetry/verbs.py",
-        "snarf/telemetry/detail.py",
     }
-    factory = _factory(tmp_path, dirty_files_sequence=[before, after])
+    factory = _factory(tmp_path, code_writer=_FakeCodeWriter(_ok_result(files_written=frozenset(written))))
 
     result = factory.build_skill("research", "deep_research_v2", "algo")
 
     assert result["status"] == "built"
 
 
-def test_default_git_dirty_files_lists_files_inside_a_brand_new_directory_individually(tmp_path):
-    # Reproduce el bug real: git status --porcelain (sin --untracked-files=all)
-    # colapsa un directorio nuevo entero en una sola línea "?? dir/", lo que
-    # hacía que la primera skill de una rama nueva siempre pareciera "fuera
-    # de alcance" aunque los archivos generados fueran exactamente los
-    # esperados.
-    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True)
-    subprocess.run(["git", "config", "user.email", "a@b.c"], cwd=str(tmp_path), check=True)
-    subprocess.run(["git", "config", "user.name", "test"], cwd=str(tmp_path), check=True)
-    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
-    subprocess.run(["git", "add", "a.txt"], cwd=str(tmp_path), check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(tmp_path), check=True)
-
-    new_dir = tmp_path / "snarf" / "specialists" / "knowledge"
-    new_dir.mkdir(parents=True)
-    (new_dir / "drive_incremental_indexer.py").write_text("contenido", encoding="utf-8")
-    (new_dir / "__init__.py").write_text("", encoding="utf-8")
-
-    dirty = _default_git_dirty_files(tmp_path)
-
-    assert "snarf/specialists/knowledge/drive_incremental_indexer.py" in dirty
-    assert "snarf/specialists/knowledge/__init__.py" in dirty
-    assert "snarf/specialists/knowledge/" not in dirty
-
-
 def test_list_proposals_reflects_the_index(tmp_path):
-    factory = _factory(tmp_path, dirty_files_sequence=[set(), set()])
+    factory = _factory(tmp_path)
     factory.build_skill("research", "x", "algo")
 
     proposals = factory.list_proposals()

@@ -2,6 +2,25 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-12] Skill Factory: alcance real (`files_written`) en vez de diff de git (ADR 0163)
+
+- Bug real encontrado por el fundador: un build de la Skill Factory (`document_to_reader_optimized`)
+  abortó con "tocó archivos fuera de alcance", citando archivos de OTRA sesión de Claude Code corriendo en
+  paralelo en el mismo repo (Fases 15-21). Causa raíz: `SkillFactorySpecialist.build_skill()` inferìa qué
+  tocó el motor comparando dos fotos de `git status` contra todo el repo — cualquier archivo nuevo que
+  apareciera durante la ventana del build, sin importar quién lo escribiera, se atribuía al motor.
+- `LocalCodeWriterResult` gana `files_written` — armado dentro de `_write_file()`/`_edit_file()` en el
+  momento exacto en que cada escritura pasa su propio gate de alcance. Estructuralmente imposible que
+  contenga algo que no pasó ese gate. `build_skill()` ya no llama a `git status` en absoluto para esta
+  decisión — eliminados `_default_git_dirty_files()` y el parámetro `git_dirty_files_fn`.
+- Hallazgo secundario más serio: el código real que el motor había escrito para ese skill era un
+  placeholder falso (link de Drive inventado, capacidades inyectadas nunca usadas, dependía de una
+  Capacidad — `document_processor` — que no existe). Descartado del filesystem (nunca estuvo en git) a
+  pedido del fundador — reconstruir el skill de verdad queda como pedido aparte.
+- 3 tests nuevos en `test_local_code_writer.py`, `test_skill_factory.py` reescrito completo (incluye un
+  test que monkeypatchea `subprocess.run` para confirmar que la decisión de alcance ya no depende de git
+  en absoluto).
+
 ## [2026-08-12] Fase 21: verificación end-to-end real — cierra las Fases 15-21 (ADR 0162)
 
 - Colima + el contenedor `snarf-n8n` estaban corriendo esta ronda (a diferencia de las Fases 18-20) —

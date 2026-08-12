@@ -16,21 +16,37 @@ del mismo CLI.
 A diferencia de una sesión real de Claude Code (agente de propósito general,
 acceso amplio), acá el modelo local corre un loop de herramientas
 deliberadamente angosto: nunca Bash sin restricción, nunca escritura fuera
-de un alcance calculado por SkillFactorySpecialist ANTES de invocar esto
-(mismo alcance que antes solo se verificaba después vía diff de git — ahora
-también gateado en el momento, defensa en profundidad). Edita los archivos
-de wiring ya existentes con reemplazo exacto de string — misma semántica
-segura que la propia tool Edit: falla si `old_string` no aparece exactamente
-una vez, nunca reescribe un archivo entero a ciegas.
+de un alcance calculado por SkillFactorySpecialist ANTES de invocar esto.
+Edita los archivos de wiring ya existentes con reemplazo exacto de string —
+misma semántica segura que la propia tool Edit: falla si `old_string` no
+aparece exactamente una vez, nunca reescribe un archivo entero a ciegas.
+
+`LocalCodeWriterResult.files_written` (bug real encontrado 2026-08-12,
+reproducido con un caso real: un build de la Skill Factory corriendo en
+paralelo con otra sesión de Claude Code activa en el mismo repo abortó con
+"tocó archivos fuera de alcance" citando archivos que la OTRA sesión estaba
+escribiendo, nunca este motor) es ahora la única fuente de verdad de qué se
+escribió/editó realmente — se arma acá mismo, dentro de `_write_file`/
+`_edit_file`, exactamente en el momento en que cada escritura pasa su propio
+gate de `allowed_write_paths`/`allowed_edit_paths`. `SkillFactorySpecialist`
+ya NO infiere esto comparando dos fotos de `git status` del repo entero
+(antes/después) — esa comparación es inherentemente insegura ante cualquier
+proceso concurrente tocando el mismo working tree (otra sesión de Claude
+Code, un `git` manual, lo que sea): cualquier archivo nuevo que aparezca
+"sucio" entre las dos fotos, sin importar quién lo escribió, se contaba como
+"tocado por el motor". El gate de `allowed_write_paths`/`allowed_edit_paths`
+de acá abajo ya era, desde siempre, la verificación real y autoritativa —
+`files_written` simplemente expone lo que ese gate ya sabía, en vez de
+tratar de re-derivarlo con una señal indirecta y frágil.
 
 Motivo real, verificado en esta misma jornada (no hipotético): un modelo
 local de 4B, en la conversación real del fundador, inventó un id de Gmail
 inexistente y una tool que no existía. Un modelo local escribiendo código
 real tiene el mismo riesgo — por eso la doble verificación de
-SkillFactorySpecialist (diff de git + suite completa de tests) sigue intacta
-sin cambios: este motor puede fallar seguido, y esa es la razón exacta por
-la que la construcción nunca se da por exitosa solo por lo que el modelo
-diga de sí mismo."""
+SkillFactorySpecialist (alcance real vía `files_written` + suite completa de
+tests) sigue intacta sin cambios: este motor puede fallar seguido, y esa es
+la razón exacta por la que la construcción nunca se da por exitosa solo por
+lo que el modelo diga de sí mismo."""
 
 import subprocess
 import time
@@ -82,6 +98,11 @@ class LocalCodeWriterResult:
     cost_usd: float | None
     num_turns: int | None
     raw: dict
+    # Único origen de verdad de qué se escribió/editó de verdad (ver
+    # docstring del módulo) — armado dentro de run() en el momento exacto
+    # en que cada escritura pasa su propio gate, nunca inferido después por
+    # un diff de git contra el working tree completo.
+    files_written: frozenset[str] = frozenset()
 
 
 def _default_run_tests(repo_root: Path) -> dict:
@@ -116,15 +137,16 @@ class LocalCodeWriter(Capability):
         del Specialist, su __init__.py de rama si hace falta, su test).
         `allowed_edit_paths`: archivos YA EXISTENTES que puede tocar con
         edit_file (los 4 de wiring). Cualquier otro path, en cualquiera de
-        las dos tools, se rechaza antes de tocar el disco — el mismo
-        alcance que SkillFactorySpecialist ya calculaba para el chequeo
-        posterior por diff de git, ahora aplicado también en el momento."""
+        las dos tools, se rechaza antes de tocar el disco — el resultado
+        devuelve en `files_written` exactamente el conjunto de paths que sí
+        pasaron ese gate, la única fuente de verdad real de qué se tocó."""
         llm = self._llm_factory()
         if not llm.available:
             raise RuntimeError("El modelo local configurado para la Skill Factory no está disponible.")
 
         test_run_count = 0
         num_tool_calls = 0
+        files_written: set[str] = set()
 
         def _read_file(i: dict) -> dict:
             path = self._repo_root / i["path"]
@@ -141,6 +163,7 @@ class LocalCodeWriter(Capability):
             full = self._repo_root / rel
             full.parent.mkdir(parents=True, exist_ok=True)
             full.write_text(i["content"], encoding="utf-8")
+            files_written.add(rel)
             return {"status": "written", "path": rel}
 
         def _edit_file(i: dict) -> dict:
@@ -158,6 +181,7 @@ class LocalCodeWriter(Capability):
             if count > 1:
                 return {"error": f"old_string aparece {count} veces, no es único — dale más contexto para que sea exacto."}
             full.write_text(content.replace(old, i["new_string"], 1), encoding="utf-8")
+            files_written.add(rel)
             return {"status": "edited", "path": rel}
 
         def _run_tests(i: dict) -> dict:
@@ -241,7 +265,8 @@ class LocalCodeWriter(Capability):
         # haber corrido run_tests ni una vez nunca cuenta como éxito acá.
         # Esto es además de, nunca en lugar de, la verificación
         # independiente real que SkillFactorySpecialist.build_skill() sigue
-        # haciendo después (diff de git + su propia corrida de la suite).
+        # haciendo después (files_written contra el alcance esperado + su
+        # propia corrida de la suite).
         ok = test_run_count > 0 and "LISTO" in text.upper() and "NO PUDE" not in text.upper()
         return LocalCodeWriterResult(
             ok=ok,
@@ -250,4 +275,5 @@ class LocalCodeWriter(Capability):
             cost_usd=None,
             num_turns=num_tool_calls,
             raw={"duration_seconds": duration_seconds, "test_run_count": test_run_count},
+            files_written=frozenset(files_written),
         )
