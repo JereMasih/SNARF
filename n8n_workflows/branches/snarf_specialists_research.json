@@ -1,0 +1,171 @@
+{
+  "name": "Snarf - Specialists (research)",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Empezar",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "info-0",
+      "name": "ResearchSpecialist (deep_research)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        -200.0
+      ],
+      "notesInFlow": true,
+      "notes": "1 clase, 3 modos · prompt_id: research_deep_research",
+      "parameters": {}
+    },
+    {
+      "id": "edit-0",
+      "name": "Editar prompt: research_deep_research",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        -200.0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "8MmuMJWxxVrn0iov",
+          "mode": "list",
+          "cachedResultName": "Snarf - Editar prompt"
+        }
+      }
+    },
+    {
+      "id": "info-1",
+      "name": "ResearchSpecialist (trend_scan)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        0.0
+      ],
+      "notesInFlow": true,
+      "notes": "1 clase, 3 modos · prompt_id: research_trend_scan",
+      "parameters": {}
+    },
+    {
+      "id": "edit-1",
+      "name": "Editar prompt: research_trend_scan",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        0.0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "8MmuMJWxxVrn0iov",
+          "mode": "list",
+          "cachedResultName": "Snarf - Editar prompt"
+        }
+      }
+    },
+    {
+      "id": "info-2",
+      "name": "ResearchSpecialist (competitor_watch)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        200.0
+      ],
+      "notesInFlow": true,
+      "notes": "1 clase, 3 modos · prompt_id: research_competitor_watch",
+      "parameters": {}
+    },
+    {
+      "id": "edit-2",
+      "name": "Editar prompt: research_competitor_watch",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        200.0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "8MmuMJWxxVrn0iov",
+          "mode": "list",
+          "cachedResultName": "Snarf - Editar prompt"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "ResearchSpecialist (deep_research)": {
+      "main": [
+        [
+          {
+            "node": "Editar prompt: research_deep_research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ResearchSpecialist (trend_scan)": {
+      "main": [
+        [
+          {
+            "node": "Editar prompt: research_trend_scan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ResearchSpecialist (competitor_watch)": {
+      "main": [
+        [
+          {
+            "node": "Editar prompt: research_competitor_watch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Empezar": {
+      "main": [
+        [
+          {
+            "node": "ResearchSpecialist (deep_research)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "ResearchSpecialist (trend_scan)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "ResearchSpecialist (competitor_watch)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

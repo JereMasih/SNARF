@@ -1,0 +1,75 @@
+{
+  "name": "Snarf - Specialists (agency)",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Empezar",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "info-0",
+      "name": "ClientStatusSpecialist",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        0.0
+      ],
+      "notesInFlow": true,
+      "notes": "prompt_id: client_status · unico caso real de un Specialist inyectando a otro (self._projects.get -> ProjectManagerSpecialist)",
+      "parameters": {}
+    },
+    {
+      "id": "edit-0",
+      "name": "Editar prompt: client_status",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        0.0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "8MmuMJWxxVrn0iov",
+          "mode": "list",
+          "cachedResultName": "Snarf - Editar prompt"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "ClientStatusSpecialist": {
+      "main": [
+        [
+          {
+            "node": "Editar prompt: client_status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Empezar": {
+      "main": [
+        [
+          {
+            "node": "ClientStatusSpecialist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

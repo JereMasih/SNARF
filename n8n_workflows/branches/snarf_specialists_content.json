@@ -1,0 +1,171 @@
+{
+  "name": "Snarf - Specialists (content)",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Empezar",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "info-0",
+      "name": "ContentSpecialist (blog)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        -200.0
+      ],
+      "notesInFlow": true,
+      "notes": "1 clase, 3 configs · prompt_id: content_blog_post",
+      "parameters": {}
+    },
+    {
+      "id": "edit-0",
+      "name": "Editar prompt: content_blog_post",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        -200.0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "8MmuMJWxxVrn0iov",
+          "mode": "list",
+          "cachedResultName": "Snarf - Editar prompt"
+        }
+      }
+    },
+    {
+      "id": "info-1",
+      "name": "ContentSpecialist (social)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        0.0
+      ],
+      "notesInFlow": true,
+      "notes": "1 clase, 3 configs · prompt_id: content_social_post",
+      "parameters": {}
+    },
+    {
+      "id": "edit-1",
+      "name": "Editar prompt: content_social_post",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        0.0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "8MmuMJWxxVrn0iov",
+          "mode": "list",
+          "cachedResultName": "Snarf - Editar prompt"
+        }
+      }
+    },
+    {
+      "id": "info-2",
+      "name": "ContentSpecialist (newsletter)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        200.0
+      ],
+      "notesInFlow": true,
+      "notes": "1 clase, 3 configs · prompt_id: content_newsletter",
+      "parameters": {}
+    },
+    {
+      "id": "edit-2",
+      "name": "Editar prompt: content_newsletter",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        200.0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "8MmuMJWxxVrn0iov",
+          "mode": "list",
+          "cachedResultName": "Snarf - Editar prompt"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "ContentSpecialist (blog)": {
+      "main": [
+        [
+          {
+            "node": "Editar prompt: content_blog_post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ContentSpecialist (social)": {
+      "main": [
+        [
+          {
+            "node": "Editar prompt: content_social_post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ContentSpecialist (newsletter)": {
+      "main": [
+        [
+          {
+            "node": "Editar prompt: content_newsletter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Empezar": {
+      "main": [
+        [
+          {
+            "node": "ContentSpecialist (blog)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "ContentSpecialist (social)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "ContentSpecialist (newsletter)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

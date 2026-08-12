@@ -1,0 +1,75 @@
+{
+  "name": "Snarf - Specialists (sales)",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Empezar",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "info-0",
+      "name": "SponsorInboxTriageSpecialist",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        0.0
+      ],
+      "notesInFlow": true,
+      "notes": "prompt_id: sponsor_inbox_triage",
+      "parameters": {}
+    },
+    {
+      "id": "edit-0",
+      "name": "Editar prompt: sponsor_inbox_triage",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        0.0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "8MmuMJWxxVrn0iov",
+          "mode": "list",
+          "cachedResultName": "Snarf - Editar prompt"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "SponsorInboxTriageSpecialist": {
+      "main": [
+        [
+          {
+            "node": "Editar prompt: sponsor_inbox_triage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Empezar": {
+      "main": [
+        [
+          {
+            "node": "SponsorInboxTriageSpecialist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

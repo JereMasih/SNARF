@@ -2,6 +2,26 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-12] Fase 14: mapa navegable de Snarf en n8n (ADR 0154)
+
+- 13 workflows reales creados e importados en n8n vía la API pública nueva (`N8N_API_KEY`, generada por el
+  fundador): `Snarf - Mapa` (raíz, drill-down a 9 ramas) + 9 workflows de rama (7 carpetas de Specialists +
+  raíz + Executive Board) + reuso de `Snarf - Ver prompts`/`Snarf - Editar prompt` ya existentes.
+- Jerarquía reflejada de `snarf/telemetry/brain.py` (`NODE_PARENT`/`NODE_TIER`), nunca una segunda
+  taxonomía en paralelo. Cada Specialist/rol tiene un nodo con notas visibles en el canvas (`notesInFlow`)
+  describiendo su `prompt_id` real; los nodos sin prompt editable (`SkillFactory`, `CommunityPulse`,
+  `MonthlyPnl`) lo marcan explícitamente en vez de simular una edición inexistente.
+- Ningún nodo hoja duplica la lógica de edición — los ~24 nodos "editar" de las 9 ramas apuntan todos al
+  mismo `Snarf - Editar prompt` (Fase 9.3), única superficie de escritura real.
+- Credencial `httpHeaderAuth` nueva creada en n8n vía API (`X-Snarf-Token` = `N8N_CONTROL_TOKEN`).
+  Verificado real de punta a punta: `GET /n8n/prompts` con ese header, ejecutado **desde dentro del
+  contenedor `snarf-n8n`** contra `host.docker.internal:8002`, devuelve 200 con los 27 prompts reales.
+  Pendiente real: no hay forma de disparar el *trigger* de un workflow vía la API pública de n8n community
+  — falta un clic de "Test workflow" del fundador en la UI para la verificación end-to-end final (ver ADR
+  0154).
+- `n8n_workflows/` pasa a tener 12 archivos versionados (`snarf_mapa.json`, `branches/*.json` ×9, los 2 ya
+  existentes) + `ids.json` (IDs reales asignados por esta instancia de n8n, no portable).
+
 ## [2026-08-12] Extensión de cobertura del Prompt Registry: los 7 roles del Executive Board (ADR 0153)
 
 - 7 `prompt_id` nuevos (`executive_board_{cto,coo,research,ceo,cfo,cmo,creative}`) — antes vivían inline

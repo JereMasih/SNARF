@@ -1,0 +1,309 @@
+{
+  "name": "Snarf - Mapa",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Empezar",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -700,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "orchestrator",
+      "name": "Orchestrator",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        -600
+      ],
+      "notesInFlow": true,
+      "notes": "Dispatcher central real: Orchestrator._tool_handlers (dict), sin registro propio de nodo en el cerebro -- snarf/telemetry/brain.py::CENTER_NODE es el equivalente visual. prompt_id: orchestrator_system_prefix (editable abajo, Editar prompt).",
+      "parameters": {}
+    },
+    {
+      "id": "branch-0",
+      "name": "Specialists (raiz)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        -600
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "2Tgr2KIvEQeQu2WJ",
+          "mode": "list",
+          "cachedResultName": "Snarf - Specialists (raiz)"
+        }
+      }
+    },
+    {
+      "id": "branch-1",
+      "name": "Specialists (agency)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        -440
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "FuYzOBZQkOfwZYig",
+          "mode": "list",
+          "cachedResultName": "Snarf - Specialists (agency)"
+        }
+      }
+    },
+    {
+      "id": "branch-2",
+      "name": "Specialists (community)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        -280
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "Vt5808lzuzKquot3",
+          "mode": "list",
+          "cachedResultName": "Snarf - Specialists (community)"
+        }
+      }
+    },
+    {
+      "id": "branch-3",
+      "name": "Specialists (content)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        -120
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "hLU5YAZ7rxNtnueo",
+          "mode": "list",
+          "cachedResultName": "Snarf - Specialists (content)"
+        }
+      }
+    },
+    {
+      "id": "branch-4",
+      "name": "Specialists (finance)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        40
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "CnmqVu7G9EO6SQ6e",
+          "mode": "list",
+          "cachedResultName": "Snarf - Specialists (finance)"
+        }
+      }
+    },
+    {
+      "id": "branch-5",
+      "name": "Specialists (productivity)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        200
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "m38Hy02Ig1QucHpn",
+          "mode": "list",
+          "cachedResultName": "Snarf - Specialists (productivity)"
+        }
+      }
+    },
+    {
+      "id": "branch-6",
+      "name": "Specialists (research)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        360
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "tulpTr35laHUWtcE",
+          "mode": "list",
+          "cachedResultName": "Snarf - Specialists (research)"
+        }
+      }
+    },
+    {
+      "id": "branch-7",
+      "name": "Specialists (sales)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        520
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "PGb45gIMh1DyTOL3",
+          "mode": "list",
+          "cachedResultName": "Snarf - Specialists (sales)"
+        }
+      }
+    },
+    {
+      "id": "branch-8",
+      "name": "Executive Board",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        680
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "3Qewxl21NTY4Q9LO",
+          "mode": "list",
+          "cachedResultName": "Snarf - Executive Board"
+        }
+      }
+    },
+    {
+      "id": "ver-prompts",
+      "name": "Ver todos los prompts",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -100,
+        -700
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "jH2q22gAcQjqdnW1",
+          "mode": "list",
+          "cachedResultName": "Snarf - Ver prompts"
+        }
+      }
+    },
+    {
+      "id": "editar-prompt",
+      "name": "Editar un prompt",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -100,
+        -750
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "8MmuMJWxxVrn0iov",
+          "mode": "list",
+          "cachedResultName": "Snarf - Editar prompt"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Empezar": {
+      "main": [
+        [
+          {
+            "node": "Orchestrator",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Specialists (raiz)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Specialists (agency)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Specialists (community)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Specialists (content)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Specialists (finance)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Specialists (productivity)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Specialists (research)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Specialists (sales)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Executive Board",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Ver todos los prompts",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Editar un prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

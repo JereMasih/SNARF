@@ -10,24 +10,27 @@
 ## Estado actual (retomar una sesión nueva desde acá)
 
 **Última actualización:** 2026-08-12. **Hechas: Fases 0-7 + Fase 8/1 (HITL) + Fase 9.1 (parcial) + Fase
-9.2 (4 rondas de iteración real) + Fase 9.3 (completa) + Fase 10 (primer corte) + Fase 11 (completa)**.
-Todo lo anterior, incluida la Fase 11 (`adr/0152-*`, tool real `system_introspect` expuesto por MCP — ver
-sección de la Fase 11 más abajo), ya está **commiteado y pusheado** (`622f184`, con un commit adicional
-`c537e23` actualizando el pointer de MASTER_MAP encima) — working tree limpio, `master` al día con
-`origin/master`. No queda ninguna ronda a medias. **Fase 8 parte 2/2 (decisión de stack de
+9.2 (4 rondas de iteración real) + Fase 9.3 (completa) + Fase 10 (primer corte) + Fase 11 (completa) +
+Fase 14 (primer corte real, ver abajo)**.
+Todo lo anterior salvo esta última ronda, incluida la Fase 11 (`adr/0152-*`, tool real `system_introspect`
+expuesto por MCP — ver sección de la Fase 11 más abajo), ya está **commiteado y pusheado** (`622f184`, con
+un commit adicional `c537e23` actualizando el pointer de MASTER_MAP encima) — working tree limpio, `master`
+al día con `origin/master` antes de esta ronda. **Fase 8 parte 2/2 (decisión de stack de
 observability/Langfuse) NO se ejecutó** — condicionada al rollout de usuarios de prueba, que todavía no
 pasó (ver Fase 3). **Las otras dos deudas de 9.1 ("ver logs desde la UI", asistente de migración a VPS)
 tampoco** — features aparte. Fase 12 (replay/debugging) sigue sin arrancar.
 
-**Sesión 2026-08-11/12 (retomando una anterior que se cortó a mitad) agregó:** intento de autostart de
-Colima/n8n (`com.snarf.n8n.plist`, sin cargar todavía — falta un permiso manual de TCC, ver más abajo),
-dos workflows reales de n8n para editar/ver prompts (`n8n_workflows/`, sin probar con importación real
-todavía), una **Fase 13** (apps nativas Mac/celular + cómputo del propio usuario, con Ollama embebido,
-sin BYOK, con Notion sumado al alcance) con decisiones ya confirmadas por el fundador — ver esa sección —
-y una **Fase 14** (mapa navegable de Snarf en n8n), bloqueada por una API key de n8n que el fundador va a
-generar (paso a paso en esa sección). **Ya hecho y commiteado esta ronda:** ADR 0153 — extensión de
-cobertura del Prompt Registry a los 7 roles del Executive Board, motivada por la Fase 14. El plan
-detallado con el razonamiento turno-a-turno de esta ronda vive en
+**Sesión 2026-08-12 (continuación, el fundador pasó la API key de n8n) — Fase 14 construida de punta a
+punta:** el fundador generó la API key de n8n (paso a paso de la sección de Fase 14) y la pasó. Con eso:
+credencial `httpHeaderAuth` nueva creada en n8n vía API (`X-Snarf-Token`), 13 workflows reales creados
+(`Snarf - Mapa` + 9 ramas + reuso de los 2 ya existentes), verificados estructuralmente contra la API real
+de n8n (sin targets huérfanos) y la llamada HTTP subyacente probada de punta a punta **desde dentro del
+contenedor `snarf-n8n`** contra el server real (8002). Detalle completo, incluido el único pendiente real
+(no hay forma de disparar el *trigger* de un workflow vía la API pública de n8n community — falta un clic
+de "Test workflow" del fundador en la UI), en `adr/0154-*`. **Ya hecho y commiteado esta ronda:** ADR 0153
+— extensión de cobertura del Prompt Registry a los 7 roles del Executive Board, motivada por la Fase 14 (de
+la ronda anterior, previo a tener la API key). El plan original de esta serie, con el razonamiento
+turno-a-turno de la ronda que definió el diseño del mapa, vive en
 `~/.claude/plans/effervescent-wandering-hammock.md` si hace falta el detalle completo.
 
 **Fase 9.2 — el fundador mandó las referencias reales del HUD de Iron Man (Jarvis/Ultron) y confirmó dos
@@ -459,7 +462,7 @@ de abajo, o en paralelo).
 
 ---
 
-## Fase 14 — Mapa navegable de Snarf en n8n (arrancando, bloqueada por una API key de n8n)
+## Fase 14 — Mapa navegable de Snarf en n8n (primer corte real, hecho 2026-08-12, ver ADR 0154)
 
 Pedido del fundador (misma sesión que la Fase 13 refinada): no los dos workflows simples de
 `n8n_workflows/` (ver/editar prompts, ya construidos), sino una representación completa y navegable de la
@@ -497,13 +500,23 @@ es alcanzable de otra forma):
 
 **Continuidad entre sesiones (el fundador puede estar en el iPhone ahora, en la Mac después):** no hace
 falta releer nada de este documento a mano ni repetir contexto — es exactamente para esto que este
-roadmap vive en el repo y no en `~/.claude/plans/` (ver la nota al principio del archivo). Una sesión
-nueva de Claude Code abierta en este repo, con el `CLAUDE.md` de siempre, ya apunta acá. Alcanza con decir
-algo como *"seguimos con la Fase 14 del roadmap de n8n, tengo la API key: `<pegarla>`"* y la sesión nueva
-tiene todo el contexto real (esta sección, el ADR 0153, los dos workflows ya construidos en
-`n8n_workflows/`) sin tener que reconstruir nada. El plan detallado de esta ronda, con el diseño completo
-del árbol de workflows propuesto, además queda en `~/.claude/plans/effervescent-wandering-hammock.md` por
-si hace falta el detalle turno-a-turno de cómo se llegó a estas decisiones.
+roadmap vive en el repo y no en `~/.claude/plans/` (ver la nota al principio del archivo). Esto ya se
+verificó real: la sesión que retomó el 2026-08-12 con solo "seguimos con la Fase 14, tengo la API key"
+tuvo todo el contexto necesario (esta sección, el ADR 0153, los workflows ya construidos) sin reconstruir
+nada. El plan original, con el diseño completo del árbol de workflows, queda en
+`~/.claude/plans/effervescent-wandering-hammock.md` por si hace falta el detalle turno-a-turno de cómo se
+llegó a estas decisiones.
+
+**Hecho 2026-08-12 (ver ADR 0154 para el detalle completo):** 13 workflows reales en n8n — `Snarf - Mapa`
+(raíz, drill-down a 9 ramas vía nodos `executeWorkflow`) + 9 workflows de rama (7 carpetas de Specialists +
+raíz + Executive Board), cada uno con un nodo `noOp` por Specialist/rol (notas visibles en el canvas con
+su `prompt_id` real, o por qué no lo tiene) + reuso de `Snarf - Ver prompts`/`Snarf - Editar prompt` como
+única superficie de edición real (nunca un mini-workflow nuevo por `prompt_id`). Credencial
+`httpHeaderAuth` (`X-Snarf-Token`) creada en n8n vía API. IDs reales asignados por esta instancia de n8n en
+`n8n_workflows/ids.json`. **Pendiente real, único:** la API pública de n8n community no expone forma de
+disparar el *trigger* de un workflow — falta que el fundador entre a `http://127.0.0.1:5678`, abra
+`Snarf - Mapa` y haga clic en "Test workflow" al menos una vez para la verificación visual/end-to-end
+final (la llamada HTTP subyacente sí se probó de punta a punta, ver ADR 0154).
 
 ---
 

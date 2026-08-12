@@ -1,0 +1,189 @@
+{
+  "name": "Snarf - Specialists (raiz)",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Empezar",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "info-0",
+      "name": "GmailDigestSpecialist",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        -300.0
+      ],
+      "notesInFlow": true,
+      "notes": "prompt_id: gmail_digest · digest de inbox real",
+      "parameters": {}
+    },
+    {
+      "id": "edit-0",
+      "name": "Editar prompt: gmail_digest",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        -300.0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "8MmuMJWxxVrn0iov",
+          "mode": "list",
+          "cachedResultName": "Snarf - Editar prompt"
+        }
+      }
+    },
+    {
+      "id": "info-1",
+      "name": "DashboardCuratorSpecialist",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        -100.0
+      ],
+      "notesInFlow": true,
+      "notes": "prompt_id: dashboard_curator · cura contenido del dashboard",
+      "parameters": {}
+    },
+    {
+      "id": "edit-1",
+      "name": "Editar prompt: dashboard_curator",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        -100.0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "8MmuMJWxxVrn0iov",
+          "mode": "list",
+          "cachedResultName": "Snarf - Editar prompt"
+        }
+      }
+    },
+    {
+      "id": "info-2",
+      "name": "ProjectManagerSpecialist",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        100.0
+      ],
+      "notesInFlow": true,
+      "notes": "NO hereda Specialist · 14 tools · 2 prompt_ids: project_manager_subfolder_suggestion, project_manager_summary",
+      "parameters": {}
+    },
+    {
+      "id": "edit-2",
+      "name": "Editar prompt: project_manager_summary",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        100.0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "8MmuMJWxxVrn0iov",
+          "mode": "list",
+          "cachedResultName": "Snarf - Editar prompt"
+        }
+      }
+    },
+    {
+      "id": "info-3",
+      "name": "SkillFactory",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        300.0
+      ],
+      "notesInFlow": true,
+      "notes": "NO hereda Specialist · genera nuevos Specialists · meta-prompt inline con guardrails de seguridad reales — solo lectura por ahora (ver ADR 0153), no expuesto a edicion de texto libre",
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "GmailDigestSpecialist": {
+      "main": [
+        [
+          {
+            "node": "Editar prompt: gmail_digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DashboardCuratorSpecialist": {
+      "main": [
+        [
+          {
+            "node": "Editar prompt: dashboard_curator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ProjectManagerSpecialist": {
+      "main": [
+        [
+          {
+            "node": "Editar prompt: project_manager_summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Empezar": {
+      "main": [
+        [
+          {
+            "node": "GmailDigestSpecialist",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "DashboardCuratorSpecialist",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "ProjectManagerSpecialist",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SkillFactory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

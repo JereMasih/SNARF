@@ -1,0 +1,93 @@
+{
+  "name": "Snarf - Specialists (finance)",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Empezar",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "info-0",
+      "name": "BooksCategorizeSpecialist",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        -100.0
+      ],
+      "notesInFlow": true,
+      "notes": "prompt_id: books_categorize",
+      "parameters": {}
+    },
+    {
+      "id": "edit-0",
+      "name": "Editar prompt: books_categorize",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        -100.0
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "8MmuMJWxxVrn0iov",
+          "mode": "list",
+          "cachedResultName": "Snarf - Editar prompt"
+        }
+      }
+    },
+    {
+      "id": "info-1",
+      "name": "MonthlyPnlSpecialist",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        100.0
+      ],
+      "notesInFlow": true,
+      "notes": "deterministico, sin LLM, sin prompt — solo lectura (nada que editar)",
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "BooksCategorizeSpecialist": {
+      "main": [
+        [
+          {
+            "node": "Editar prompt: books_categorize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Empezar": {
+      "main": [
+        [
+          {
+            "node": "BooksCategorizeSpecialist",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "MonthlyPnlSpecialist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
