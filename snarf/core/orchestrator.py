@@ -50,6 +50,7 @@ from snarf.runtime import (
     introspection,
     llm_routing,
     ops_health,
+    os_audit,
     personality_prefs,
     process_control,
     prompt_registry,
@@ -1123,6 +1124,21 @@ TOOLS = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "os_audit",
+        "description": (
+            "Auditoría real de solo lectura del propio repo de Snarf: ¿los paths que CLAUDE.md/"
+            "MASTER_MAP.md referencian existen de verdad en disco (routing roto)?, fechas reales de "
+            "ADRs/CHANGELOG/roadmaps (¿algo quedó congelado?), archivos sueltos en la raíz, higiene de "
+            "git (secretos trackeados, .gitignore real), y skills/agents de .claude/ rotos (SKILL.md "
+            "faltante o frontmatter incompleto). Nunca modifica nada — devuelve señales crudas reales "
+            "para que armes vos el reporte (nunca inventes hallazgos que no vengan de acá). Es la "
+            "versión de este chequeo que corre desde tu propio chat — la Skill de Claude Code "
+            "equivalente (.claude/skills/os-audit/SKILL.md) solo corre dentro de una sesión de Claude "
+            "Code, nunca la invoques ni la menciones como si fuera lo mismo que esto."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "executive_board_consult",
         "description": (
             "Convoca al board asesor de Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094/0098) — "
@@ -2073,6 +2089,7 @@ class Orchestrator:
             "system_introspect": lambda i: introspection.system_snapshot(
                 tools=TOOLS, safe_tool_names=MCP_EXPOSED_TOOLS - HIGH_IMPACT_TOOLS - BULK_READ_GATED_TOOLS
             ),
+            "os_audit": lambda i: os_audit.run_audit(),
             "executive_board_consult": lambda i: self._executive_board.consult(i["question"], i.get("roles")),
             "skill_factory_build": self._tool_skill_factory_build,
             "skill_factory_activate": self._tool_skill_factory_activate,

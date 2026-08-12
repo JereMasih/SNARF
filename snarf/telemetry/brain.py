@@ -51,6 +51,7 @@ TOOL_TO_NODE: dict[str, str] = {
     "measure_text_length": "utility",
     "telemetry_cost_summary": "utility",
     "system_introspect": "utility",
+    "os_audit": "utility",
     "list_conversations": "memory",
     "get_conversation": "memory",
     "search_memory": "memory",

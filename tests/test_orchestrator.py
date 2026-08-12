@@ -745,6 +745,13 @@ def test_system_introspect_tool_delegates_to_introspection_snapshot(orchestrator
     assert result["active_user_sessions"] is None
 
 
+def test_os_audit_tool_delegates_to_os_audit_run_audit(orchestrator):
+    result = orchestrator._handle_tool("os_audit", {})
+    assert set(result.keys()) == {
+        "repo_root", "routing", "freshness", "root_hygiene", "git_hygiene", "skills_and_agents",
+    }
+
+
 def test_handle_tool_catches_handler_exceptions(orchestrator, monkeypatch):
     def boom(_input):
         raise RuntimeError("fallo simulado")

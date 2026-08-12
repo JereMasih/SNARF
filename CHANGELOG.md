@@ -2,6 +2,24 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-12] `os_audit`: tool real de auditoría del repo en el Orchestrator (ADR 0155)
+
+- Se creó primero una Skill de Claude Code (`.claude/skills/os-audit/SKILL.md`) para auditar
+  drift/frescura/organización de este repo desde una sesión de Claude Code. Pedirle lo mismo a Snarf desde
+  su propio chat del navegador no hacía nada — son dos sistemas de tools completamente distintos, la Skill
+  nunca la ve el Orchestrator de Snarf.
+- Módulo nuevo `snarf/runtime/os_audit.py` (mismo criterio que `introspection.py`: funciones puras que
+  devuelven señales crudas, nunca un reporte ya narrado) reimplementa en Python los checks mecánicos de la
+  Skill: routing roto entre `CLAUDE.md`/`MASTER_MAP.md` y el disco real, fechas reales de ADRs/CHANGELOG/
+  roadmaps, archivos sueltos en la raíz, higiene de git (secretos trackeados, `.gitignore` real), y
+  skills/agents de `.claude/` rotos.
+- Tool nuevo `os_audit` registrado en el Orchestrator siguiendo el protocolo completo: `TOOLS` + dispatch
+  dict, nodo `utility` en el cerebro, verbo propio, extractor de detalle, y expuesto por MCP (incluido en
+  el subset del rol `cto` de Inteligencia Ejecutiva).
+- Solo lectura, nunca escribe archivos al repo (a diferencia de la Skill, que sí guarda un reporte en
+  `audits/`) — no existe hoy ningún tool que escriba texto al filesystem del propio repo de Snarf.
+- 1310/1310 tests (18 nuevos).
+
 ## [2026-08-12] Fase 14: mapa navegable de Snarf en n8n (ADR 0154)
 
 - 13 workflows reales creados e importados en n8n vía la API pública nueva (`N8N_API_KEY`, generada por el

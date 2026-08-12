@@ -29,6 +29,7 @@ MCP_EXPOSED_TOOLS: frozenset[str] = frozenset({
     "codebase_search",
     "telemetry_cost_summary",
     "system_introspect",
+    "os_audit",
 })
 
 # Sub-allowlist por rol de Inteligencia Ejecutiva (ver ADR 0094, Fase E del
@@ -41,6 +42,7 @@ ROLE_TOOL_SUBSETS: dict[str, frozenset[str]] = {
         "knowledge_index_status",
         "drive_index_status",
         "get_current_datetime",
+        "os_audit",
     }),
     "coo": frozenset({
         "project_list",

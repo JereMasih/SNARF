@@ -411,6 +411,14 @@ def _system_introspect(i, r):
     return None
 
 
+def _os_audit(i, r):
+    if isinstance(r, dict):
+        dead = len(r.get("routing", {}).get("dead_paths_in_repo", []))
+        loose = len(r.get("root_hygiene", {}).get("loose_at_root", []))
+        return _truncate(f"{dead} rutas muertas, {loose} archivos sueltos en la raíz")
+    return None
+
+
 def _ops_system_health(i, r):
     if isinstance(r, dict):
         return _truncate(f"LLM {'ok' if r.get('llm_available') else 'caído'}, {r.get('recent_error_count', 0)} errores recientes")
@@ -464,6 +472,7 @@ DETAIL_EXTRACTORS = {
     "measure_text_length": _measure_text_length,
     "telemetry_cost_summary": _telemetry_cost_summary,
     "system_introspect": _system_introspect,
+    "os_audit": _os_audit,
     "ops_system_health": _ops_system_health,
     "ops_backup_now": _ops_backup_now,
     "ops_process_status": _ops_process_status,

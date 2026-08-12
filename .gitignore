@@ -35,3 +35,5 @@ server.log
 server_8002.log
 logs/
 n8n_data/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
