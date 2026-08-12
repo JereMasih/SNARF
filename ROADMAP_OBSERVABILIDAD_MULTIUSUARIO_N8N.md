@@ -25,15 +25,41 @@ mientras n8n podía estar todavía en medio de la ejecución que originó el ped
 vivo. **Mitigación aplicada ya:** se sacó ese disparo automático de `app.py::n8n_apply_agent_change`
 (código sin cambios en `n8n_generator.py` en sí — la función `sync_executive_board_safe()` sigue existiendo
 y sigue siendo invocable a mano vía la Skill `n8n-map-sync`, solo dejó de dispararse sola tras un apply
-real). Server reiniciado con confirmación explícita del fundador cada vez (tres reinicios reales en la
-ronda), verificado sano después de cada uno. **Cero cambios reales quedaron aplicados** a ningún agente en
-ninguno de los dos intentos fallidos (verificado directo contra `/n8n/agent/cto`: prompt sin tocar,
-historial en v1). **Pendiente real, sin resolver:** investigar la causa raíz de verdad en un entorno
-aislado (nunca de nuevo directo contra producción) antes de reactivar la regeneración automática — no se
-escribió ADR todavía para esto porque la investigación no está cerrada, solo mitigada. El prototipo de
-canvas en sí (nodos `Set` con checkboxes reales, cadena `Set→Proponer→Aplicar` con un trigger propio por
-rol) sigue siendo trabajo exploratorio con el fundador, sin decisión final tomada — ver conversación real
-de esta ronda para el detalle turno a turno si hace falta retomarlo.
+real). Server reiniciado con confirmación explícita del fundador cada vez, verificado sano después de cada
+uno. **Cero cambios reales quedaron aplicados** a ningún agente en ninguno de los dos intentos fallidos
+(verificado directo contra `/n8n/agent/cto`: prompt sin tocar, historial en v1).
+
+**Investigación real hecha esta misma ronda (post-mitigación) — resultado honesto: la hipótesis original
+NO se confirmó.** Reproducción fiel en entorno aislado (nunca contra producción): server de prueba
+(puerto 8001, throwaway) + dos workflows throwaway reales en la misma instancia de n8n (un `webhook`
+disparable por curl sin intervención humana + un target) replicando EXACTAMENTE el patrón sospechoso —
+un endpoint disparado por n8n que arranca un hilo en background que llama de vuelta a la API real de n8n
+con un `PUT` de payload grande (~30 nodos, mismo tamaño real que `push_workflow`) — **nunca reprodujo el
+cuelgue**, siempre resolvió en <0.1s. La teoría del acoplamiento reentrante queda sin confirmar (puede ser
+real bajo una condición que no se logró replicar, o puede no ser la causa real). Workflows throwaway
+borrados de n8n al terminar (`ZZZ-repro-*`, ya no existen).
+
+**Hallazgo real, independiente, sí corregido:** el proceso real bajo `launchd` tenía un límite de **256
+descriptores de archivo** (default de macOS para un LaunchAgent, confirmado con `launchctl print
+gui/501/com.snarf.server` antes del fix) — bajo para un server de larga duración con polling constante del
+dashboard (cada widget cada ~15s) más conexiones salientes reales (Gmail/Drive/Anthropic/n8n). Sin
+evidencia de un leak activo en el momento del chequeo (112 de los ~130 FDs abiertos eran bibliotecas de
+Python cargadas una sola vez al importar, no conexiones acumulándose), pero es una debilidad real e
+independiente de la teoría de arriba. **Corregido:** `~/Library/LaunchAgents/com.snarf.server.plist` ahora
+tiene `SoftResourceLimits`/`HardResourceLimits` → `NumberOfFiles: 4096` (el `.plist` vive fuera de este
+repo, en `~/Library/LaunchAgents/`, no hay nada que commitear en git por este cambio) — confirmado real y
+activo en el proceso corriendo (`launchctl print` muestra `maxfiles (soft/hard) => 4096`).
+
+**Estado real, honesto:** la mitigación de la Fase 21/incidente (regeneración automática desactivada)
+sigue en pie — no depende de haber confirmado la causa raíz, es una simplificación razonable de todos
+modos. El límite de archivos, ahora 16x más alto, es un endurecimiento real independiente. Si el cuelgue
+vuelve a pasar, el paso correcto AHORA es correr `py-spy dump --pid <pid>` (ya instalado en el venv) ANTES
+de reiniciar — eso sí daría una respuesta definitiva de dónde está bloqueado el proceso, cosa que no se
+pudo capturar en los dos incidentes reales de esta ronda porque se priorizó restaurar el servicio. Sin ADR
+nuevo para este incidente — quedó mitigado y parcialmente investigado, no hay una decisión de arquitectura
+que documentar todavía. El prototipo de canvas en sí (nodos `Set` con checkboxes reales, cadena
+`Set→Proponer→Aplicar` con un trigger propio por rol) sigue siendo trabajo exploratorio con el fundador,
+sin decisión final tomada.
 
 **Trabajo siguiente ya diseñado y aprobado (2026-08-12):** Fases 15-21 — n8n como control-plane completo de
 la construcción de agentes (no solo texto de prompt: también herramientas, ruteo, y conexiones/secuencia
