@@ -55,6 +55,7 @@ from snarf.runtime import (
     prompt_registry,
     user_profile,
 )
+from snarf.executive.roles import ROLE_CONFIGS as EXECUTIVE_ROLE_CONFIGS
 from snarf.executive.specialist import ExecutiveBoardSpecialist
 from snarf.specialists.gmail_digest import SYSTEM_PROMPT as GMAIL_DIGEST_SYSTEM_PROMPT, GmailDigestSpecialist
 from snarf.specialists.project_manager import (
@@ -1729,6 +1730,10 @@ PROMPT_DEFAULTS: dict[str, str] = {
     "client_status": CLIENT_STATUS_SYSTEM_PROMPT,
     "books_categorize": BOOKS_CATEGORIZE_SYSTEM_PROMPT,
     "sponsor_inbox_triage": SPONSOR_INBOX_TRIAGE_SYSTEM_PROMPT,
+    **{
+        f"executive_board_{role}": config.system_prompt
+        for role, config in EXECUTIVE_ROLE_CONFIGS.items()
+    },
 }
 
 

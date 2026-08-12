@@ -49,6 +49,24 @@ PROMPT_IDS: tuple[str, ...] = (
     "client_status",
     "books_categorize",
     "sponsor_inbox_triage",
+    # Fase 13 del roadmap de observabilidad/n8n (extensión de cobertura
+    # 2026-08-11, ver ADR correspondiente): los 7 roles del Executive Board
+    # (ADR 0094) no tenían prompt_id — su texto vivía inline en
+    # snarf/executive/roles.py::_prompt(), no editable vía /n8n/prompts.
+    # monthly_pnl y community_pulse quedan afuera a propósito: son
+    # determinísticos, sin LLM, sin prompt que editar. El meta-prompt de
+    # Skill Factory también queda afuera a propósito (ver ADR): no es un
+    # system prompt de LLM plano, es una plantilla con placeholders y
+    # guardrails de seguridad reales (alcance de archivos permitidos) —
+    # exponerla a edición de texto libre sin validación sería un foot-gun
+    # real, distinto en naturaleza a los 27 prompts de este tuple.
+    "executive_board_cto",
+    "executive_board_coo",
+    "executive_board_research",
+    "executive_board_ceo",
+    "executive_board_cfo",
+    "executive_board_cmo",
+    "executive_board_creative",
 )
 
 

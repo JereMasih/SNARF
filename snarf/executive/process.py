@@ -25,6 +25,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from snarf.executive.opinion import parse_opinions
 from snarf.executive.roles import ExecutiveRoleConfig
+from snarf.runtime import prompt_registry
 from snarf.telemetry import context
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -125,8 +126,17 @@ def consult_role(role_config: ExecutiveRoleConfig, question: str, llm, repo_root
             called_tools.add(name)
             return bridge.call_tool(name, tool_input)
 
+        # Fase 13 (extensión de cobertura del Prompt Registry, 2026-08-11):
+        # lee la versión activa real vía prompt_registry, igual que los
+        # otros ~20 prompts editables desde /n8n/prompts — nunca cacheado a
+        # nivel de import, así una edición/rollback queda vivo de inmediato
+        # sin reiniciar nada. role_config.system_prompt sigue siendo el
+        # default real si nunca se editó.
+        system_prompt = prompt_registry.get_active_text(
+            f"executive_board_{role_config.role}", role_config.system_prompt
+        )
         response = llm.generate(
-            system=role_config.system_prompt,
+            system=system_prompt,
             messages=[{"role": "user", "content": question}],
             tools=tools,
             tool_handler=tool_handler,

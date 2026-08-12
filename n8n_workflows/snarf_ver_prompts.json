@@ -1,0 +1,50 @@
+{
+  "name": "Snarf - Ver prompts",
+  "nodes": [
+    {
+      "id": "manual-trigger-1",
+      "name": "Ejecutar manualmente",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-200, 0],
+      "parameters": {}
+    },
+    {
+      "id": "http-get-prompts-1",
+      "name": "GET /n8n/prompts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [40, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "http://host.docker.internal:8002/n8n/prompts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Snarf n8n token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Ejecutar manualmente": {
+      "main": [
+        [
+          {
+            "node": "GET /n8n/prompts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

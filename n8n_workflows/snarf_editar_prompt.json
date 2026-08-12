@@ -1,0 +1,103 @@
+{
+  "name": "Snarf - Editar prompt",
+  "nodes": [
+    {
+      "id": "form-trigger-1",
+      "name": "Formulario: elegir prompt y escribir",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [-200, 0],
+      "webhookId": "snarf-editar-prompt",
+      "parameters": {
+        "formTitle": "Editar un prompt de Snarf",
+        "formDescription": "Elegí el prompt, escribí el texto nuevo completo y enviá. Guarda una versión nueva con historial/rollback (no pisa la anterior).",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "prompt_id",
+              "fieldType": "dropdown",
+              "requiredField": true,
+              "fieldOptions": {
+                "values": [
+                  { "option": "books_categorize" },
+                  { "option": "calendar_brief" },
+                  { "option": "client_status" },
+                  { "option": "content_blog_post" },
+                  { "option": "content_newsletter" },
+                  { "option": "content_social_post" },
+                  { "option": "conversation_title" },
+                  { "option": "dashboard_curator" },
+                  { "option": "drive_vision" },
+                  { "option": "gmail_digest" },
+                  { "option": "history_compaction" },
+                  { "option": "morning_routine_classify" },
+                  { "option": "morning_routine_synthesize" },
+                  { "option": "orchestrator_system_prefix" },
+                  { "option": "project_manager_subfolder_suggestion" },
+                  { "option": "project_manager_summary" },
+                  { "option": "research_competitor_watch" },
+                  { "option": "research_deep_research" },
+                  { "option": "research_trend_scan" },
+                  { "option": "sponsor_inbox_triage" },
+                  { "option": "executive_board_cto" },
+                  { "option": "executive_board_coo" },
+                  { "option": "executive_board_research" },
+                  { "option": "executive_board_ceo" },
+                  { "option": "executive_board_cfo" },
+                  { "option": "executive_board_cmo" },
+                  { "option": "executive_board_creative" }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "texto_nuevo",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "http-put-prompt-1",
+      "name": "PUT /n8n/prompts/{id}",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [40, 0],
+      "parameters": {
+        "method": "PUT",
+        "url": "=http://host.docker.internal:8002/n8n/prompts/{{ $json.prompt_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.texto_nuevo }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Snarf n8n token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Formulario: elegir prompt y escribir": {
+      "main": [
+        [
+          {
+            "node": "PUT /n8n/prompts/{id}",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

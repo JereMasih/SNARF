@@ -9,15 +9,26 @@
 
 ## Estado actual (retomar una sesión nueva desde acá)
 
-**Última actualización:** 2026-08-11. **Hechas: Fases 0-7 + Fase 8/1 (HITL) + Fase 9.1 (parcial) + Fase
+**Última actualización:** 2026-08-12. **Hechas: Fases 0-7 + Fase 8/1 (HITL) + Fase 9.1 (parcial) + Fase
 9.2 (4 rondas de iteración real) + Fase 9.3 (completa) + Fase 10 (primer corte) + Fase 11 (completa)**.
-Fase 9.2 completa + Fase 10 ya commiteadas y pusheadas (`c4bb4ff`). La ronda más reciente, `adr/0152-*`
-(Fase 11: tool real `system_introspect`, expuesto por MCP — ver sección de la Fase 11 más abajo), hecha,
-suite completa verde, **todavía sin commitear** — ver "Trabajo pendiente de commit" abajo. Sin cambios de
-frontend esta ronda (backend puro). **Fase 8 parte 2/2 (decisión de stack de observability/Langfuse) NO
-se ejecutó** — condicionada al rollout de usuarios de prueba, que todavía no pasó (ver Fase 3). **Las
-otras dos deudas de 9.1 ("ver logs desde la UI", asistente de migración a VPS) tampoco** — features
-aparte. Fase 12 (replay/debugging) sigue sin arrancar.
+Todo lo anterior, incluida la Fase 11 (`adr/0152-*`, tool real `system_introspect` expuesto por MCP — ver
+sección de la Fase 11 más abajo), ya está **commiteado y pusheado** (`622f184`, con un commit adicional
+`c537e23` actualizando el pointer de MASTER_MAP encima) — working tree limpio, `master` al día con
+`origin/master`. No queda ninguna ronda a medias. **Fase 8 parte 2/2 (decisión de stack de
+observability/Langfuse) NO se ejecutó** — condicionada al rollout de usuarios de prueba, que todavía no
+pasó (ver Fase 3). **Las otras dos deudas de 9.1 ("ver logs desde la UI", asistente de migración a VPS)
+tampoco** — features aparte. Fase 12 (replay/debugging) sigue sin arrancar.
+
+**Sesión 2026-08-11/12 (retomando una anterior que se cortó a mitad) agregó:** intento de autostart de
+Colima/n8n (`com.snarf.n8n.plist`, sin cargar todavía — falta un permiso manual de TCC, ver más abajo),
+dos workflows reales de n8n para editar/ver prompts (`n8n_workflows/`, sin probar con importación real
+todavía), una **Fase 13** (apps nativas Mac/celular + cómputo del propio usuario, con Ollama embebido,
+sin BYOK, con Notion sumado al alcance) con decisiones ya confirmadas por el fundador — ver esa sección —
+y una **Fase 14** (mapa navegable de Snarf en n8n), bloqueada por una API key de n8n que el fundador va a
+generar (paso a paso en esa sección). **Ya hecho y commiteado esta ronda:** ADR 0153 — extensión de
+cobertura del Prompt Registry a los 7 roles del Executive Board, motivada por la Fase 14. El plan
+detallado con el razonamiento turno-a-turno de esta ronda vive en
+`~/.claude/plans/effervescent-wandering-hammock.md` si hace falta el detalle completo.
 
 **Fase 9.2 — el fundador mandó las referencias reales del HUD de Iron Man (Jarvis/Ultron) y confirmó dos
 decisiones antes de construir**: (1) los "skills" son un 4to anillo agrupado por familia, nunca un nodo
@@ -49,10 +60,9 @@ el detalle completo de diseño/riesgos/tests):**
   (solo founder, con confirmación de dos pasos, `com.snarf.server` excluido de auto-reinicio)
   (`adr/0138-*`).
 
-**Trabajo pendiente de commit:** `adr/0152-*` (Fase 11: tool real `system_introspect`, expuesto por MCP —
-sin subset de rol para Claude Code, decisión explícita documentada) — hecho, suite completa en verde
-(1290/1290), esperando confirmación explícita del fundador antes de commitear/pushear/reiniciar el server
-real, mismo criterio que todas las rondas anteriores.
+**Trabajo pendiente de commit:** ninguno — todo lo hecho hasta la fecha ya está commiteado y pusheado (ver
+arriba). Sigue pendiente, eso sí, confirmar con el fundador antes de **reiniciar el server real** (puerto
+8002, LaunchAgent) si algún cambio de esta serie lo requiere, mismo criterio que siempre.
 
 **Estado real de infraestructura en esta Mac** (verificar que sigue así al retomar, puede haber
 cambiado):
@@ -62,24 +72,40 @@ cambiado):
   GET por default** — gotcha real documentado en ADR 0139).
 - `.env` tiene `N8N_WEBHOOK_URL` y `N8N_CONTROL_TOKEN` reales seteados — integración verificada
   funcionando (`POST` a la Production URL devuelve `200 {"message":"Workflow was started"}`).
-- **Ninguno de los dos (Colima/n8n) sobrevive un reboot de la Mac todavía** — si al retomar no
-  responden, es esperable, hay que levantarlos de nuevo (`colima start` + `docker compose -f
-  docker-compose.n8n.yml up -d`), no es un bug nuevo.
+- **Colima ahora tiene un intento de autostart** (`~/Library/LaunchAgents/com.snarf.n8n.plist`, agregado
+  2026-08-11 a pedido del fundador) — `colima start` corre bien bajo `launchd` sin permiso especial, pero
+  `docker compose -f docker-compose.n8n.yml up -d` se queda colgado bajo `launchd` porque el binario
+  `docker` no tiene Acceso Total al Disco todavía (mismo gotcha de TCC que Python, ver CLAUDE.md). El
+  plist está creado pero **deliberadamente sin cargar** (`launchctl bootout` ya corrido) hasta que se
+  otorgue ese permiso a mano en Ajustes (paso manual, no automatizable) — después: `launchctl bootstrap
+  gui/501 ~/Library/LaunchAgents/com.snarf.n8n.plist`. Hasta entonces, sigue siendo manual tras un
+  reboot: `colima start --cpu 2 --memory 2 --disk 20` + `docker compose -f docker-compose.n8n.yml up -d`.
 - Puede haber quedado una conversación de prueba real ("ping de verificación real, ignorar") en
   `data/episodic_memory.jsonl` del fundador — inofensiva, generada verificando el flujo de `/send`.
 
 **Recomendación de VPS ya dada, sin decisión tomada todavía**: esquema híbrido (VPS aloja FastAPI/
 orquestación, la inferencia local sigue viajando a esta Mac por Tailscale) — no migración completa,
 porque MLX es específico de Apple Silicon y una migración completa perdería el costo ~$0 de inferencia
-local. Pendiente de que el fundador decida si/cuándo.
+local. Pendiente de que el fundador decida si/cuándo. **La Fase 13 (más abajo) generaliza exactamente
+este mismo esquema a cualquier usuario, no solo al fundador — leer esa sección antes de decidir el VPS,
+son la misma decisión de arquitectura vista desde dos ángulos.**
 
-**Qué preguntar/confirmar apenas se retome:** (1) ¿se commitea la reapertura de n8n tal cual está? (2)
-¿seguimos con 9.1 (vista visual del cockpit) o 9.2 (cerebro rediseñado) — ambas necesitan frontend real +
-Playwright, y 9.2 necesita dirección visual del fundador (mismo patrón que el rediseño del dock,
-SESSION_STATE.md)? La instrucción vigente de sesiones anteriores fue "continuá con las fases siguientes,
-no hace falta que preguntes" — sigue aplicando salvo que el fundador diga lo contrario, pero **no** cubre
-commits (esos siempre se piden explícitamente), gasto real/infraestructura paga, ni decisiones de
-gobernanza nuevas — esas siempre se confirman con el fundador explícitamente.
+**Prompts editables desde n8n — backend ya existía (Fase 9.3), faltaba el workflow real:** dos workflows
+nuevos en `n8n_workflows/` (`snarf_ver_prompts.json`, `snarf_editar_prompt.json`) que pegan contra
+`/n8n/prompts` ya construido. **Sin probar con una importación real en n8n todavía** (sin API key de n8n
+configurada para hacerlo desde acá) — el fundador tiene que importarlos a mano (n8n → Import from File),
+crear una credencial "Header Auth" llamada `Snarf n8n token` (header `X-Snarf-Token`, valor =
+`N8N_CONTROL_TOKEN` de `.env`) y avisar si algo no calza con esta versión de n8n (1.121.0) para
+corregirlo. Base URL usada: `http://host.docker.internal:8002` — verificado real desde dentro del
+contenedor (`docker exec snarf-n8n wget ...` respondió 200).
+
+**Qué preguntar/confirmar apenas se retome:** (1) ¿orden de la Fase 13 — app de Mac primero, o
+BYO-compute completo? (2) ¿el tier pago se diseña ahora o se pospone? (3) ¿el fundador ya otorgó Acceso
+Total al Disco a `/opt/homebrew/bin/docker` para poder cargar `com.snarf.n8n.plist`? La instrucción
+vigente de sesiones anteriores fue "continuá con las fases siguientes, no hace falta que preguntes" —
+sigue aplicando salvo que el fundador diga lo contrario, pero **no** cubre commits (esos siempre se piden
+explícitamente), gasto real/infraestructura paga, ni decisiones de gobernanza nuevas (tier pago,
+BYO-compute) — esas siempre se confirman con el fundador explícitamente.
 
 ---
 
@@ -275,7 +301,7 @@ pasos, `com.snarf.server` excluido de auto-reinicio), nombres de proceso reales 
 infraestructura" en Configuración, `GET/POST /ops/processes`, verificado con Playwright — ver ADR 0146).
 **Falta todavía**: ver logs desde la UI, asistente guiado de migración a VPS.
 
-### 9.2 — Cerebro como "giroscopio" ⚠️ PRIMER CORTE HECHO PERO SIN COMMITEAR (`adr/0147-*`)
+### 9.2 — Cerebro como "giroscopio" ✅ HECHO, commiteado (`adr/0147-0150-*`)
 
 Alcance real, confirmado con el fundador antes de construir (referencias del HUD de Iron Man/Jarvis/
 Ultron, nunca la Vista HUD del dashboard — features distintas): 7 nodos reales para la junta directiva
@@ -332,6 +358,166 @@ servidor MCP de este repo (`.mcp.json`) queda fuera de alcance — es la políti
 ## Fase 12 — Replay y debugging
 
 Sobre la persistencia de Redis Streams (Fase 2) + `EpisodicMemory` + versiones de prompt/config (Fases 6-7): seleccionar una ejecución pasada por `trace_id` y reproducirla. Diseño explícito para no-determinismo de LLM.
+
+---
+
+## Fase 13 — Multi-dispositivo: apps nativas + BYO-compute (PROPUESTA, sin decisión tomada)
+
+**Origen:** pedido real del fundador el 2026-08-11 (sesión que se cortó a mitad, retomada acá). Pidió
+investigación profunda "a los más altos niveles de calidad de la industria" sobre: (1) una app de Mac y
+una de celular que permitan gestionar los recursos de la propia máquina, y (2) que cada usuario pueda
+aportar el cómputo de su celular/Mac/PC para sostener su propia instancia de Snarf, con un tier pago para
+más velocidad/capacidad para quien no quiera depender de su propio hardware. Investigación real hecha con
+`WebSearch` esta sesión (no recitada de memoria/entrenamiento) — fuentes al pie de cada hallazgo.
+
+### Hallazgo 1 — esto no es un problema nuevo, es el mismo patrón ya recomendado, generalizado
+
+La sección "Estado actual" de este documento ya venía recomendando un esquema híbrido para el propio
+fundador: VPS aloja FastAPI/orquestación, la inferencia local viaja por Tailscale hasta esta Mac (MLX es
+específico de Apple Silicon). **Lo que el fundador pide ahora es exactamente ese mismo patrón, generalizado
+de "la Mac del fundador" a "la Mac/PC de cualquier usuario".** No hace falta inventar arquitectura nueva —
+hace falta (a) un flujo de emparejamiento por usuario (hoy Tailscale solo conecta las máquinas del
+fundador), (b) una app que empaquete ese emparejamiento en un click en vez de configuración manual, y (c)
+extender `llm_routing.py` (ya multi-proveedor, ya con fallback automático) para que la "máquina del
+usuario" sea una entrada de routing más, particionada por `user_id`.
+
+### Hallazgo 2 — "cómputo distribuido para LLMs" es un patrón probado, pero hay que distinguir dos formas muy distintas
+
+- **Forma A — mis propios dispositivos, mi propio workload** (Exo Labs: parte un modelo entre las
+  máquinas de una misma persona en su red local, pool de memoria/cómputo real, sin arquitectura
+  master-worker). Esto es exactamente lo que describió el fundador ("que el usuario utilice los recursos
+  de su celular y su Mac para soportar a Snarf") — **factible, con precedente real**.
+- **Forma B — pool de desconocidos para un modelo compartido** (Petals: sirve un modelo público
+  colaborativamente entre pares que no se conocen). Esto es un problema completamente distinto (confianza
+  entre pares, privacidad de datos de terceros circulando por hardware ajeno) y **no es lo que el
+  fundador pidió** — no construir esto sin una conversación aparte y explícita.
+  [Fuente: SharedLLM vs Petals vs Exo vs Kalavai](https://sharedllm.org/blog/sharedllm-vs-petals-vs-exo.html),
+  [Deep Dive: Exo](https://medium.com/@leif.markthaler/deep-dive-exo-distributed-ai-inference-on-consumer-hardware-068e341d8e3c)
+
+### Hallazgo 3 — el celular NO puede ser un nodo de cómputo confiable, por diseño del propio OS
+
+iOS (y cada vez más Android) restringe arquitecturalmente la ejecución en segundo plano: ~30 segundos de
+wall-clock para tareas estándar, sin daemons persistentes posibles, con iOS 26 endureciendo esto todavía
+más por gestión de batería. **No hay forma de que un iPhone "aporte cómputo ocioso" de forma continua** —
+eso no es una limitación de esfuerzo de ingeniería, es una decisión de plataforma de Apple/Google.
+Consecuencia real para el diseño: el celular puede ser cliente (UI, notificaciones, quizás cómputo real en
+primer plano vía Neural Engine para tareas puntuales), pero **nunca el nodo que sostiene a Snarf** — ese
+rol es de la Mac/PC, igual que hoy. No vender la app de celular como "tu Snarf corriendo en tu bolsillo
+24/7".
+[Fuente: iOS Background Execution Limits 2026](https://www.appsonair.com/blogs/background-execution-limits-in-ios-what-every-developer-must-know)
+
+### Hallazgo 4 — framework recomendado para las apps: Tauri v2, no Electron
+
+Tauri v2 (Rust + WebView nativo) sobre Electron (Chromium+Node empaquetado completo): ~10x menos peso de
+instalador (2-10MB vs 80-200MB), ~50MB de RAM vs 120MB+, seguridad por capacidades explícitas por default
+(mismo principio de allowlist-primero que ya rige todo este repo — MCP, `ROLE_TOOL_SUBSETS`, HITL), con
+auditoría de seguridad publicada. Y, clave para este pedido puntual: **Tauri v2 compila a Mac, Windows,
+Linux, iOS y Android desde el mismo código** — envolviendo el `web/index.html` que YA EXISTE, sin
+reescribir la UI desde cero. La capa nativa de Rust es lo que le daría acceso real a recursos del sistema
+(CPU/batería/procesos) que una pestaña de navegador nunca puede tener — respuesta directa a "gestionar los
+recursos de la Mac desde la app".
+[Fuente: Tauri vs Electron 2026](https://tech-insider.org/tauri-vs-electron-2026/)
+
+### Decisiones confirmadas por el fundador (2026-08-11/12, sesión que retomó la anterior cortada a mitad)
+
+1. **No construir Forma B (pool entre desconocidos)** — sigue fuera de alcance.
+2. **Motor local: Ollama embebido, confirmado** — la app de Snarf lo instala/gestiona puertas adentro,
+   nunca expuesto como producto aparte. MLX (Mac-only) sigue siendo lo que ya corre en la Mac del
+   fundador; Ollama es lo que hace esto viable también en Windows/Linux sin construir un motor propio.
+3. **BYOK ("usá tu suscripción de ChatGPT/Grok"): descartado.** Investigado con `WebSearch`: una
+   suscripción de consumidor no se puede conectar a una app de terceros (lo prohíben los propios términos
+   del proveedor) — solo una API key separada, facturada aparte, permitiría esto, y la mayoría de
+   usuarios no técnicos no llega a configurarla (problema de UX real y documentado en la industria).
+   Onboarding queda en **dos caminos**, no tres: "Usalo ya" (tier pago hosted, cero configuración) y
+   "Usá el cómputo de tu compu" (Ollama embebido, gratis, opt-in).
+   [Fuente: BYOK y términos de OpenAI](https://docs.warp.dev/agent-platform/inference/bring-your-own-api-key/)
+4. **App de escritorio (Mac/Windows) primero, en Tauri v2**, envolviendo `web/index.html` — desbloquea
+   control real de recursos + es la base técnica para que la propia Mac/PC del usuario sea su nodo de
+   cómputo (generaliza el Tailscale actual). App de celular después, como cliente liviano — nunca nodo de
+   cómputo (iOS/Android lo prohíben arquitecturalmente, ver Hallazgo 3).
+5. **Notion sumado al alcance de las apps** (pedido nuevo del fundador esta ronda): además de leer, poder
+   escribir/modificar/borrar dentro de bases de datos específicas de Notion desde la app. Contexto real
+   importante — esto no arranca de cero: `snarf/capabilities/notion.py` (ADR 0075) ya tiene 4 tools
+   (`notion_search`, `notion_read_page`, `notion_create_page`, `notion_append_to_page`), y
+   `NOTION_API_KEY` **ya está configurada en `.env`** (verificado 2026-08-12 — la nota de memoria que
+   decía "sin configurar" quedó desactualizada, hay que confirmar con el fundador si ya compartió páginas
+   con la integración antes de asumir que ya funciona contra datos reales). Falta lo que ya estaba
+   anotado como pendiente desde esa fase: bidireccionalidad real con Drive, gestión de bases de datos
+   específicas (crear/editar/borrar filas, no solo páginas sueltas), indexado en `drive_search_knowledge`.
+   Ver memoria `snarf_roadmap_legion_and_notion_deferred_items` para el resto del contexto de esa fase
+   (manuales de GNT para la Legión de marketing, agente secretario) — sigue vigente, no se pierde.
+6. **Tier pago = cómputo cloud-hosted sin depender de tu propia máquina** — esto ya es, en esencia, la
+   Fase 8/parte 2 (Langfuse) + `llm_routing.py` con proveedores cloud, solo falta la superficie de
+   facturación — no es infraestructura nueva.
+7. Esta fase queda **bloqueada por la Fase 3** (usuarios de prueba reales) igual que la Fase 8/2 — no tiene
+   sentido construir emparejamiento multi-dispositivo antes de tener un segundo usuario real que lo use.
+
+**Estado real: todavía sin arrancar el código de las apps** — esta ronda solo dejó las decisiones de
+arquitectura confirmadas y un plan (`~/.claude/plans/effervescent-wandering-hammock.md`, ver también el
+resumen de decisiones acá). Arranca aparte, cuando el fundador confirme cuándo (después del mapa de n8n
+de abajo, o en paralelo).
+
+---
+
+## Fase 14 — Mapa navegable de Snarf en n8n (arrancando, bloqueada por una API key de n8n)
+
+Pedido del fundador (misma sesión que la Fase 13 refinada): no los dos workflows simples de
+`n8n_workflows/` (ver/editar prompts, ya construidos), sino una representación completa y navegable de la
+arquitectura real de Snarf en n8n — Orchestrator con todos los agentes/skills debajo, poder entrar
+(drill-down) a cada uno y ver su flujo interno, entrar a un subagente si lo tiene, y editar cada nodo
+desde ahí.
+
+**Jerarquía real descubierta (explorada 2026-08-11/12, no hay que reinventar una segunda):**
+`snarf/telemetry/brain.py` ya tiene la única jerarquía padre/hijo codificada del repo (`NODE_PARENT`,
+hoy solo usado para los 7 roles del Executive Board colgando de `specialist_executive_board`) — el mapa
+de n8n tiene que reflejar ese mismo taxonomy. 13 Specialists reales agrupados en 7 carpetas
+(`agency/community/content/finance/productivity/research/sales` + raíz), Executive Board como rama
+separada con 7 sub-roles (el único ejemplo real hoy de "agente con subagentes adentro"), y un único caso
+real de un Specialist inyectando a otro (`ClientStatusSpecialist` → `ProjectManager`).
+
+**Extensión de cobertura ya hecha esta ronda (ADR 0153):** los 7 roles del Executive Board ahora sí tienen
+`prompt_id` real (`executive_board_{cto,coo,research,ceo,cfo,cmo,creative}`), editable vía `/n8n/prompts`
+igual que los otros 20. `community_pulse`/`monthly_pnl` quedan afuera (determinísticos, sin LLM, sin
+prompt) y el meta-prompt de Skill Factory queda afuera a propósito (plantilla con guardrails de seguridad
+reales, no un texto libre seguro de reescribir — ver ADR 0153 para el razonamiento completo).
+
+**Bloqueante real:** un mapa de ~15-20 workflows interconectados (nodos "Execute Workflow" que navegan
+entre sub-workflows) necesita el ID real que n8n asigna a cada uno al importarlo — armar eso a mano sin
+poder crear/verificar en n8n desde acá es lento y frágil. El fundador confirmó que va a generar una API
+key de n8n. **Paso a paso para cuando esté frente a la Mac** (n8n solo escucha en `127.0.0.1:5678`, no
+es alcanzable de otra forma):
+
+1. Abrir `http://127.0.0.1:5678` en un navegador de la Mac, loguearse con la cuenta de owner ya creada.
+2. Ir a **Settings** (ícono de engranaje, abajo a la izquierda) → **n8n API**.
+3. **Create an API key** → copiar el valor completo (empieza con `n8n_api_...`).
+4. Guardarlo en un lugar seguro (ej. gestor de contraseñas) — no se puede volver a ver completo después
+   de cerrar esa pantalla, solo regenerar uno nuevo.
+5. Pegarlo en la sesión de Claude Code que esté usando en ese momento (puede ser esta misma sesión
+   continuada, o una nueva — ver nota de continuidad abajo).
+
+**Continuidad entre sesiones (el fundador puede estar en el iPhone ahora, en la Mac después):** no hace
+falta releer nada de este documento a mano ni repetir contexto — es exactamente para esto que este
+roadmap vive en el repo y no en `~/.claude/plans/` (ver la nota al principio del archivo). Una sesión
+nueva de Claude Code abierta en este repo, con el `CLAUDE.md` de siempre, ya apunta acá. Alcanza con decir
+algo como *"seguimos con la Fase 14 del roadmap de n8n, tengo la API key: `<pegarla>`"* y la sesión nueva
+tiene todo el contexto real (esta sección, el ADR 0153, los dos workflows ya construidos en
+`n8n_workflows/`) sin tener que reconstruir nada. El plan detallado de esta ronda, con el diseño completo
+del árbol de workflows propuesto, además queda en `~/.claude/plans/effervescent-wandering-hammock.md` por
+si hace falta el detalle turno-a-turno de cómo se llegó a estas decisiones.
+
+---
+
+## Norte del plan: "Mark 1" vs. "Mark 2"
+
+Encuadre real dado por el fundador el 2026-08-11: **Snarf v1 ("Mark 1") se considera terminado cuando se
+pueda usar Snarf v1 para construir Snarf v2 ("Mark 2")** — el criterio de "listo" no es una lista de
+features, es que el propio sistema alcance capacidad real de auto-extensión productiva. Esto no es un
+concepto nuevo aislado — ya hay piezas reales apuntando exactamente ahí, hoy dispersas en este documento:
+Skill Factory (ADR 0101/0102, el lazo de auto-evolución ya existe), la Pieza C del Track paralelo
+(proactividad — la fuente de ideas que le faltaba a ese lazo), y ahora Fase 9.3 + los workflows de
+`n8n_workflows/` (el fundador pudiendo hablar con Snarf, construir con Snarf, y verlo reflejado en n8n).
+Ninguna fase individual de arriba está etiquetada "Mark 1 completo" — es un criterio transversal a
+revisar cuando el Track paralelo + Skill Factory maduren, no una fase más en la lista.
 
 ---
 

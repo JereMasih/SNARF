@@ -1,5 +1,6 @@
 import snarf.executive.process as process
 from snarf.executive.roles import CTO_CONFIG
+from snarf.runtime import prompt_registry
 
 
 class _FakeUnavailableLLM:
@@ -16,9 +17,11 @@ class _FakeLLM:
     def __init__(self, tool_to_call: str | None = None):
         self._tool_to_call = tool_to_call
         self.received_tools = None
+        self.received_system = None
 
     def generate(self, system, messages, tools=None, tool_handler=None):
         self.received_tools = tools
+        self.received_system = system
         if self._tool_to_call and tool_handler:
             tool_handler(self._tool_to_call, {"query": "x"})
         return type(
@@ -88,6 +91,34 @@ def test_consult_role_always_closes_the_bridge_even_on_llm_failure(monkeypatch):
 
     assert "boom" in result["headline"]
     assert _FakeBridge.instances[0].closed is True
+
+
+def test_consult_role_uses_the_active_prompt_registry_version_when_edited(monkeypatch, tmp_path):
+    # Fase 13 (extensión de cobertura del Prompt Registry): una edición real
+    # vía prompt_registry.save_new_version (mismo camino que /n8n/prompts)
+    # tiene que llegar de verdad al system prompt real con el que se llama
+    # al LLM del rol, sin reiniciar nada — mismo criterio que los otros ~20
+    # prompts ya cubiertos.
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    _FakeBridge.instances = []
+    monkeypatch.setattr(process, "_MCPToolBridge", _FakeBridge)
+    prompt_registry.save_new_version("executive_board_cto", "system prompt editado a mano", CTO_CONFIG.system_prompt)
+    llm = _FakeLLM(tool_to_call=None)
+
+    process.consult_role(CTO_CONFIG, "pregunta", llm)
+
+    assert llm.received_system == "system prompt editado a mano"
+
+
+def test_consult_role_falls_back_to_the_hardcoded_default_when_never_edited(monkeypatch, tmp_path):
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    _FakeBridge.instances = []
+    monkeypatch.setattr(process, "_MCPToolBridge", _FakeBridge)
+    llm = _FakeLLM(tool_to_call=None)
+
+    process.consult_role(CTO_CONFIG, "pregunta", llm)
+
+    assert llm.received_system == CTO_CONFIG.system_prompt
 
 
 def test_consult_role_degrades_honestly_without_calling_any_tool(monkeypatch):

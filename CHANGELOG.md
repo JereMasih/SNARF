@@ -2,6 +2,22 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-12] Extensión de cobertura del Prompt Registry: los 7 roles del Executive Board (ADR 0153)
+
+- 7 `prompt_id` nuevos (`executive_board_{cto,coo,research,ceo,cfo,cmo,creative}`) — antes vivían inline
+  en `snarf/executive/roles.py::_prompt()`, sin pasar nunca por el Prompt Registry (Fase 6, ADR 0141) ni
+  ser editables vía `/prompts`/`/n8n/prompts`.
+- `snarf/executive/process.py::consult_role` ahora lee la versión activa real vía
+  `prompt_registry.get_active_text()` antes de llamar al LLM del rol — una edición/rollback queda vivo de
+  inmediato, sin reiniciar nada, mismo criterio que los otros 20 prompts.
+- Decisión explícita de NO sumar `community_pulse`/`monthly_pnl` (determinísticos, sin LLM, sin prompt) ni
+  el meta-prompt de Skill Factory (plantilla con guardrails de seguridad reales, no un texto libre seguro
+  de reescribir) — ver ADR 0153 para el razonamiento completo.
+- Motivado por la Fase 14 del roadmap de observabilidad/n8n (mapa navegable de la arquitectura de Snarf en
+  n8n) — desbloquea que ese mapa cubra también la rama del Executive Board, no solo `snarf/specialists/`.
+- `n8n_workflows/snarf_editar_prompt.json` actualizado con los 7 `prompt_id` nuevos en el dropdown.
+- 2 tests nuevos en `tests/test_executive_process.py`. 1292/1292 tests de la suite completa.
+
 ## [2026-08-11] Fase 11: `system_introspect`, primer tool MCP de introspección real (ADR 0152)
 
 - Nuevo tool real `system_introspect` (sin parámetros) en `Orchestrator.TOOLS` — delega a
