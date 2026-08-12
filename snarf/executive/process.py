@@ -104,12 +104,25 @@ class _MCPToolBridge:
             await self._stdio_cm.__aexit__(None, None, None)
 
 
-def consult_role(role_config: ExecutiveRoleConfig, question: str, llm, repo_root: Path = REPO_ROOT) -> dict:
+def consult_role(
+    role_config: ExecutiveRoleConfig,
+    question: str,
+    llm,
+    repo_root: Path = REPO_ROOT,
+    upstream_context: str | None = None,
+) -> dict:
     """Consulta real a un rol: levanta su propio proceso MCP, corre el loop
     de herramientas de `llm` contra su subset real, y devuelve
     {headline, opinions, raw}. Nunca inventa una opinión si el LLM del rol no
     está disponible — degrada honesto, mismo criterio que
-    DashboardCuratorSpecialist/GmailDigestSpecialist."""
+    DashboardCuratorSpecialist/GmailDigestSpecialist.
+
+    `upstream_context` (Fase 17, ADR 0158): texto ya armado con las posturas
+    de una stage anterior del Executive Board, cuando hay stages
+    configuradas (ver snarf/runtime/agent_graph_registry.py). Se antepone al
+    system prompt real como INFORMACIÓN adicional, nunca como autoridad —
+    ningún rol pasa a decidir por otro (ADR 0094 sigue vigente), solo recibe
+    más contexto para opinar con más criterio."""
     if not llm.available:
         return {
             "headline": f"No se pudo consultar: falta configurar el modelo de lenguaje del rol {role_config.role}.",
@@ -135,6 +148,8 @@ def consult_role(role_config: ExecutiveRoleConfig, question: str, llm, repo_root
         system_prompt = prompt_registry.get_active_text(
             f"executive_board_{role_config.role}", role_config.system_prompt
         )
+        if upstream_context:
+            system_prompt = f"{system_prompt}\n\n{upstream_context}"
         response = llm.generate(
             system=system_prompt,
             messages=[{"role": "user", "content": question}],

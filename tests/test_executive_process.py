@@ -132,3 +132,27 @@ def test_consult_role_degrades_honestly_without_calling_any_tool(monkeypatch):
     # 'inferencia' — el parser ya lo garantiza, este test confirma que el
     # flujo real de consult_role no lo evita de otra forma.
     assert result["opinions"][0]["basis"] == "inferencia"
+
+
+def test_consult_role_prepends_upstream_context_to_the_system_prompt(monkeypatch):
+    # Fase 17 (ADR 0158): cuando este rol corre en una stage posterior a
+    # otra, el texto de la stage anterior tiene que llegar de verdad al
+    # system prompt real con el que se llama al LLM.
+    _FakeBridge.instances = []
+    monkeypatch.setattr(process, "_MCPToolBridge", _FakeBridge)
+    llm = _FakeLLM(tool_to_call=None)
+
+    process.consult_role(CTO_CONFIG, "pregunta", llm, upstream_context="Postura previa de coo: foco en X")
+
+    assert llm.received_system.startswith(CTO_CONFIG.system_prompt)
+    assert "Postura previa de coo: foco en X" in llm.received_system
+
+
+def test_consult_role_without_upstream_context_never_touches_the_system_prompt(monkeypatch):
+    _FakeBridge.instances = []
+    monkeypatch.setattr(process, "_MCPToolBridge", _FakeBridge)
+    llm = _FakeLLM(tool_to_call=None)
+
+    process.consult_role(CTO_CONFIG, "pregunta", llm, upstream_context=None)
+
+    assert llm.received_system == CTO_CONFIG.system_prompt

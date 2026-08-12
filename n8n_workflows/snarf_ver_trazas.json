@@ -1,0 +1,97 @@
+{
+  "name": "Snarf - Ver trazas",
+  "nodes": [
+    {
+      "id": "manual-trigger-1",
+      "name": "Ejecutar manualmente",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-400, 0],
+      "parameters": {}
+    },
+    {
+      "id": "http-get-traces-1",
+      "name": "GET /n8n/traces",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-160, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "http://host.docker.internal:8002/n8n/traces",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Snarf n8n token"
+        }
+      }
+    },
+    {
+      "id": "split-traces-1",
+      "name": "Una fila por traza",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [80, 0],
+      "parameters": {
+        "fieldToSplitOut": "traces"
+      }
+    },
+    {
+      "id": "build-replay-link-1",
+      "name": "Armar link de replay",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [320, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "trace_id",
+              "type": "string",
+              "value": "={{ $json.trace_id }}"
+            },
+            {
+              "name": "kind",
+              "type": "string",
+              "value": "={{ $json.kind }}"
+            },
+            {
+              "name": "estado",
+              "type": "string",
+              "value": "={{ $json.estado }}"
+            },
+            {
+              "name": "roles",
+              "type": "string",
+              "value": "={{ ($json.roles || []).join(', ') }}"
+            },
+            {
+              "name": "replay_url",
+              "type": "string",
+              "value": "=REEMPLAZAR_POR_LA_URL_REAL_DEL_HUD/?replay={{ $json.trace_id }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Ejecutar manualmente": {
+      "main": [[{ "node": "GET /n8n/traces", "type": "main", "index": 0 }]]
+    },
+    "GET /n8n/traces": {
+      "main": [[{ "node": "Una fila por traza", "type": "main", "index": 0 }]]
+    },
+    "Una fila por traza": {
+      "main": [[{ "node": "Armar link de replay", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

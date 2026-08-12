@@ -1,0 +1,83 @@
+{
+  "name": "Snarf - Confirmar cambio de agente",
+  "nodes": [
+    {
+      "id": "form-trigger-1",
+      "name": "Formulario: confirmar cambio",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [-200, 0],
+      "webhookId": "snarf-confirmar-cambio-agente",
+      "parameters": {
+        "formTitle": "¿Estás seguro que querés aplicar este cambio?",
+        "formDescription": "Pegá el agent_id y el change_id que te dio 'Snarf - Proponer cambio de agente' DESPUÉS de haber revisado el diff que mostró ese workflow. Confirmar acá aplica el cambio de verdad -- prompt/tools/routing/stages quedan escritos con historial real (rollback siempre posible desde el cockpit del founder).",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "agent_id",
+              "fieldType": "dropdown",
+              "requiredField": true,
+              "fieldOptions": {
+                "values": [
+                  { "option": "cto" },
+                  { "option": "coo" },
+                  { "option": "research" },
+                  { "option": "ceo" },
+                  { "option": "cfo" },
+                  { "option": "cmo" },
+                  { "option": "creative" }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "change_id",
+              "fieldType": "text",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "http-apply-1",
+      "name": "POST /n8n/agent/{id}/apply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [40, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:8002/n8n/agent/{{ $json.agent_id }}/apply",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ change_id: $json.change_id }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Snarf n8n token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Formulario: confirmar cambio": {
+      "main": [
+        [
+          {
+            "node": "POST /n8n/agent/{id}/apply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

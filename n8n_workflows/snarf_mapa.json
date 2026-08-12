@@ -233,6 +233,63 @@
           "cachedResultName": "Snarf - Editar prompt"
         }
       }
+    },
+    {
+      "id": "proponer-cambio-agente",
+      "name": "Proponer cambio de agente",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -100,
+        -800
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "lc8o7tp6vqcvUA0Q",
+          "mode": "list",
+          "cachedResultName": "Snarf - Proponer cambio de agente"
+        }
+      }
+    },
+    {
+      "id": "confirmar-cambio-agente",
+      "name": "Confirmar cambio de agente",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -100,
+        -850
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "qANAzKhGCULNwFxq",
+          "mode": "list",
+          "cachedResultName": "Snarf - Confirmar cambio de agente"
+        }
+      }
+    },
+    {
+      "id": "ver-trazas",
+      "name": "Ver trazas",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -100,
+        -900
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "orH24U4BIeQnWTgR",
+          "mode": "list",
+          "cachedResultName": "Snarf - Ver trazas"
+        }
+      }
     }
   ],
   "connections": {
@@ -296,6 +353,21 @@
           },
           {
             "node": "Editar un prompt",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Proponer cambio de agente",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Confirmar cambio de agente",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Ver trazas",
             "type": "main",
             "index": 0
           }

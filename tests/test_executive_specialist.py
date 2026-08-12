@@ -1,15 +1,20 @@
 import snarf.executive.specialist as specialist_module
 from snarf.executive.specialist import ExecutiveBoardSpecialist
+from snarf.runtime import agent_graph_registry
 
 
-def _fake_consult_role(role_config, question, llm, repo_root):
+def _fake_consult_role(role_config, question, llm, repo_root, upstream_context=None):
     if role_config.role == "cfo":
         raise RuntimeError("proveedor caído")
-    return {"headline": f"{role_config.role} opina sobre: {question}", "opinions": [], "raw": ""}
+    result = {"headline": f"{role_config.role} opina sobre: {question}", "opinions": [], "raw": ""}
+    if upstream_context:
+        result["received_upstream_context"] = upstream_context
+    return result
 
 
 def _board(tmp_path, monkeypatch):
     monkeypatch.setattr(specialist_module, "CACHE_DIR", tmp_path / "executive_board")
+    monkeypatch.setattr(agent_graph_registry, "AGENT_GRAPH_PATH", tmp_path / "agent_graph.json")
     return ExecutiveBoardSpecialist(llm_factory_for_role=lambda role: object())
 
 
@@ -76,3 +81,53 @@ def test_consult_persists_the_result_for_cached_consult(tmp_path, monkeypatch):
     cached = board.cached_consult()
     assert cached["question"] == "pregunta"
     assert "cto" in cached["roles"]
+
+
+# --- Motor de stages (Fase 17, ADR 0158) ------------------------------------
+
+
+def test_consult_without_stages_configured_behaves_exactly_like_before(tmp_path, monkeypatch):
+    # Sin ninguna versión guardada en agent_graph_registry, _stages_for()
+    # debe devolver una única stage con los roles pedidos — mismo fan-out
+    # 100% paralelo de siempre, ningún rol recibe upstream_context.
+    monkeypatch.setattr(specialist_module, "consult_role", _fake_consult_role)
+    board = _board(tmp_path, monkeypatch)
+
+    result = board.consult("pregunta", roles=["cto", "coo"])
+
+    assert "received_upstream_context" not in result["roles"]["cto"]
+    assert "received_upstream_context" not in result["roles"]["coo"]
+
+
+def test_consult_with_stages_runs_a_later_stage_after_the_earlier_one(tmp_path, monkeypatch):
+    monkeypatch.setattr(specialist_module, "consult_role", _fake_consult_role)
+    board = _board(tmp_path, monkeypatch)
+    agent_graph_registry.save_new_version([["cto"], ["coo"]])
+
+    result = board.consult("pregunta", roles=["cto", "coo"])
+
+    assert "received_upstream_context" not in result["roles"]["cto"]
+    assert "cto opina" in result["roles"]["coo"]["received_upstream_context"]
+
+
+def test_consult_with_stages_never_drops_a_role_missing_from_the_saved_graph(tmp_path, monkeypatch):
+    # El grafo guardado solo menciona a cto/coo — research se pidió también
+    # y no aparece en ninguna stage: tiene que correr igual (stage extra).
+    monkeypatch.setattr(specialist_module, "consult_role", _fake_consult_role)
+    board = _board(tmp_path, monkeypatch)
+    agent_graph_registry.save_new_version([["cto"], ["coo"]])
+
+    result = board.consult("pregunta", roles=["cto", "coo", "research"])
+
+    assert set(result["roles"].keys()) == {"cto", "coo", "research"}
+
+
+def test_consult_a_failed_role_never_gets_forwarded_as_upstream_context(tmp_path, monkeypatch):
+    monkeypatch.setattr(specialist_module, "consult_role", _fake_consult_role)
+    board = _board(tmp_path, monkeypatch)
+    agent_graph_registry.save_new_version([["cfo"], ["coo"]])
+
+    result = board.consult("pregunta", roles=["cfo", "coo"])
+
+    assert "proveedor caído" in result["roles"]["cfo"]["headline"]
+    assert "received_upstream_context" not in result["roles"]["coo"]

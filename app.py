@@ -57,6 +57,9 @@ from snarf.runtime import process_control
 from snarf.runtime import generation_config
 from snarf.runtime import introspection
 from snarf.runtime import prompt_registry
+from snarf.runtime import agent_registry
+from snarf.runtime import agent_change_proposals
+from snarf.runtime import n8n_generator
 from snarf.knowledge.extraction import categorize_mime
 from snarf.specialists import dashboard_curator as dashboard_curator_module
 from snarf.specialists.dashboard_curator import DashboardCuratorSpecialist
@@ -73,6 +76,7 @@ from snarf.telemetry import (
     n8n_webhook_sink,
     redis_sink,
     relevance,
+    replay,
     usage_tracker,
     verbs,
     widget_summary,
@@ -1189,6 +1193,69 @@ def n8n_put_generation_config(role: str, payload: dict, _: None = Depends(requir
 @app.post("/n8n/generation-config/{role}/rollback")
 def n8n_rollback_generation_config(role: str, payload: dict, _: None = Depends(require_n8n_token)):
     return _rollback_generation_config(role, payload, DEFAULT_USER_ID)
+
+
+# --- Fase 16-19 del plan de observabilidad/n8n (ADR 0157/0159/0160): receta
+# completa de un rol del Executive Board (prompt + tools + routing + stages,
+# cada uno con su valor activo y su historial) vía agent_registry.py, y el
+# camino de escritura de DOS PASOS con confirmación (propose calcula un diff
+# real y no aplica nada; apply revalida que el estado no cambió desde el
+# propose y recién ahí escribe) — la categoría "fundador confirmado en
+# vivo" que ADR 0156 autorizó, distinta de la escritura autónoma de un solo
+# paso que ya tienen `/n8n/prompts`/`/n8n/generation-config` (ADR 0145, sin
+# cambios). El nodo "Ver receta actual" que suma snarf/runtime/
+# n8n_generator.py a cada rol del canvas pega contra el GET de acá abajo.
+@app.get("/n8n/agent/{agent_id}")
+def n8n_get_agent_recipe(agent_id: str, _: None = Depends(require_n8n_token)):
+    try:
+        return agent_registry.get_agent_recipe(agent_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+
+
+@app.post("/n8n/agent/{agent_id}/propose")
+def n8n_propose_agent_change(agent_id: str, payload: dict, _: None = Depends(require_n8n_token)):
+    try:
+        return agent_change_proposals.propose(agent_id, payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/n8n/agent/{agent_id}/apply")
+def n8n_apply_agent_change(agent_id: str, payload: dict, _: None = Depends(require_n8n_token)):
+    change_id = payload.get("change_id")
+    if not isinstance(change_id, str) or not change_id:
+        raise HTTPException(400, "'change_id' es obligatorio")
+    try:
+        recipe = agent_change_proposals.apply(change_id)
+    except agent_change_proposals.StaleChangeError as exc:
+        raise HTTPException(409, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    # Regeneración del mapa de n8n en background — best-effort, nunca puede
+    # tumbar una escritura que ya se aplicó de verdad a los registros (ver
+    # n8n_generator.sync_executive_board_safe, mismo criterio de
+    # resiliencia que n8n_webhook_sink.py).
+    threading.Thread(target=n8n_generator.sync_executive_board_safe, daemon=True).start()
+    return recipe
+
+
+# --- Fase 20 del plan de observabilidad/n8n (ADR 0161) — Fase 12 del
+# roadmap original ("Replay/debugging"), nunca arrancada hasta ahora. El
+# replay vive en el HUD (snarf/telemetry/replay.py reagrupa
+# data/telemetry_events.jsonl, nunca vuelve a ejecutar nada) — n8n es solo
+# el lanzador: `GET /n8n/traces` lista trazas recientes para que un
+# workflow de n8n pueda ofrecer un link `?replay=<trace_id>` hacia el HUD
+# real, que es quien anima la secuencia (`GET /traces/{trace_id}`, para el
+# founder logueado, no para n8n).
+@app.get("/n8n/traces")
+def n8n_list_traces(_: None = Depends(require_n8n_token)):
+    return {"traces": replay.list_recent_traces()}
+
+
+@app.get("/traces/{trace_id}")
+def get_trace_replay(trace_id: str, user_id: str = Depends(require_user)):
+    return {"trace_id": trace_id, "events": replay.events_for_trace(trace_id)}
 
 
 # --- Fase 9.1 del plan de observabilidad/n8n (ADR 0146): primera vista real

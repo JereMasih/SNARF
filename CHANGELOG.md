@@ -2,6 +2,153 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-12] Fase 21: verificación end-to-end real — cierra las Fases 15-21 (ADR 0162)
+
+- Colima + el contenedor `snarf-n8n` estaban corriendo esta ronda (a diferencia de las Fases 18-20) —
+  verificación real de punta a punta, no solo tests: `n8n_generator.sync_executive_board()` corrido contra
+  n8n real (mismo id que ya tenía, confirma idempotencia real); tres workflows nuevos
+  (`Snarf - Proponer/Confirmar cambio de agente`, `Snarf - Ver trazas`) creados en n8n real y enlazados
+  desde el mapa raíz (`Snarf - Mapa`, ahora 16 nodos).
+- **Server real de producción reiniciado (puerto 8002, LaunchAgent `com.snarf.server`)** — confirmado
+  explícitamente con el fundador antes de hacerlo, sin excepción (CLAUDE.md). Verificado sano después:
+  tráfico real de sus dispositivos (Tailscale) sirviendo 200 OK de inmediato.
+- Ciclo real n8n→Snarf de producción probado desde dentro del contenedor: `GET /n8n/agent/cto`,
+  `GET /n8n/traces`, `POST /n8n/agent/cto/propose` — los tres reales, los tres 200.
+- Deliberadamente **no** se corrió `apply` contra producción con el prompt de prueba del `propose` — mutar
+  el CTO real del fundador solo para demostrar el endpoint no vale la pena, aunque sea reversible. Queda
+  como el primer `apply` real pendiente de que el fundador lo dispare con un cambio de verdad.
+- Cierra las siete fases (15-21) del plan de n8n como control-plane completo de agentes — ver
+  `ROADMAP_OBSERVABILIDAD_MULTIUSUARIO_N8N.md`. Sin commitear/pushear todavía a propósito.
+- 1384/1384 tests, sin cambios de código en esta fase.
+
+## [2026-08-12] Fase 20: Replay/debugging — Fase 12 del roadmap, nunca arrancada hasta ahora (ADR 0161)
+
+- `snarf/telemetry/replay.py` (nuevo): `list_recent_traces()`/`events_for_trace()` reagrupan
+  `data/telemetry_events.jsonl` por `trace_id` — nunca vuelven a ejecutar nada ni a llamar a ningún LLM,
+  solo reordenan lo que ya pasó de verdad. Dos bugs reales de mapeo de campos (nodo/skill/agente)
+  encontrados y corregidos por los tests antes de mergear.
+- `GET /n8n/traces` (n8n, lista trazas recientes) y `GET /traces/{trace_id}` (founder logueado, detalle
+  completo) en `app.py`.
+- Frontend (`web/index.html::startTraceReplay`): reusa el pipeline visual que YA anima actividad en vivo
+  (`spawnPulse`/`renderBrainFeed`/`openBrainFullscreen`) — nunca una vista nueva desde cero. Se dispara
+  con `?replay=<trace_id>` en la URL. n8n es el lanzador (`snarf_ver_trazas.json`), el HUD el visor real
+  — n8n es un DAG estático, no sirve para animar una secuencia temporal.
+- **Verificado con Playwright en un navegador real**, no solo con tests: instancia de prueba en el puerto
+  8000 (nunca el 8002 de producción), sesión minteada con el `SESSION_SECRET` real sin usar la contraseña
+  del fundador, una traza real ya existente en el log (nunca datos inventados, todo el ciclo de solo
+  lectura). Cero errores de consola, panel abierto, grafo 3D renderizado, 8 eventos reales animados con
+  sus timestamps reales — screenshot tomado y revisado.
+- Hallazgo real de esta ronda, sin resolver: contenido sin trackear en git ajeno a esta serie de fases
+  (`tests/test_document_to_reader_optimized.py` y relacionados) — ver nota en el roadmap, a confirmar con
+  el fundador.
+- Sexta de siete fases (15-21). Sigue Fase 21 (verificación end-to-end contra la instancia real de n8n).
+- 1384/1384 tests (11 nuevos).
+
+## [2026-08-12] Fase 19: escritura n8n→Snarf con confirmación de dos pasos (ADR 0160)
+
+- `snarf/runtime/agent_change_proposals.py` (nuevo): `propose(agent_id, changes)` calcula un diff real
+  contra el estado activo (`agent_registry`) y lo deja pendiente con `change_id` y TTL de 15 minutos —
+  nunca aplica nada. `apply(change_id)` revalida optimistic-locking (rechaza con `StaleChangeError` si el
+  estado cambió desde el propose) y recién ahí escribe a los cuatro registros de la Fase 16.
+- Endpoints nuevos `POST /n8n/agent/{agent_id}/propose` y `.../apply` en `app.py` — `apply` devuelve 409
+  (no 400) ante un `StaleChangeError`, y dispara la regeneración del mapa de n8n en background tras un
+  apply real (best-effort, nunca puede tumbar la escritura ya aplicada).
+- Dos workflows n8n nuevos: `snarf_proponer_cambio_agente.json` (formulario → propose, muestra el diff) y
+  `snarf_confirmar_cambio_agente.json` (formulario con el `change_id` → apply). Deliberadamente dos
+  workflows separados en vez del formulario nativo de dos páginas de n8n — ver ADR 0160 para el porqué
+  (evitar apostar a un schema no verificable sin la instancia real corriendo esta sesión).
+- Implementa en código la categoría "fundador confirmado en vivo" que ADR 0156 autorizó — `/n8n/prompts`/
+  `/n8n/generation-config` (ADR 0145, escritura autónoma de un paso) siguen exactamente igual, sin tocar.
+- Séptima de siete fases (15-21) del plan de n8n como control-plane completo de agentes — quedan Fase 20
+  (replay/debugging) y Fase 21 (verificación end-to-end contra la instancia real).
+- 1373/1373 tests (15 nuevos de esta fase + 3 de un archivo sin trackear ajeno a esta serie, ver nota de
+  honestidad en ADR 0160).
+
+## [2026-08-12] Fase 18: generador de workflows n8n reusable (ADR 0159)
+
+- `snarf/runtime/n8n_generator.py` (nuevo): reemplaza el trabajo manual de ADR 0154 (llamadas HTTP sueltas
+  hechas a mano contra la API de n8n) por un módulo committeado. `build_executive_board_workflow()` es
+  pura y testeable sin red — reconstruye la rama del board leyendo `agent_registry.get_agent_recipe()`
+  (nunca datos escritos a mano), recalculando el texto de cada nodo (prompt_id/tools/modelo) en cada
+  corrida. `push_workflow()`/`sync_executive_board()` hacen la llamada real (`POST`/`PUT
+  /api/v1/workflows`), idempotente por diseño.
+- Las conexiones del canvas reflejan las stages reales de `agent_graph_registry` cuando hay overrides
+  (Fase 17) — sin overrides, fan-out plano idéntico al de ADR 0154, cero regresión visual.
+- Nuevo `GET /n8n/agent/{agent_id}` en `app.py` (solo lectura, `require_n8n_token`) — adelantado desde la
+  Fase 19 original porque es de bajo riesgo, sin sentido demorarlo solo por la numeración de fases.
+- Nueva Skill `.claude/skills/n8n-map-sync/` para que "regenerar el mapa" sea un comando explícito en
+  cualquier sesión futura.
+- No se corrió `sync_executive_board()` contra la instancia real de n8n en esta ronda (requiere Colima +
+  `N8N_API_KEY` reales, no disponibles en esta sesión) — queda para la Fase 21 o para cuando el fundador
+  corra la Skill con su entorno levantado.
+- Sexta de siete fases (15-21) del plan de n8n como control-plane completo de agentes. Sigue Fase 19
+  (escritura n8n→Snarf con confirmación de dos pasos).
+- 1355/1355 tests (13 nuevos).
+
+## [2026-08-12] Fase 17: motor de stages real en el Executive Board (ADR 0158)
+
+- `ExecutiveBoardSpecialist.consult()` (`snarf/executive/specialist.py`) deja de ser siempre fan-out
+  paralelo: lee `agent_graph_registry.get_active_stages()` (Fase 16) y, si hay stages configuradas, corre
+  en ese orden — paralelo dentro de cada stage, secuencial entre stages, pasando el resultado de una como
+  contexto adicional (nunca autoridad, ADR 0094 sigue vigente) a la siguiente vía un nuevo parámetro
+  `upstream_context` en `consult_role()` (`snarf/executive/process.py`).
+- Sin stages configuradas (default), el comportamiento es byte-a-byte idéntico al fan-out de siempre — sin
+  overrides, cero cambio de comportamiento.
+- Un rol pedido en `roles=` que el grafo guardado no menciona en ninguna stage corre igual, en una stage
+  extra al final — nunca se pierde un rol por un grafo incompleto.
+- Corriendo la suite completa (no solo los tests nuevos) aparecieron 2 tests preexistentes rotos por el
+  cambio de firma de `consult_role` (dobles de test con la firma vieja de 4 argumentos, sin el
+  `upstream_context=None` nuevo) — corregidos. Recordatorio real: un cambio de firma en una función muy
+  usada en tests necesita grep de todos sus dobles, no solo correr el módulo que se está tocando.
+- Quinta de siete fases (15-21). Sigue Fase 18 (generador de workflows n8n reusable).
+- 1342/1342 tests (6 nuevos; corrección de honestidad sobre esta cifra en ADR 0158 — la primera corrida
+  reportó "1 failed, 1341 passed", 1341 no es el total real post-fix).
+
+## [2026-08-12] Fase 16: Agent/Capability Registry (ADR 0157)
+
+- Tres módulos nuevos en `snarf/runtime/`, mismo shape versionado (historial + rollback) ya probado por
+  `prompt_registry.py`: `tool_subset_registry.py` (qué herramientas MCP tiene cada rol del Executive
+  Board, hoy fijo en `ROLE_TOOL_SUBSETS`), `agent_graph_registry.py` (conexiones/secuencia entre roles —
+  "stages" que corren en paralelo o en serie, hoy inexistente, el board es 100% fan-out plano), y
+  `agent_registry.py` (composición sin storage propio, `get_agent_recipe()` como único punto de lectura
+  para las fases siguientes).
+- `llm_routing.py` extendido de forma aditiva: `routing_history`/`save_routing_versioned`/
+  `rollback_routing`, respaldados por un archivo paralelo (`data/llm_routing_history.json`) que nunca
+  toca el hot path real (`data/llm_routing.json`). El fallback automático entre proveedores sigue sin
+  versionar a propósito — solo escrituras reales (founder, o n8n confirmado en la Fase 19) se registran
+  en el historial.
+- `tool_subset_registry.save_new_version()` valida contra `MCP_EXPOSED_TOOLS` (rechazo temprano; el gate
+  de seguridad real sigue siendo `snarf/mcp/server.py::build_server()`, sin cambios). `agent_graph_registry
+  .save_new_version()` valida roles conocidos, sin stages vacías, sin un rol repetido entre stages.
+- Sin overrides guardados, el comportamiento es idéntico al hardcodeado de hoy — verificado explícitamente
+  por tests, no solo asumido.
+- Segunda de siete fases (15-21) del plan de n8n como control-plane completo de agentes — ver
+  `ROADMAP_OBSERVABILIDAD_MULTIUSUARIO_N8N.md`, sección "Fases 15-21". Sigue Fase 17 (motor de ejecución
+  con stages reales en `ExecutiveBoardSpecialist.consult()`).
+- 1336/1336 tests (26 nuevos).
+
+## [2026-08-12] Fase 15: gobernanza n8n — autónomo vs. fundador confirmado en vivo (ADR 0156)
+
+- El fundador pidió poder controlar desde n8n toda la construcción de un agente (prompt, herramientas,
+  ruteo, conexiones entre roles), no solo el texto del prompt como hasta ahora, con confirmación explícita
+  antes de aplicar cada cambio — y que ninguna gobernanza previa se lo impida sin haber contemplado
+  explícitamente ese caso.
+- Nueva ADR 0156 distingue, por primera vez de forma explícita, dos categorías dentro del principio "n8n
+  observa y propone, nunca decide" (ADR 0093/0139): escritura **autónoma/de máquina sin humano en el
+  momento** (el caso ya cubierto y acotado por ADR 0145, sin cambios) vs. escritura **iniciada y
+  confirmada por el fundador en vivo** en la UI de n8n (categoría nueva, autorizada ahora, sin el límite
+  de "solo texto/config" porque hay una persona real decidiendo — mismo criterio que Artículo VII de
+  Constitution ya exige para acciones de alto impacto).
+- Invariante reafirmado sin cambios: `Orchestrator._handle_tool()` sigue siendo el único motor de
+  ejecución real — ninguna de las dos categorías convierte a n8n en un segundo runtime, ambas escriben a
+  un registro de estado versionado que Snarf lee.
+- Ninguna ADR anterior (0093/0139/0145) se edita en el lugar (Artículo VIII de Constitution) — quedan
+  superadas por referencia desde ADR 0156, mismo criterio que ya usó ADR 0093 con ADR 0037.
+- Es la primera de siete fases (15-21) de un plan mayor — ver
+  `ROADMAP_OBSERVABILIDAD_MULTIUSUARIO_N8N.md`, sección "Fases 15-21" — que construye el registro
+  versionado, el motor de secuencia entre roles, el generador de workflows n8n reusable, y el camino de
+  escritura de dos pasos que esta ADR autoriza. Solo gobernanza en esta ronda, sin código todavía.
+
 ## [2026-08-12] `os_audit`: tool real de auditoría del repo en el Orchestrator (ADR 0155)
 
 - Se creó primero una Skill de Claude Code (`.claude/skills/os-audit/SKILL.md`) para auditar

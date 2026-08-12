@@ -515,3 +515,77 @@ def test_build_resilient_llm_raises_the_original_exception_when_every_provider_f
     llm = llm_routing.build_resilient_llm("dashboard_curator")
     with pytest.raises(anthropic.APIStatusError, match="caído de verdad"):
         llm.generate(system="x", messages=[])
+
+
+# --- Historial/rollback versionado (Fase 16, ADR 0157) ---------------------
+
+
+def test_routing_history_reports_an_implicit_v1_when_nothing_was_ever_saved(tmp_path, monkeypatch):
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.setattr(llm_routing, "ROUTING_HISTORY_PATH", tmp_path / "llm_routing_history.json")
+
+    versions = llm_routing.routing_history("gmail_digest")
+
+    assert versions == [
+        {
+            "version": 1,
+            "provider": llm_routing.DEFAULT_ROUTING["gmail_digest"]["provider"],
+            "model": llm_routing.DEFAULT_ROUTING["gmail_digest"]["model"],
+            "created_at": None,
+            "active": True,
+        }
+    ]
+
+
+def test_save_routing_versioned_writes_both_the_hot_path_and_the_history(tmp_path, monkeypatch):
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.setattr(llm_routing, "ROUTING_HISTORY_PATH", tmp_path / "llm_routing_history.json")
+
+    llm_routing.save_routing_versioned("executive_cto", provider="anthropic", model="claude-haiku-4-5")
+
+    assert llm_routing.load_routing()["executive_cto"] == {"provider": "anthropic", "model": "claude-haiku-4-5"}
+    versions = llm_routing.routing_history("executive_cto")
+    assert [v["version"] for v in versions] == [1, 2]
+    assert versions[1]["provider"] == "anthropic"
+    assert versions[1]["active"] is True
+
+
+def test_automatic_fallback_never_touches_the_versioned_history(tmp_path, monkeypatch):
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.setattr(llm_routing, "FALLBACK_LOG_PATH", tmp_path / "llm_fallback_log.jsonl")
+    monkeypatch.setattr(llm_routing, "ROUTING_HISTORY_PATH", tmp_path / "llm_routing_history.json")
+    monkeypatch.setattr(llm_routing, "available_providers", lambda: ["xai"])
+    monkeypatch.setattr(
+        llm_routing, "_build", lambda provider, model, role: type("F", (), {"generate": lambda self, **kw: type("R", (), {"text": "ok"})()})()
+    )
+
+    entry = llm_routing.DEFAULT_ROUTING["dashboard_curator"]
+    llm_routing.attempt_fallback("dashboard_curator", entry, _anthropic_status_error(500), system="x", messages=[])
+
+    # save_routing() (el hot path, sin versionar) sí cambió de proveedor...
+    assert llm_routing.load_routing()["dashboard_curator"]["provider"] == "xai"
+    # ...pero el historial versionado nunca se tocó (el fallback automático
+    # no pasa por save_routing_versioned).
+    assert llm_routing.routing_history("dashboard_curator")[0]["provider"] == entry["provider"]
+
+
+def test_rollback_routing_reactivates_an_older_version_and_updates_the_hot_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.setattr(llm_routing, "ROUTING_HISTORY_PATH", tmp_path / "llm_routing_history.json")
+
+    llm_routing.save_routing_versioned("executive_cfo", provider="anthropic", model="claude-haiku-4-5")
+    llm_routing.save_routing_versioned("executive_cfo", provider="gemini", model="gemini-3-pro-preview")
+    llm_routing.rollback_routing("executive_cfo", 2)
+
+    assert llm_routing.load_routing()["executive_cfo"] == {"provider": "anthropic", "model": "claude-haiku-4-5"}
+    versions = llm_routing.routing_history("executive_cfo")
+    assert len(versions) == 3
+    assert next(v for v in versions if v["version"] == 2)["active"] is True
+
+
+def test_rollback_routing_rejects_a_version_that_never_existed(tmp_path, monkeypatch):
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.setattr(llm_routing, "ROUTING_HISTORY_PATH", tmp_path / "llm_routing_history.json")
+
+    with pytest.raises(ValueError):
+        llm_routing.rollback_routing("executive_ceo", 99)

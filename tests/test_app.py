@@ -1482,7 +1482,7 @@ def test_dashboard_executive_board_consult_persists_and_the_widget_reflects_it(c
         lambda role: object(),
     )
 
-    def fake_consult_role(role_config, question, llm, repo_root):
+    def fake_consult_role(role_config, question, llm, repo_root, upstream_context=None):
         return {"headline": f"{role_config.role}: {question}", "opinions": [], "raw": ""}
 
     import snarf.executive.specialist as specialist_module
@@ -1880,9 +1880,195 @@ def test_n8n_can_write_a_generation_config_override_and_read_it_back(monkeypatch
         put_res = anonymous_client.put("/n8n/generation-config/gmail_digest", json={"temperature": 0.6}, headers=headers)
         assert put_res.status_code == 200
         assert put_res.json()["active"]["temperature"] == 0.6
-
         get_res = anonymous_client.get("/n8n/generation-config", headers=headers)
         assert get_res.json()["gmail_digest"]["active"]["temperature"] == 0.6
+
+
+# --- Agent/Capability Registry vía n8n (Fase 16-18, ADR 0157/0159) ---------
+
+
+def test_n8n_get_agent_recipe_requires_the_control_token(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        assert anonymous_client.get("/n8n/agent/cto").status_code == 401
+
+
+def test_n8n_get_agent_recipe_returns_the_full_recipe(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from snarf.runtime import agent_graph_registry, llm_routing, prompt_registry, tool_subset_registry
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    monkeypatch.setattr(tool_subset_registry, "TOOL_SUBSETS_PATH", tmp_path / "tool_subsets.json")
+    monkeypatch.setattr(agent_graph_registry, "AGENT_GRAPH_PATH", tmp_path / "agent_graph.json")
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.setattr(llm_routing, "ROUTING_HISTORY_PATH", tmp_path / "llm_routing_history.json")
+    headers = {"X-Snarf-Token": "el-token-real"}
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        res = anonymous_client.get("/n8n/agent/cto", headers=headers)
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["agent_id"] == "cto"
+    assert set(body.keys()) >= {"prompt", "tools", "routing", "stages"}
+
+
+def test_n8n_get_agent_recipe_returns_404_for_an_unknown_agent(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    headers = {"X-Snarf-Token": "el-token-real"}
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        res = anonymous_client.get("/n8n/agent/agente_inventado", headers=headers)
+
+    assert res.status_code == 404
+
+
+def _isolate_agent_registries(monkeypatch, tmp_path):
+    from snarf.runtime import agent_change_proposals, agent_graph_registry, llm_routing, prompt_registry, tool_subset_registry
+
+    monkeypatch.setattr(prompt_registry, "PROMPTS_PATH", tmp_path / "prompts.json")
+    monkeypatch.setattr(tool_subset_registry, "TOOL_SUBSETS_PATH", tmp_path / "tool_subsets.json")
+    monkeypatch.setattr(agent_graph_registry, "AGENT_GRAPH_PATH", tmp_path / "agent_graph.json")
+    monkeypatch.setattr(llm_routing, "ROUTING_PATH", tmp_path / "llm_routing.json")
+    monkeypatch.setattr(llm_routing, "ROUTING_HISTORY_PATH", tmp_path / "llm_routing_history.json")
+    monkeypatch.setattr(agent_change_proposals, "PENDING_PATH", tmp_path / "n8n_pending_changes.json")
+    # Nunca disparar una regeneración real de n8n (red/API key reales)
+    # desde un test — el hilo en background de POST /apply queda anulado.
+    monkeypatch.setattr(app_module.n8n_generator, "sync_executive_board_safe", lambda: True)
+
+
+def test_n8n_propose_and_apply_endpoints_require_the_control_token(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        assert anonymous_client.post("/n8n/agent/cto/propose", json={"prompt_text": "x"}).status_code == 401
+        assert anonymous_client.post("/n8n/agent/cto/apply", json={"change_id": "x"}).status_code == 401
+
+
+def test_n8n_propose_never_applies_anything(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    _isolate_agent_registries(monkeypatch, tmp_path)
+    headers = {"X-Snarf-Token": "el-token-real"}
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        propose_res = anonymous_client.post("/n8n/agent/cto/propose", json={"prompt_text": "propuesta"}, headers=headers)
+        assert propose_res.status_code == 200
+        assert "change_id" in propose_res.json()
+
+        recipe_res = anonymous_client.get("/n8n/agent/cto", headers=headers)
+        assert recipe_res.json()["prompt"]["active_text"] != "propuesta"
+
+
+def test_n8n_apply_writes_the_proposed_change_and_returns_the_updated_recipe(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    _isolate_agent_registries(monkeypatch, tmp_path)
+    headers = {"X-Snarf-Token": "el-token-real"}
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        propose_res = anonymous_client.post("/n8n/agent/coo/propose", json={"prompt_text": "propuesta confirmada"}, headers=headers)
+        change_id = propose_res.json()["change_id"]
+
+        apply_res = anonymous_client.post("/n8n/agent/coo/apply", json={"change_id": change_id}, headers=headers)
+        assert apply_res.status_code == 200
+        assert apply_res.json()["prompt"]["active_text"] == "propuesta confirmada"
+
+        recipe_res = anonymous_client.get("/n8n/agent/coo", headers=headers)
+        assert recipe_res.json()["prompt"]["active_text"] == "propuesta confirmada"
+
+
+def test_n8n_apply_rejects_an_invalid_change_id(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    _isolate_agent_registries(monkeypatch, tmp_path)
+    headers = {"X-Snarf-Token": "el-token-real"}
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        res = anonymous_client.post("/n8n/agent/cto/apply", json={"change_id": "no-existe"}, headers=headers)
+
+    assert res.status_code == 400
+
+
+def test_n8n_apply_rejects_a_stale_change_with_409(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from snarf.runtime import prompt_registry
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    _isolate_agent_registries(monkeypatch, tmp_path)
+    headers = {"X-Snarf-Token": "el-token-real"}
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        propose_res = anonymous_client.post("/n8n/agent/cfo/propose", json={"prompt_text": "propuesta vieja"}, headers=headers)
+        change_id = propose_res.json()["change_id"]
+
+        # El cockpit del founder (u otra propuesta ya aplicada) cambió el
+        # estado real entre el propose y el apply.
+        anonymous_client.put("/n8n/prompts/executive_board_cfo", json={"text": "cambio en el medio"}, headers=headers)
+
+        apply_res = anonymous_client.post("/n8n/agent/cfo/apply", json={"change_id": change_id}, headers=headers)
+
+    assert apply_res.status_code == 409
+
+
+# --- Replay/debugging (Fase 20, ADR 0161) -----------------------------------
+
+
+def test_n8n_list_traces_requires_the_control_token(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        assert anonymous_client.get("/n8n/traces").status_code == 401
+
+
+def test_n8n_list_traces_reports_a_real_trace(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from snarf.telemetry import events as events_module
+    from snarf.telemetry import spans
+
+    monkeypatch.setenv("N8N_CONTROL_TOKEN", "el-token-real")
+    events_path = tmp_path / "events.jsonl"
+    monkeypatch.setattr(events_module, "DEFAULT_PATH", events_path)
+    span = spans.start_workflow("executive_board", path=events_path)
+    spans.finish(span, path=events_path)
+    headers = {"X-Snarf-Token": "el-token-real"}
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        res = anonymous_client.get("/n8n/traces", headers=headers)
+
+    assert res.status_code == 200
+    trace_ids = [t["trace_id"] for t in res.json()["traces"]]
+    assert span.trace_id in trace_ids
+
+
+def test_get_trace_replay_requires_a_logged_in_user(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        assert anonymous_client.get("/traces/algun-trace-id").status_code in (401, 403)
+
+
+def test_get_trace_replay_returns_the_ordered_events(client, monkeypatch, tmp_path):
+    from snarf.telemetry import events as events_module
+    from snarf.telemetry import spans
+
+    events_path = tmp_path / "events.jsonl"
+    monkeypatch.setattr(events_module, "DEFAULT_PATH", events_path)
+    span = spans.start_workflow("turn", path=events_path)
+    spans.finish(span, path=events_path)
+
+    res = client.get(f"/traces/{span.trace_id}")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["trace_id"] == span.trace_id
+    assert [e["event_type"] for e in body["events"]] == ["workflow.started", "workflow.finished"]
 
 
 def test_founder_and_n8n_write_paths_share_the_same_underlying_storage(monkeypatch, tmp_path):

@@ -7,6 +7,7 @@ from typing import Callable
 
 from snarf.executive.process import REPO_ROOT, consult_role
 from snarf.executive.roles import ROLE_CONFIGS
+from snarf.runtime import agent_graph_registry
 from snarf.specialists.base import Specialist
 from snarf.telemetry import detail, spans
 
@@ -36,6 +37,21 @@ OUTPUT_SCHEMA = {
         "error": {"type": "string"},
     },
 }
+
+
+def _format_upstream_context(upstream: dict[str, dict] | None) -> str | None:
+    """Texto real a anteponer al system prompt de un rol cuando corre en una
+    stage posterior a otras (Fase 17, ADR 0158) — None si `upstream` está
+    vacío (comportamiento sin cambios: consult_role no toca el system
+    prompt). Deja explícito en el propio texto que esto es información, no
+    autoridad (ADR 0094 sigue vigente: ningún rol decide por otro)."""
+    if not upstream:
+        return None
+    lines = [f"Postura previa de {role}: {data.get('headline', '')}" for role, data in upstream.items()]
+    return (
+        "Contexto de una stage anterior de esta misma consulta al board — información adicional, "
+        "nunca autoridad sobre tu propia postura, opiná con tu propio criterio:\n" + "\n".join(lines)
+    )
 
 
 class ExecutiveBoardSpecialist(Specialist):
@@ -82,6 +98,7 @@ class ExecutiveBoardSpecialist(Specialist):
                 )
             }
 
+        stages = self._stages_for(selected)
         results: dict[str, dict] = {}
         # spans.start_workflow (Fase 1 del plan de observabilidad): traza
         # propia para esta consulta al board — cada rol cuelga de acá como
@@ -89,42 +106,81 @@ class ExecutiveBoardSpecialist(Specialist):
         # mismo trace_id.
         board = spans.start_workflow("executive_board", detalle=detail.truncate_detalle(question))
         failed_roles: list[str] = []
+        upstream: dict[str, dict] = {}
         with spans.active(board):
-            # contextvars.copy_context() (Fase 1): ThreadPoolExecutor NO
-            # propaga contextvars por sí solo (a diferencia de anyio, que sí
-            # copia el context al pasar de un request async a un worker de
-            # threadpool) — sin esto, cada rol perdería tanto el
-            # trace_id/parent del board como conversation_id/user_id del
-            # turno que disparó la consulta. Un `Context` copiado solo puede
-            # correr en UN thread a la vez (`.run()` no es reentrante) — cada
-            # rol necesita su PROPIA copia, nunca una compartida entre los N
-            # submits (si no, el segundo rol en arrancar revienta con
-            # "cannot enter context: already entered").
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(selected)) as pool:
-                futures = {
-                    pool.submit(contextvars.copy_context().run, self._consult_one, role, question): role
-                    for role in selected
-                }
-                for future in concurrent.futures.as_completed(futures):
-                    role = futures[future]
-                    try:
-                        results[role] = future.result()
-                    except Exception as exc:
-                        failed_roles.append(role)
-                        results[role] = {"headline": f"No se pudo consultar a {role}: {exc}", "opinions": [], "raw": ""}
+            # Fase 17 (ADR 0158): sin stages configuradas (default,
+            # agent_graph_registry.get_active_stages() devuelve una sola
+            # stage con los 7 roles), esto es exactamente el fan-out 100%
+            # paralelo de siempre — cero cambio de comportamiento. Con
+            # stages reales, cada una corre en paralelo puertas adentro y en
+            # secuencia entre sí, pasando el resultado de la anterior como
+            # CONTEXTO (nunca autoridad, ver _consult_one/consult_role) a la
+            # siguiente.
+            for stage in stages:
+                # contextvars.copy_context() (Fase 1): ThreadPoolExecutor NO
+                # propaga contextvars por sí solo (a diferencia de anyio,
+                # que sí copia el context al pasar de un request async a un
+                # worker de threadpool) — sin esto, cada rol perdería tanto
+                # el trace_id/parent del board como conversation_id/user_id
+                # del turno que disparó la consulta. Un `Context` copiado
+                # solo puede correr en UN thread a la vez (`.run()` no es
+                # reentrante) — cada rol necesita su PROPIA copia, nunca una
+                # compartida entre los N submits (si no, el segundo rol en
+                # arrancar revienta con "cannot enter context: already
+                # entered").
+                with concurrent.futures.ThreadPoolExecutor(max_workers=len(stage)) as pool:
+                    futures = {
+                        pool.submit(contextvars.copy_context().run, self._consult_one, role, question, upstream): role
+                        for role in stage
+                    }
+                    for future in concurrent.futures.as_completed(futures):
+                        role = futures[future]
+                        try:
+                            results[role] = future.result()
+                        except Exception as exc:
+                            failed_roles.append(role)
+                            results[role] = {"headline": f"No se pudo consultar a {role}: {exc}", "opinions": [], "raw": ""}
+                # Solo roles que sí respondieron pasan como contexto a la
+                # stage siguiente — un rol fallido no debe propagar un
+                # mensaje de error como si fuera una postura real.
+                upstream = {**upstream, **{r: results[r] for r in stage if r not in failed_roles}}
         spans.finish(board, estado="completo" if not failed_roles else "error")
         outcome = {"question": question, "roles": results, "generated_at": time.time()}
         self._persist(outcome)
         return outcome
 
-    def _consult_one(self, role: str, question: str) -> dict:
+    def _stages_for(self, selected: list[str]) -> list[list[str]]:
+        """Las stages guardadas (agent_graph_registry), recortadas a los
+        roles pedidos en esta consulta puntual (`roles=` de consult()).
+        Cualquier rol pedido que la configuración guardada no menciona en
+        ninguna stage corre igual, en una stage extra al final — nunca se
+        pierde un rol seleccionado solo porque el grafo guardado no lo
+        cubre explícitamente."""
+        stored = agent_graph_registry.get_active_stages()
+        selected_set = set(selected)
+        filtered = [[role for role in stage if role in selected_set] for stage in stored]
+        filtered = [stage for stage in filtered if stage]
+        covered = {role for stage in filtered for role in stage}
+        leftover = [role for role in selected if role not in covered]
+        if leftover:
+            filtered.append(leftover)
+        return filtered or [selected]
+
+    def _consult_one(self, role: str, question: str, upstream: dict[str, dict] | None = None) -> dict:
         # spans.start_agent (Fase 1): el mejor precedente real de "agente"
         # en el sentido multi-agente — cada rol es un subproceso MCP propio
-        # (ver executive/process.py), fan-out en paralelo desde consult().
+        # (ver executive/process.py), fan-out en paralelo dentro de cada
+        # stage (ver consult()).
         span = spans.start_agent(role)
         try:
             with spans.active(span):
-                result = consult_role(ROLE_CONFIGS[role], question, self._llm_factory_for_role(role), self._repo_root)
+                result = consult_role(
+                    ROLE_CONFIGS[role],
+                    question,
+                    self._llm_factory_for_role(role),
+                    self._repo_root,
+                    upstream_context=_format_upstream_context(upstream),
+                )
             spans.finish(span, estado="completo")
             return result
         except Exception as exc:

@@ -6097,6 +6097,7 @@ async function openBrainFullscreen() {
 function closeBrainFullscreen() {
   brainOverlay.classList.remove("open");
   brainPanel.classList.remove("open");
+  brainReplayActive = false; // corta el loop de startTraceReplay si estaba corriendo
   stopBrainPolling();
   stopBrainAnimationLoop();
   clearInterval(brainLiveStatusTimer);
@@ -6114,6 +6115,54 @@ function closeBrainFullscreen() {
   if (currentView === "dashboard") startBrainMiniPolling();
 }
 brainOverlay.addEventListener("click", closeBrainFullscreen);
+
+// --- Replay de una traza real (Fase 20 del plan de observabilidad/n8n,
+// ADR 0161 — Fase 12 del roadmap original, "Replay/debugging"). n8n es solo
+// el lanzador (workflow "Snarf - Ver trazas", GET /n8n/traces) — este es el
+// visor real: reusa el mismo cerebro 3D en vivo (spawnPulse/renderBrainFeed,
+// nunca una vista nueva desde cero), animando la secuencia REAL grabada en
+// data/telemetry_events.jsonl. Nunca vuelve a llamar al LLM ni a ejecutar
+// nada — reproduce exactamente lo que ya pasó, a un ritmo acelerado fijo.
+const REPLAY_STEP_MS = 350;
+let brainReplayActive = false;
+
+function replayEventToBrainEvent(e) {
+  // /traces/{id} devuelve el evento v2 (nodo/agente/skill/estado/
+  // event_type) — spawnPulse/renderBrainFeed esperan el shape de
+  // brain.snapshot() (node/label/status/timestamp). Se traduce acá, nunca
+  // una segunda implementación de esas dos funciones para el replay.
+  return {
+    node: e.nodo,
+    label: e.skill || e.event_type || "",
+    status: e.estado === "error" ? "error" : "ok",
+    timestamp: e.timestamp,
+  };
+}
+
+async function startTraceReplay(traceId) {
+  if (brainReplayActive) return;
+  brainReplayActive = true;
+  try {
+    await openBrainFullscreen();
+    stopBrainPolling(); // el replay maneja los eventos a mano, no el poll en vivo
+    document.getElementById("pulseLayer").innerHTML = "";
+    brainFeedList.innerHTML = "";
+    const res = await apiFetch(`/traces/${encodeURIComponent(traceId)}`);
+    const data = await res.json();
+    const brainEvents = (data.events || []).filter((e) => e.nodo).map(replayEventToBrainEvent);
+    for (const ev of brainEvents) {
+      if (!brainReplayActive) break; // el founder cerró el panel en el medio
+      spawnPulse(ev);
+      renderBrainFeed([ev], false);
+      await new Promise((resolve) => setTimeout(resolve, REPLAY_STEP_MS));
+    }
+  } catch (e) {
+    // fallo silencioso: mismo criterio que pollBrain — un replay roto no
+    // debe tirar abajo el resto del dashboard.
+  } finally {
+    brainReplayActive = false;
+  }
+}
 brainCloseBtn.addEventListener("click", closeBrainFullscreen);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { stopBrainPolling(); stopBrainAnimationLoop(); return; }
@@ -8114,6 +8163,12 @@ async function pollLlmFallbackEvents() {
 }
 pollLlmFallbackEvents();
 setInterval(pollLlmFallbackEvents, 60000);
+
+// Entrada real del replay (Fase 20, ADR 0161): un workflow de n8n
+// ("Snarf - Ver trazas") linkea acá con ?replay=<trace_id> — se dispara una
+// sola vez al cargar la página, nunca en cada navegación interna.
+const _replayTraceId = new URLSearchParams(location.search).get("replay");
+if (_replayTraceId) startTraceReplay(_replayTraceId);
 </script>
 </body>
 </html>

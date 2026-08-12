@@ -250,6 +250,93 @@ def save_routing(raw: dict) -> dict:
     return routing
 
 
+# --- Historial/rollback versionado (Fase 16, ADR 0157) --------------------
+#
+# `save_routing()` de arriba es el hot path real, sin cambios: lo sigue
+# llamando attempt_fallback/maybe_revert_expired_fallback (fallback
+# automático, nunca versionado — ensuciaría el historial con reintentos que
+# no fueron una elección real) y PUT /llm-routing (founder, hoy sin
+# historial). Lo de acá abajo es aditivo, mismo shape "JSON-por-entidad" que
+# prompt_registry.py/tool_subset_registry.py, en un archivo paralelo — nunca
+# toca el shape plano de data/llm_routing.json que build_llm()/
+# _ResilientLLM ya leen en caliente en cada turno.
+ROUTING_HISTORY_PATH = Path("data/llm_routing_history.json")
+
+
+def _load_routing_history() -> dict:
+    if not ROUTING_HISTORY_PATH.exists():
+        return {}
+    return json.loads(ROUTING_HISTORY_PATH.read_text(encoding="utf-8"))
+
+
+def _save_routing_history(data: dict) -> None:
+    ROUTING_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ROUTING_HISTORY_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _seed_routing_history_entry(role: str) -> dict:
+    # DEFAULT_ROUTING[role] a propósito, nunca load_routing() — el fallback
+    # automático (save_routing() directo, sin pasar por acá) puede haber
+    # cambiado el hot path sin que este historial se haya tocado nunca; v1
+    # implícito debe seguir representando el default real de código, igual
+    # que prompt_registry._seed_entry(default) nunca mira el estado actual.
+    default = DEFAULT_ROUTING[role]
+    return {
+        "active_version": 1,
+        "versions": [
+            {"version": 1, "provider": default["provider"], "model": default["model"], "created_at": None}
+        ],
+    }
+
+
+def routing_history(role: str) -> list[dict]:
+    """Historial real de versiones de ruteo de `role`, con `active=True` en
+    la vigente. Si nunca se guardó nada por el camino versionado, el
+    proveedor/modelo real actual (`load_routing()`) cuenta como v1 implícito
+    — nunca reporta un historial vacío cuando en la práctica sí hay un
+    ruteo real corriendo."""
+    entry = _load_routing_history().get(role)
+    if not entry:
+        entry = _seed_routing_history_entry(role)
+        entry["versions"][0]["created_at"] = None
+    return [{**v, "active": v["version"] == entry["active_version"]} for v in entry["versions"]]
+
+
+def save_routing_versioned(role: str, provider: str, model: str) -> dict:
+    """Como save_routing(), pero además versiona esta escritura puntual en
+    ROUTING_HISTORY_PATH — para escrituras REALES (founder desde el cockpit,
+    o n8n confirmado, ver ADR 0160), nunca para el fallback automático (que
+    sigue llamando a save_routing() directo, sin pasar por acá)."""
+    save_routing({**load_routing(), role: {"provider": provider, "model": model}})
+    data = _load_routing_history()
+    entry = data.get(role) or _seed_routing_history_entry(role)
+    next_version = max(v["version"] for v in entry["versions"]) + 1
+    entry["versions"].append({"version": next_version, "provider": provider, "model": model, "created_at": time.time()})
+    entry["active_version"] = next_version
+    data[role] = entry
+    _save_routing_history(data)
+    return entry
+
+
+def rollback_routing(role: str, version: int) -> dict:
+    """Activa una versión ya existente del historial de ruteo, y la aplica
+    de verdad al ruteo activo (ROUTING_PATH) — a diferencia de
+    prompt_registry.rollback, acá "activar" tiene que tocar también el hot
+    path real, porque build_llm()/_ResilientLLM leen ROUTING_PATH, no este
+    historial. Nunca borra ninguna versión."""
+    data = _load_routing_history()
+    entry = data.get(role) or _seed_routing_history_entry(role)
+    versions_by_number = {v["version"]: v for v in entry["versions"]}
+    if version not in versions_by_number:
+        raise ValueError(f"Versión {version} no existe para el ruteo del rol {role!r}")
+    target = versions_by_number[version]
+    save_routing({**load_routing(), role: {"provider": target["provider"], "model": target["model"]}})
+    entry["active_version"] = version
+    data[role] = entry
+    _save_routing_history(data)
+    return entry
+
+
 _PROVIDER_API_KEY_ENV = {
     "anthropic": "ANTHROPIC_API_KEY",
     "gemini": "GEMINI_API_KEY",
