@@ -2,6 +2,26 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-12] Cierre de sesión: gap real de `.gitignore` corregido, prototipo E guardado
+
+- `.gitignore` nunca cubrió `data/prompts.json` ni `data/generation_config.json` (gap preexistente, desde
+  ADR 0141/0142) ni los archivos de datos nuevos de las Fases 16-19
+  (`data/tool_subsets.json`, `data/agent_graph.json`, `data/llm_routing_history.json`,
+  `data/n8n_pending_changes.json`) — todos datos reales de runtime que nunca deberían poder commitearse
+  por accidente, igual que el resto de `data/*`. Corregido.
+- Investigación real del cuelgue del server (ver entrada anterior) confirmó que la hipótesis del
+  acoplamiento reentrante no se pudo reproducir, y corrigió un límite real de descriptores de archivo
+  (256 → 4096) en el LaunchAgent — ninguno de los dos cambios es de código de este repo.
+- Skill Factory: bug real de concurrencia corregido (ADR 0163) — `files_written` reemplaza el diff de git
+  como fuente de verdad del alcance de una construcción.
+- Iteración de UX de n8n con el fundador (Fase 15-21, extensión sin ADR todavía): tras varias rondas de
+  prototipo en vivo, se llegó a un diseño de 7 workflows separados (uno por rol del Executive Board) con
+  edición in-node real (`Set` con checkboxes por tool) y aplicación encadenada sin confirmación en un
+  segundo workflow aparte. Sin confirmar todavía por el fundador vía la UI real — generador prototipo
+  guardado en `n8n_workflows/_prototype_e_editar_agente.py` (idempotente, IDs reales ya conocidos) para
+  no perderlo entre sesiones. Detalle turno-a-turno completo en
+  `ROADMAP_OBSERVABILIDAD_MULTIUSUARIO_N8N.md`, sección "Iteración de UX de n8n con el fundador".
+
 ## [2026-08-12] Mitigación real: server de producción colgado dos veces (apply → regen automática de n8n)
 
 - Probando en vivo un prototipo de UX para el canvas del Executive Board (nodos editables en n8n), el

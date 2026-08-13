@@ -57,9 +57,54 @@ vuelve a pasar, el paso correcto AHORA es correr `py-spy dump --pid <pid>` (ya i
 de reiniciar — eso sí daría una respuesta definitiva de dónde está bloqueado el proceso, cosa que no se
 pudo capturar en los dos incidentes reales de esta ronda porque se priorizó restaurar el servicio. Sin ADR
 nuevo para este incidente — quedó mitigado y parcialmente investigado, no hay una decisión de arquitectura
-que documentar todavía. El prototipo de canvas en sí (nodos `Set` con checkboxes reales, cadena
-`Set→Proponer→Aplicar` con un trigger propio por rol) sigue siendo trabajo exploratorio con el fundador,
-sin decisión final tomada.
+que documentar todavía.
+
+**Fix real separado, mismo día — Skill Factory (ver ADR 0163):** el fundador había intentado construir un
+skill nuevo (`document_to_reader_optimized`, conversión de documentos a EPUB) y la construcción abortó por
+un bug real de concurrencia (el chequeo de alcance de `build_skill()` comparaba diffs de `git status`
+contra todo el repo, y confundió archivos de ESTA MISMA sesión con archivos del motor de escritura).
+Corregido: `LocalCodeWriterResult` ahora expone `files_written` (autoritativo, armado en el momento de
+cada escritura real), `build_skill()` ya no consulta git en absoluto para esa decisión. El código
+placeholder que había escrito el intento anterior (link de Drive inventado, nunca llamaba a las
+capacidades reales) se descartó — **pendiente real: reconstruir ese skill bien, con una Capacidad de
+conversión a EPUB de verdad (`document_processor` no existe todavía en el repo)**, es trabajo aparte,
+no arrancado.
+
+**Iteración de UX de n8n con el fundador (en curso, sin decisión final) — arrancar sesión nueva DESDE ACÁ:**
+el fundador pidió que el mapa de n8n (Fase 14/18) se sienta como una herramienta real, no un mapa de solo
+lectura con formularios aparte. Fueron ~5 iteraciones de prototipo en vivo, cada una con un hallazgo real:
+- Prototipo B/C: nodos `Set` con campos editables (texto + un checkbox real por cada una de las 19
+  tools posibles) en vez de `noOp` de solo lectura — el fundador confirmó que esta dirección SÍ sirve.
+- El fundador pidió explícitamente que `apply` no requiera una confirmación en un segundo workflow aparte
+  ("estoy haciendo las cosas yo, no es necesario confirmar otra vez") — la cadena `Set → Proponer → Aplicar`
+  ahora corre encadenada, un solo gesto real del fundador (editar + ejecutar) alcanza. Esto es una
+  enmienda real a ADR 0156/0160 (que asumían un paso de confirmación separado) — **sin ADR escrito
+  todavía**, porque el diseño final de la UX no está cerrado.
+- Prototipo D (canvas único con 7 triggers, uno por rol): **descartado, no funcionó** — confirmado en vivo
+  que el botón de play de un nodo individual solo corre ESE nodo, nunca la cadena completa; con 7 triggers
+  compartiendo un canvas no había forma inequívoca de correr "solo este rol" con el botón real de
+  "Test workflow". Se borró de n8n (`CU43BQyLEQuEx5mS` ya no existe).
+- **Prototipo E (estado actual, 2026-08-12, sin confirmar todavía por el fundador vía la UI):** 7
+  workflows SEPARADOS, uno por rol (`Snarf - Editar CTO`, `Snarf - Editar COO`, etc.), cada uno con un
+  único trigger real — así "Test workflow" es inequívoco, corre esa cadena y ninguna otra. IDs reales:
+  `cto: K74wbPPll8HOKB19, coo: iDzcBKCwjAx5Zlyr, research: 5banqA7qoKUeYAqZ, ceo: iY91KHc0ixQNdltR,
+  cfo: 2jjQE22nggMW1mim, cmo: del2dYdbbk1QisyY, creative: ZmlhrtKO40YadiE9` (no persistidos en
+  `n8n_workflows/ids.json` todavía — siguen siendo prototipo, no la versión oficial). Generador real
+  (idempotente, IDs ya guardados) copiado al repo en `n8n_workflows/_prototype_e_editar_agente.py` — el
+  script original vivía en el scratchpad de la sesión anterior, que no sobrevive entre sesiones, por eso
+  se guardó acá antes de cerrar. Correrlo de nuevo actualiza (PUT) los mismos 7 workflows, nunca crea
+  duplicados. Si el diseño se confirma bueno, hay que llevar este patrón a `snarf/runtime/n8n_generator.py`
+  de verdad (con tests reales, integrado a `n8n_workflows/ids.json`), generalizado a los 7 roles y después
+  a las otras 8 ramas de Specialists.
+
+**Para arrancar la sesión de mañana:** pedirle al fundador que abra
+`http://127.0.0.1:5678/workflow/K74wbPPll8HOKB19` (Editar CTO) y apriete el botón **"Test workflow"** de
+arriba del canvas (no el play de ningún nodo individual) — confirmar contra el server real
+(`GET /n8n/agent/cto` con `X-Snarf-Token`, o el log de `~/Library/Logs/snarf/server_8002.log` filtrando
+`n8n/agent`) que el ciclo `propose→apply` llegó completo, sin esperar a que el fundador interprete la UI de
+n8n. Si funciona: decidir si este patrón (7 workflows separados) reemplaza a `Snarf - Executive Board`
+como superficie principal de edición, y si vale la pena escribir la ADR de enmienda a 0156/0160 (apply
+sin confirmación de dos pasos separada) antes de generalizar a las otras ramas.
 
 **Trabajo siguiente ya diseñado y aprobado (2026-08-12):** Fases 15-21 — n8n como control-plane completo de
 la construcción de agentes (no solo texto de prompt: también herramientas, ruteo, y conexiones/secuencia
