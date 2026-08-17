@@ -13,6 +13,21 @@ def test_set_and_get_conversation_id_roundtrip():
     assert context.get_conversation_id() is None
 
 
+# --- Fase 22 del plan de observabilidad/n8n (ADR 0165) ------------------
+
+
+def test_get_board_consulted_is_false_by_default():
+    context.clear_board_consulted()
+    assert context.get_board_consulted() is False
+
+
+def test_set_and_get_board_consulted_roundtrip():
+    context.set_board_consulted(True)
+    assert context.get_board_consulted() is True
+    context.clear_board_consulted()
+    assert context.get_board_consulted() is False
+
+
 # --- Fase 1 del plan de observabilidad ---------------------------------
 
 

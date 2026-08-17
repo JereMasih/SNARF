@@ -822,6 +822,71 @@ def test_llm_call_inside_a_tool_handler_is_parented_to_that_tool_span(orchestrat
     assert llm_span.trace_id == tool_started["trace_id"]
 
 
+# --- Fase 22 del plan de observabilidad/n8n (ADR 0165): Project Manager + área ---
+
+
+def test_handle_tool_for_a_routed_tool_nests_project_manager_and_area_spans(orchestrator):
+    from snarf.telemetry import events
+
+    orchestrator._handle_tool("finance_monthly_pnl", {"transactions": []})
+    rows = events.all_events(include_lifecycle=True)
+
+    pm_started = next(r for r in rows if r["skill"] == "project_manager" and r["event_type"] == events.WORKFLOW_STARTED)
+    pm_finished = next(r for r in rows if r["skill"] == "project_manager" and r["event_type"] == events.WORKFLOW_FINISHED)
+    area_started = next(
+        r for r in rows if r["skill"] == "area:administracion" and r["event_type"] == events.WORKFLOW_STARTED
+    )
+    tool_started = next(
+        r for r in rows if r["skill"] == "finance_monthly_pnl" and r["event_type"] == events.TOOL_STARTED
+    )
+
+    assert pm_started["event_id"] == pm_finished["event_id"]
+    assert area_started["parent_event_id"] == pm_started["event_id"]
+    assert tool_started["parent_event_id"] == area_started["event_id"]
+    assert tool_started["trace_id"] == pm_started["trace_id"] == area_started["trace_id"]
+
+
+def test_handle_tool_for_an_unrouted_tool_emits_no_project_manager_or_area_spans(orchestrator):
+    from snarf.telemetry import events
+
+    orchestrator._handle_tool("list_conversations", {})
+    rows = events.all_events(include_lifecycle=True)
+
+    assert not [r for r in rows if r["skill"] == "project_manager"]
+    assert not [r for r in rows if str(r["skill"]).startswith("area:")]
+
+
+def test_handle_tool_project_manager_span_records_area_and_board_consulted_as_attributes(orchestrator):
+    from snarf.telemetry import events
+
+    orchestrator._handle_tool("research_deep_dive", {"topic": "x"})
+    pm_finished = next(
+        r for r in events.all_events(include_lifecycle=True)
+        if r["skill"] == "project_manager" and r["event_type"] == events.WORKFLOW_FINISHED
+    )
+    assert pm_finished["attributes"] == {
+        "area": "i_d", "tool": "research_deep_dive", "board_consulted": False,
+    }
+
+
+def test_handle_tool_marks_board_consulted_when_the_board_was_consulted_earlier_in_the_turn(orchestrator, monkeypatch):
+    from snarf.telemetry import events
+
+    # El handler real de executive_board_consult dispara una consulta real
+    # al board (7 roles, subprocesos MCP) — demasiado caro/lento para un
+    # test unitario y ajeno a lo que este test verifica (que _handle_tool
+    # marque el ContextVar ANTES de llamar al handler, ver orchestrator.py).
+    monkeypatch.setitem(orchestrator._tool_handlers, "executive_board_consult", lambda i: {"ok": True})
+    orchestrator._handle_tool("executive_board_consult", {"question": "?"})
+    orchestrator._handle_tool("finance_monthly_pnl", {"transactions": []})
+
+    pm_finished = next(
+        r for r in events.all_events(include_lifecycle=True)
+        if r["skill"] == "project_manager" and r["event_type"] == events.WORKFLOW_FINISHED
+    )
+    assert pm_finished["attributes"]["board_consulted"] is True
+
+
 def test_handle_tool_records_failed_calls_in_the_activity_log(orchestrator, monkeypatch):
     from snarf.telemetry import activity_log
 

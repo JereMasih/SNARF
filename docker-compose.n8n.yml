@@ -30,6 +30,13 @@ services:
       - WEBHOOK_URL=http://127.0.0.1:5678/
       - GENERIC_TIMEZONE=America/Argentina/Buenos_Aires
       - N8N_RUNNERS_ENABLED=true
+      # Fase 23 del plan de observabilidad/n8n (2026-08-14): sin esto (default
+      # false) una ejecución pausada en un nodo Wait es invisible vía
+      # GET /api/v1/executions mientras espera — confirmado en vivo con un
+      # workflow descartable (ZZZ-spike-wait-resume, creado y borrado).
+      # Necesario para el canvas en vivo de la Fase 24 (poder consultar el
+      # estado de un turno en curso, no solo verlo si el canvas está abierto).
+      - EXECUTIONS_DATA_SAVE_ON_PROGRESS=true
     volumes:
       - ./n8n_data:/home/node/.n8n
     restart: unless-stopped

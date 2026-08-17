@@ -106,12 +106,15 @@ def start_llm(vendor: str, model: str, *, path: Path | None = None) -> Span:
     return span
 
 
-def finish(span: Span, *, estado: str = "completo", detalle: str | None = None, preview: dict | None = None, path: Path | None = None) -> None:
+def finish(
+    span: Span, *, estado: str = "completo", detalle: str | None = None, preview: dict | None = None,
+    attributes: dict | None = None, path: Path | None = None,
+) -> None:
     if not span.event_id:
         return
     events.record_lifecycle_event(
         _FINISHED_EVENT_TYPE[span.kind], span, estado=estado, detalle=detalle, preview=preview,
-        latencia_ms=span.duration_ms(), path=path,
+        attributes=attributes, latencia_ms=span.duration_ms(), path=path,
     )
 
 

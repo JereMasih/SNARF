@@ -46,6 +46,7 @@ from snarf.knowledge.vector_store import VectorStore
 from snarf.memory.episodic import EpisodicMemory
 from snarf.mcp.tools import MCP_EXPOSED_TOOLS
 from snarf.runtime import (
+    areas,
     data_backup,
     introspection,
     llm_routing,
@@ -2486,6 +2487,42 @@ class Orchestrator:
         if not handler:
             activity_log.record(name, "unknown_tool", detalle=detail.extract(name, "unknown_tool", tool_input, None))
             return {"error": f"herramienta desconocida: {name}"}
+        if name == "executive_board_consult":
+            # Fase 22 (ADR 0165): marca que este turno consultó a la Junta
+            # Directiva ANTES de que se decida el área — nunca decide el
+            # área en sí (eso sigue siendo el lookup determinístico de
+            # areas.area_for_tool más abajo), solo queda como contexto
+            # auditable en el span de Project Manager de una tool posterior.
+            context.set_board_consulted(True)
+        area_id = areas.area_for_tool(name)
+        if area_id is None:
+            return self._handle_tool_span(name, tool_input)
+        # Project Manager + área (Fase 22, ADR 0165): dos spans "workflow"
+        # reales (mismo kind que "turn"/"executive_board", ver spans.py) que
+        # antes no existían — hoy la tool colgaba plana bajo "turn". El PM
+        # cierra apenas decide el área (su trabajo real es ese lookup, nada
+        # más — no fingir un span "vivo" haciendo algo que no hace) mientras
+        # sigue siendo el padre ambiente: context.span() solo se libera al
+        # salir del `with`, así que abrir area_span/tool span DESPUÉS de
+        # finish(pm) igual los anida correctamente bajo pm.
+        pm = spans.start_workflow("project_manager", detalle=f"tool={name} area={area_id}")
+        with spans.active(pm):
+            spans.finish(
+                pm, estado="completo",
+                attributes={"area": area_id, "tool": name, "board_consulted": context.get_board_consulted()},
+            )
+            area_span = spans.start_workflow(f"area:{area_id}")
+            try:
+                with spans.active(area_span):
+                    result = self._handle_tool_span(name, tool_input)
+            except BaseException:
+                spans.fail(area_span, reason="unhandled")
+                raise
+            spans.finish(area_span, estado="completo")
+        return result
+
+    def _handle_tool_span(self, name: str, tool_input: dict) -> object:
+        handler = self._tool_handlers[name]
         started = time.monotonic()
         # spans.start_tool (Fase 1 del plan de observabilidad): abre un
         # tool.started correlacionado con el turno/tool/subagente que lo
@@ -2625,6 +2662,13 @@ class Orchestrator:
         # con firma estricta — solo AnthropicLLM._create() lo lee de acá para
         # poder cortar el stream a mitad de camino.
         context.set_request_id(request_id)
+        # board_consulted (Fase 22 del plan de observabilidad/n8n, ADR 0165):
+        # reseteado acá por la misma razón defensiva que conversation_id/
+        # user_id de arriba — _handle_tool lo pone en True si este turno
+        # consultó a la Junta Directiva antes de rutear una tool a un área,
+        # nunca decide el área (eso sigue siendo un lookup determinístico
+        # contra snarf/runtime/areas.py), solo queda como contexto auditable.
+        context.set_board_consulted(False)
         # spans.start_workflow (Fase 1): raíz de la traza de este turno —
         # todo tool call y toda llamada LLM de acá para abajo (incluido el
         # fan-out de la Inteligencia Ejecutiva, ver executive/specialist.py)
@@ -2735,6 +2779,7 @@ class Orchestrator:
             context.clear_conversation_id()
             context.clear_request_id()
             context.clear_user_id()
+            context.clear_board_consulted()
 
         self._memory.append(
             channel_name, user_input, response.text,

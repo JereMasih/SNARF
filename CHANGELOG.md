@@ -2,6 +2,98 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-14] Canvas en vivo de un turno real en n8n (ADR 0166)
+
+- Cierra el pedido original del fundador: ver un turno real de Snarf procesándose EN VIVO dentro del
+  canvas de n8n, para todo turno real (no un modo "bajo pedido"), con doble click sobre cualquier nodo
+  para ver el detalle real de esa etapa.
+- Spike real contra la instancia real de n8n (Fase 23, workflows descartables `ZZZ-spike-*`, todos
+  borrados) encontró y resolvió mecánica no documentada con claridad: los nodos `Webhook`/`Wait` creados
+  vía API necesitan un `webhookId` explícito; un `Wait` necesita `httpMethod: POST` explícito para resumir
+  por POST; la URL de resume es predecible (`{n8n_base}/webhook-waiting/{execution_id}`); el endpoint de
+  lista de ejecuciones de n8n no muestra `waiting` (bug/límite real de esa versión, irrelevante para el
+  diseño). `EXECUTIONS_DATA_SAVE_ON_PROGRESS=true` activado en `docker-compose.n8n.yml` (reinicio real del
+  contenedor, confirmado sano). Ciclo completo start→resume verificado de punta a punta contra la instancia
+  real, con el propio fundador armando el patrón a mano en la UI como control.
+- `snarf/runtime/n8n_generator.py::build_live_turn_workflow()` (nuevo): genera "Snarf - Turno en vivo" —
+  trigger que devuelve el `execution_id` real en su respuesta, encadenado a 5 nodos `Wait` genéricos
+  ("Etapa N", no nombres fijos como "Junta Directiva"/"Project Manager" — un turno real no siempre pasa por
+  esas etapas, forzar el nombre mentiría sobre los que no). El cierre real del turno siempre se manda como
+  el próximo resume disponible, así que el turno nunca queda colgado en el canvas.
+- `snarf/telemetry/n8n_live_canvas_sink.py` (nuevo): sink con estado por `trace_id` (a diferencia de
+  `n8n_webhook_sink.py`, sin estado) — arranca una ejecución real al inicio de cada turno, la avanza en
+  cada evento de ciclo de vida posterior, libera el estado al cerrar el turno. Mismo criterio de
+  resiliencia de siempre: nunca bloquea ni puede tumbar un turno real, activación explícita por
+  `N8N_LIVE_CANVAS_ENABLED`.
+- Verificación real de punta a punta (workflow real creado/activado en n8n, turno real sin mockear vía
+  `Orchestrator._handle_tool`) encontró una condición de carrera real: `responseMode: responseNode` puede
+  devolver el `execution_id` antes de que la ejecución llegue a pausarse en el primer `Wait`, y el primer
+  resume podía chocar con un `409 Conflict`. Corregido con un reintento corto y acotado (hasta 3 intentos,
+  solo ante 409) — verificado real: de 5 fallos en 7 eventos a 0 fallos, ejecución real terminada
+  `status: success`.
+- 22 tests nuevos (6 en `tests/test_n8n_generator.py`, 16 en `tests/test_n8n_live_canvas_sink.py` nuevo).
+  `tests/conftest.py` actualizado con el reset/hermeticidad del sink nuevo. Skill `n8n-map-sync`
+  actualizada para cubrir las tres superficies.
+- 1421/1421 tests de la suite completa (`.venv/bin/python -m pytest -q`), 1399 previos (post ADR 0165) + 22
+  nuevos.
+- **Pendiente real:** `N8N_LIVE_CANVAS_ENABLED` no está activa en el server de producción todavía —
+  prenderla para tráfico real de cualquier turno requiere sumarla a `.env` y reiniciar el puerto 8002,
+  decisión aparte a confirmar con el fundador.
+
+## [2026-08-14] Project Manager y áreas como etapas reales del pipeline (ADR 0165)
+
+- El fundador pidió ver, en un canvas de n8n, un turno real de Snarf en vivo (Orquestador → Junta
+  Directiva → Project Manager → área → especialista). Investigación real mostró que esas etapas no
+  existían en el código — el fundador confirmó reestructurar el Orchestrator primero, en vez de visualizar
+  algo que el código no hace (Principio VI).
+- Nuevo `snarf/runtime/areas.py`: reagrupa los 7 dominios de Specialists ya existentes
+  (agency/community/content/finance/productivity/research/sales) en 4 áreas (Operaciones, Administración,
+  I+D, Marketing) — 14 tools cubiertas, lookup determinístico, sin especialistas nuevos.
+- `Orchestrator._handle_tool` ahora anida dos spans `workflow` reales (`project_manager` → `area:<id>`)
+  alrededor de las 14 tools ruteadas — el resto de las tools sigue exactamente igual que antes. El ruteo es
+  un lookup contra la tool real a punto de ejecutarse, deliberadamente no una clasificación por LLM de la
+  síntesis del board (evita telemetría que pueda discrepar de lo que realmente pasó).
+- Cuando la Junta Directiva fue consultada antes en el mismo turno, queda anotado como contexto auditable
+  (`board_consulted`, nuevo `ContextVar` en `context.py`) — nunca decide el área.
+- `spans.finish()` ganó un parámetro `attributes` (ya soportado por `events.record_lifecycle_event`, solo
+  no se exponía).
+- Deferido a propósito, documentado explícito en el ADR: Project Manager/área no se suman al giroscopio del
+  cerebro esta ronda (heredan el mismo comportamiento que `turn`/`executive_board`, ya invisibles ahí hoy).
+- 1399/1399 tests de la suite completa (`.venv/bin/python -m pytest -q`), 1388 previos (post ADR 0164) + 11
+  nuevos (`tests/test_areas.py`, `tests/test_orchestrator.py`, `tests/test_telemetry_context.py`).
+- Primera mitad de un trabajo de dos partes — la Fase 24 (canvas en vivo real dentro de n8n, consumiendo
+  estos mismos spans) sigue pendiente, con un spike previo real contra la instancia de n8n (Fase 23) antes
+  de escribir el generador. Ver `ROADMAP_OBSERVABILIDAD_MULTIUSUARIO_N8N.md`.
+
+## [2026-08-13] Prototipo E confirmado en vivo, promovido a oficial (ADR 0164)
+
+- El fundador confirmó en vivo el ciclo completo `propose→apply` de `Snarf - Editar CTO` — primer `apply`
+  real de este camino contra producción (ADR 0162 había dejado esto pendiente a propósito). Verificado del
+  lado del server real: `POST /n8n/agent/cto/propose`/`apply` → 200 en el mismo instante, ejecución de n8n
+  `2844` (`mode: manual`, `status: success`), prompt del CTO en v2 activa.
+- El patrón de 7 workflows separados ("Snarf - Editar `<Rol>`", edición in-node de prompt/tools/routing +
+  `propose→apply` encadenado en un solo click) reemplaza al de dos workflows genéricos con confirmación
+  separada (`Snarf - Proponer/Confirmar cambio de agente`, ADR 0160) — esos dos se borraron de n8n (nunca
+  tuvieron un `apply` real) junto con sus exports (`n8n_workflows/snarf_proponer_cambio_agente.json`,
+  `snarf_confirmar_cambio_agente.json`) y sus links desde `Snarf - Mapa` (root).
+- `Snarf - Executive Board` deja de ser la superficie de edición y pasa a overview + navegación: cada rol
+  enlaza ahora a su propio editor dedicado en vez del editor de texto genérico de ADR 0154.
+- Generador movido del script suelto `n8n_workflows/_prototype_e_editar_agente.py` (borrado) a
+  `snarf/runtime/n8n_generator.py` real: `build_agent_edit_workflow()` (pura) + `sync_agent_edit_workflows()`
+  (con red, idempotente, persiste en `n8n_workflows/ids.json` bajo la clave `agent_edit`).
+  `build_executive_board_workflow()` ahora requiere esos 7 ids en vez de un `editar_prompt_workflow_id`
+  genérico único.
+- `n8n_workflows/branches/snarf_specialists_executive_board.json` (export estático ya obsoleto desde que
+  esa rama es generador-driven) y `n8n_workflows/snarf_mapa.json` (regenerado desde el estado real del
+  mapa raíz tras el patch) también se limpiaron.
+- Skill `n8n-map-sync` actualizada para cubrir los 7 editores además del overview, y para documentar que
+  hay que correrla después de un `apply` real (los valores del `Set` de cada editor quedan fijos en el
+  momento en que se generan).
+- Ver ADR 0164 para el detalle completo, incluida la aclaración de qué de ADR 0156/0160 NO cambió (el
+  protocolo `propose`/`apply` en sí, el invariante de que n8n nunca decide).
+- 1388/1388 tests de la suite completa (`.venv/bin/python -m pytest -q`), 1384 previos (post ADR 0163) + 4
+  nuevos en `tests/test_n8n_generator.py`.
+
 ## [2026-08-12] Cierre de sesión: gap real de `.gitignore` corregido, prototipo E guardado
 
 - `.gitignore` nunca cubrió `data/prompts.json` ni `data/generation_config.json` (gap preexistente, desde

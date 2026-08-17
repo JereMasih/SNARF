@@ -34,6 +34,7 @@ _request_id: ContextVar[str | None] = ContextVar("snarf_request_id", default=Non
 _user_id: ContextVar[str | None] = ContextVar("snarf_user_id", default=None)
 _trace_id: ContextVar[str | None] = ContextVar("snarf_trace_id", default=None)
 _span_id: ContextVar[str | None] = ContextVar("snarf_span_id", default=None)
+_board_consulted: ContextVar[bool] = ContextVar("snarf_board_consulted", default=False)
 
 
 def set_conversation_id(conversation_id: str | None) -> None:
@@ -97,6 +98,18 @@ def get_user_id() -> str | None:
 
 def clear_user_id() -> None:
     _user_id.set(None)
+
+
+def set_board_consulted(value: bool) -> None:
+    _board_consulted.set(value)
+
+
+def get_board_consulted() -> bool:
+    return _board_consulted.get()
+
+
+def clear_board_consulted() -> None:
+    _board_consulted.set(False)
 
 
 def get_trace_id() -> str | None:

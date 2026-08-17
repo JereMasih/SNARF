@@ -13,7 +13,15 @@
     "executive_board": "3Qewxl21NTY4Q9LO"
   },
   "root": "LmND41v00r1kG4dN",
-  "proponer_cambio_agente": "lc8o7tp6vqcvUA0Q",
-  "confirmar_cambio_agente": "qANAzKhGCULNwFxq",
-  "ver_trazas": "orH24U4BIeQnWTgR"
+  "ver_trazas": "orH24U4BIeQnWTgR",
+  "agent_edit": {
+    "cto": "K74wbPPll8HOKB19",
+    "coo": "iDzcBKCwjAx5Zlyr",
+    "research": "5banqA7qoKUeYAqZ",
+    "ceo": "iY91KHc0ixQNdltR",
+    "cfo": "2jjQE22nggMW1mim",
+    "cmo": "del2dYdbbk1QisyY",
+    "creative": "ZmlhrtKO40YadiE9"
+  },
+  "live_turn": "iBPAvv1qSFDoA5u6"
 }

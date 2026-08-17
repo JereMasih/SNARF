@@ -73,6 +73,7 @@ from snarf.telemetry import (
     events,
     input_log,
     input_preprocessing,
+    n8n_live_canvas_sink,
     n8n_webhook_sink,
     redis_sink,
     relevance,
@@ -232,6 +233,10 @@ async def warmup():
     event_buffer.install()
     redis_sink.install()
     n8n_webhook_sink.install()
+    # n8n_live_canvas_sink (Fase 24, ADR 0166): mismo criterio de no-op
+    # seguro sin N8N_LIVE_CANVAS_ENABLED, ver snarf/telemetry/
+    # n8n_live_canvas_sink.py.
+    n8n_live_canvas_sink.install()
     # PYTEST_CURRENT_TEST lo setea pytest automáticamente durante cada test —
     # evita que cada TestClient() de la suite dispare un backup real sobre
     # data/ (irían cientos por corrida) y una tarea de fondo que nunca se

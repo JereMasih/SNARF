@@ -9,9 +9,14 @@
 
 ## Estado actual (retomar una sesión nueva desde acá)
 
-**Última actualización:** 2026-08-12. **Hechas: Fases 0-7 + Fase 8/1 (HITL) + Fase 9.1 (parcial) + Fase
+**Última actualización:** 2026-08-14. **Hechas: Fases 0-7 + Fase 8/1 (HITL) + Fase 9.1 (parcial) + Fase
 9.2 (4 rondas de iteración real) + Fase 9.3 (completa) + Fase 10 (primer corte) + Fase 11 (completa) +
-Fase 14 (primer corte real, ver abajo)**.
+Fase 14 (primer corte real, ver abajo) + Fases 15-21 (n8n control-plane) con su extensión real del
+2026-08-13 (Prototipo E promovido a oficial, ADR 0164, ver abajo) + Fase 22 (Project Manager + área
+reales, ADR 0165) + Fase 23 (spike n8n, mecanismo Wait/resume verificado) + Fase 24 (canvas en vivo real,
+ADR 0166) — las tres del 2026-08-14**. **Pendiente real, no bloqueante: `N8N_LIVE_CANVAS_ENABLED` no está
+activa en el server de producción — prenderla requiere reiniciar el puerto 8002, decisión aparte del
+fundador (ver "Pendiente real" en ADR 0166).**
 
 **Incidente real 2026-08-12 (post Fase 21, durante iteración de prototipo de UX en n8n) — server real
 colgado dos veces, mitigado, sin código propio todavía revertido a esto en un ADR:** probando en vivo un
@@ -97,14 +102,118 @@ lectura con formularios aparte. Fueron ~5 iteraciones de prototipo en vivo, cada
   de verdad (con tests reales, integrado a `n8n_workflows/ids.json`), generalizado a los 7 roles y después
   a las otras 8 ramas de Specialists.
 
-**Para arrancar la sesión de mañana:** pedirle al fundador que abra
-`http://127.0.0.1:5678/workflow/K74wbPPll8HOKB19` (Editar CTO) y apriete el botón **"Test workflow"** de
-arriba del canvas (no el play de ningún nodo individual) — confirmar contra el server real
-(`GET /n8n/agent/cto` con `X-Snarf-Token`, o el log de `~/Library/Logs/snarf/server_8002.log` filtrando
-`n8n/agent`) que el ciclo `propose→apply` llegó completo, sin esperar a que el fundador interprete la UI de
-n8n. Si funciona: decidir si este patrón (7 workflows separados) reemplaza a `Snarf - Executive Board`
-como superficie principal de edición, y si vale la pena escribir la ADR de enmienda a 0156/0160 (apply
-sin confirmación de dos pasos separada) antes de generalizar a las otras ramas.
+**Sesión 2026-08-13 — Prototipo E confirmado en vivo y promovido a oficial (ADR 0164):** el fundador abrió
+`Snarf - Editar CTO` (`K74wbPPll8HOKB19`) y apretó "Test workflow". Confirmado del lado del server real, no
+solo por la UI de n8n (mismo criterio de honestidad de siempre): `POST /n8n/agent/cto/propose` → 200 y
+`POST /n8n/agent/cto/apply` → 200 en el mismo instante, ejecución de n8n real `2844` (`mode: manual`,
+`status: success`), `GET /n8n/agent/cto` posterior confirma el prompt del CTO en v2 activa — primer `apply`
+real de todo este camino (ADR 0162 había verificado `propose` pero deliberadamente no `apply` contra
+producción). Con esa confirmación, y pedido explícito del fundador de proceder ("veamos como queda,
+procede... asegurate de que quede todo prolijo y correctamente nombrado"):
+
+- El patrón de 7 workflows separados **reemplaza** a `Snarf - Proponer/Confirmar cambio de agente` (ADR
+  0160) como camino real de escritura estructural — esos dos workflows se borraron de n8n (nunca tuvieron
+  un `apply` real) y sus exports/links quedaron limpiados (ver ADR 0164 para el detalle completo).
+- `Snarf - Executive Board` deja de ser la superficie de edición y pasa a ser overview + navegación: cada
+  rol del canvas enlaza ahora a su propio editor dedicado en vez del editor de texto genérico.
+- El generador del Prototipo E se migró del script suelto `n8n_workflows/_prototype_e_editar_agente.py`
+  (borrado) a `snarf/runtime/n8n_generator.py` real (`build_agent_edit_workflow`,
+  `sync_agent_edit_workflows`), con 16 tests en `tests/test_n8n_generator.py` (antes 14).
+- La Skill `n8n-map-sync` quedó actualizada para cubrir ambas superficies.
+- **Generalizar este patrón a las otras 8 ramas de Specialists sigue sin arrancar** — sigue siendo trabajo
+  de seguimiento, no bloqueante, mismo estado que ya anotaba ADR 0159.
+
+**Sesión 2026-08-14 — Fase 22 hecha (ADR 0165: Project Manager + área como etapas reales), Fase 23 (spike
+real contra n8n vivo) arrancada, con un hallazgo real que bloquea seguir a la Fase 24 sin una decisión del
+fundador:**
+
+Fase 22: `snarf/runtime/areas.py` (nuevo) reagrupa los 7 dominios de Specialists ya existentes en 4 áreas
+(Operaciones/Administración/I+D/Marketing) — `Orchestrator._handle_tool` ahora anida dos spans
+`workflow` reales (`project_manager` → `area:<id>`) para las 14 tools de esas áreas, ruteo por lookup
+determinístico (nunca un LLM clasificando texto). Verificado real (no solo tests): un turno real con
+`finance_monthly_pnl` produce en `data/telemetry_events.jsonl` la cadena `project_manager` →
+`area:administracion` → `finance_monthly_pnl`, bien anidada, mismo `trace_id`. 1399/1399 tests
+(1388 previos + 11 nuevos).
+
+Fase 23 (spike, workflow `ZZZ-spike-wait-resume` creado y borrado en la instancia real): dos hallazgos
+reales antes de escribir el generador de la Fase 24 —
+
+1. **Un nodo `Webhook` creado vía la API de n8n necesita un campo `webhookId` explícito en el nodo (UUID),
+   no solo `parameters.path`** — sin eso, el workflow queda `active: true` pero el webhook nunca se
+   registra de verdad para tráfico real (404 "not registered" incluso después de reactivar). Confirmado
+   comparando contra "My workflow" (creado desde la UI, sí tiene `webhookId`) — el generador de la Fase 24
+   tiene que setear este campo a mano, `push_workflow()` de hoy no lo hace.
+2. **Hallazgo más importante, sin resolver:** la instancia real de n8n (`docker-compose.n8n.yml`) no tiene
+   seteada ninguna variable `EXECUTIONS_DATA_SAVE_*` — corre 100% con los defaults de n8n, que NO guardan
+   progreso de una ejecución mientras está en curso (`EXECUTIONS_DATA_SAVE_ON_PROGRESS` default `false`).
+   Confirmado en vivo: el workflow del spike, disparado de verdad y pausado en un nodo `Wait`, no aparece
+   en `GET /api/v1/executions` (ni sin filtro, ni con `status=waiting`) — cero rastro vía la API mientras
+   está esperando. Esto afecta cualquier cosa que dependa de *consultar* el estado de una ejecución en
+   curso vía la API (verificación automatizada, "double click" después de que ya pasó el momento real si el
+   canvas no estaba abierto en ese instante) — probablemente NO afecta la experiencia principal que pidió
+   el fundador (ver un canvas abierto en el navegador iluminarse en vivo), porque esa animación en la UI de
+   n8n corre por su propio mecanismo de push en tiempo real (websocket) mientras el editor está abierto,
+   independiente de si la ejecución queda persistida en la base — pero **esto es una hipótesis, no
+   verificado todavía con el canvas realmente abierto en un navegador real durante una pausa**.
+
+**`EXECUTIONS_DATA_SAVE_ON_PROGRESS=true` activado (2026-08-14, decisión real del fundador):**
+`docker-compose.n8n.yml` actualizado, contenedor `snarf-n8n` reiniciado y confirmado sano (`GET /healthz`
+200, variable presente en el proceso real). Esto NO resolvió el problema de fondo — ver abajo.
+
+**Bloqueo real, sin resolver — el diseño de "un solo workflow con nodos `Wait` encadenados" (aprobado en
+el plan de esta sesión) no pudo verificarse funcionando en esta instancia real:** aislando el problema
+nodo por nodo con workflows descartables reales (`ZZZ-spike-bare`/similares, todos borrados al terminar):
+
+- `Webhook` solo → ejecución real registrada (confirmado, `GET /api/v1/executions` la muestra).
+- `Webhook` → `Code` (`$execution.id`) → ejecución real registrada (confirmado).
+- `Webhook` → `Code` → `Wait` (`resume: webhook`) → **ninguna ejecución nueva aparece nunca**, ni durante
+  la espera ni después — probado con dos formas distintas de parámetros del nodo `Wait` (una propia, y una
+  segunda copiada literal de la documentación oficial de n8n vía búsqueda real), con
+  `EXECUTIONS_DATA_SAVE_ON_PROGRESS=true` ya activo, y repitiendo el ciclo completo
+  desactivar→reactivar del workflow entre cada intento (por si la Fase 23 de arriba, sobre registro de
+  webhooks, aplicaba de nuevo). El trigger siempre responde `200 "Workflow was started"` — pero la
+  ejecución nunca queda registrada, ni como `waiting`, ni como `success`, ni como `error`; los logs del
+  contenedor no muestran ningún error asociado.
+- **No se pudo determinar la causa raíz solo con la API** (misma honestidad que el incidente del 12/08:
+  mejor decir "no sé por qué" que inventar una explicación). Hipótesis reales sin confirmar: un límite de
+  este build/versión de n8n (1.121.0) con nodos `Wait` disparados por un trigger `responseMode: onReceived`
+  específicamente vía la API pública (no probado nunca a mano desde la UI); o un paso de configuración que
+  la documentación no cubre para este caso.
+
+**Resuelto (2026-08-14, mismo día) — el fundador armó a mano `Webhook → Wait` en la UI real y SÍ
+funcionó:** la ejecución quedó real y visible en `waiting` (canvas con el nodo `Wait` resaltado, pantalla
+"Executions" mostrándola en vivo) — confirma que el mecanismo central del diseño (nodos `Wait`
+encadenados, canvas que se ilumina en vivo) funciona de verdad en esta instancia. El bloqueo de arriba
+(cero ejecuciones visibles vía mis pruebas por API) tenía una causa completamente distinta a la sospechada,
+aislada con el propio workflow del fundador como control real:
+
+- **`GET /api/v1/executions` (el endpoint de LISTA) no devuelve ejecuciones en estado `waiting`** — ni sin
+  filtro, ni filtrando por `workflowId`, ni con `status=waiting`. Es un límite real de esa ruta de la API
+  pública de n8n 1.121.0, no un bug del lado de Snarf. **`GET /api/v1/executions/{id}` (por ID directo) sí
+  funciona perfecto** — devuelve `status: "waiting"` correctamente. El diseño de la Fase 24 nunca necesitó
+  el endpoint de lista (el `execution_id` se captura directo de la respuesta del trigger, nunca se busca
+  después) — este límite queda documentado pero no bloquea nada real.
+- **Un nodo `Wait` con `resume: "webhook"` necesita su propio campo `webhookId` (UUID) además del que ya
+  necesita el nodo `Webhook` disparador** (mismo hallazgo #1 de arriba, pero aplica también al `Wait`, no
+  solo al trigger) — confirmado comparando el workflow armado a mano por el fundador (que sí tiene
+  `webhookId` en ambos nodos) contra los míos por API (que no lo tenían en el `Wait`).
+- **Ronda final de verificación real, completa, con un workflow descartable propio
+  (`ZZZ-spike-final`, borrado al terminar):** `Webhook (responseMode: responseNode)` → `Code` (captura
+  `$execution.id`) → `Respond to Webhook` → `Wait (httpMethod: POST explícito, si no default a GET)`.
+  Resultado real: el POST inicial al trigger devolvió `[{"executionId":"3166"}]` en el body de la
+  respuesta (sin necesidad de leer `$execution.resumeUrl` desde dentro del workflow); un POST directo a
+  `http://127.0.0.1:5678/webhook-waiting/3166` (URL 100% predecible, construida solo con el
+  `execution_id` — más simple que lo que asumía el diseño original) avanzó la ejecución de `waiting` a
+  `success` real. **Ciclo completo start→resume verificado de punta a punta contra la instancia real.**
+
+**Fase 24 queda DESBLOQUEADA.** Detalles concretos que `build_live_turn_workflow()` tiene que respetar:
+`webhookId` explícito (UUID) en el nodo `Webhook` y en cada nodo `Wait`; `httpMethod: "POST"` explícito en
+cada `Wait` si el resume va a mandar payload por POST; el trigger con `responseMode: "responseNode"` +
+`Code`+`Respond to Webhook` para devolver el `execution_id` en la respuesta inicial; el sink construye la
+URL de resume él mismo (`{n8n_base}/webhook-waiting/{execution_id}`), sin necesidad de capturar ni
+persistir un `resumeUrl` dinámico. Pendiente real, menor, no bloqueante: no se probó si el timeout de un
+`Wait` sobrevive un reinicio del proceso de n8n, ni concurrencia real de dos triggers simultáneos — quedan
+como verificación futura si aparece un problema real, no bloquean escribir el generador.
 
 **Trabajo siguiente ya diseñado y aprobado (2026-08-12):** Fases 15-21 — n8n como control-plane completo de
 la construcción de agentes (no solo texto de prompt: también herramientas, ruteo, y conexiones/secuencia
