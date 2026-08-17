@@ -124,6 +124,30 @@ def test_status_reports_availability_flags(client):
     assert res.json() == {"stt_available": False, "tts_available": False, "llm_available": False}
 
 
+def test_vision_page_is_served_without_a_session_cookie():
+    with TestClient(app_module.app) as c:
+        res = c.get("/vision")
+    assert res.status_code == 200
+    assert "Snarf" in res.text
+
+
+def test_vision_status_returns_real_repo_data_without_a_session_cookie():
+    with TestClient(app_module.app) as c:
+        res = c.get("/vision/status")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["adr_count"] > 0
+    assert body["test_function_count"] > 0
+
+
+def test_vision_blog_is_empty_until_an_article_is_published_and_reachable_without_login(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module.blog, "DEFAULT_PATH", tmp_path / "blog_posts.jsonl")
+    with TestClient(app_module.app) as c:
+        res = c.get("/vision/blog")
+    assert res.status_code == 200
+    assert res.json() == {"articles": []}
+
+
 def test_send_echo_mode_roundtrip(client):
     res = client.post("/send", json={"text": "hola", "conversation_id": "abc"})
     assert res.status_code == 200

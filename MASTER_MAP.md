@@ -150,6 +150,8 @@ Desde el 2026-07-30 (ADR 0056, Parte 1 de un plan de eficiencia de costo de 4 pa
 
 Planificado, todavía sin construir: interfaz genérica de "fuente de conocimiento" para que Drive, Notion y archivos subidos a mano compartan un mismo motor de vectorización (hoy el pipeline es específico de Drive); reforzar la confirmación de acciones de alto impacto con un control independiente del modelo (por ejemplo, un botón en la interfaz) si el uso escala más allá de un solo usuario; login con Google (reemplazando o complementando la contraseña) y flujo real de un segundo usuario conectando su propia cuenta y vectorizando su propio Drive, cuando exista multi-usuario real — evaluado explícitamente en ADR 0028 y pospuesto a propósito (los datos de indexación ya están namespaced por `user_id` desde el día uno, así que agregar el segundo usuario es pasar otro `user_id`, no rediseñar el pipeline).
 
+Desde el 2026-08-17 (ADR 0167): primera superficie pública de Snarf, `GET /vision` (`web/vision.html`, sin gate de login) — visión/filosofía derivada de FOUNDATION.md/PROJECT_CONTEXT.md, capturas reales de la interfaz, y `GET /vision/status` (nuevo `snarf/runtime/vision_status.py`) leyendo en el momento del request el estado real del roadmap, CHANGELOG, ADR y tests — nunca hardcodeado. Nuevo modelo de datos `snarf/telemetry/blog.py` (JSONL, flag `public`) para el futuro blog de Snarf, sin ningún productor todavía: conectarlo a `snarf/specialists/research` queda pendiente.
+
 ## Business
 
 Unidades económicas, productos, servicios y empresas.

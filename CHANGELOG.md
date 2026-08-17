@@ -2,6 +2,37 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-17] Página pública de visión y estado, `GET /vision` (ADR 0167)
+
+- Primera superficie de cara afuera de Snarf: `GET /vision` sirve `web/vision.html` (sin gate de login,
+  sin build step, mismo criterio de archivo único que `web/index.html`) — visión/filosofía derivada de
+  FOUNDATION.md/PROJECT_CONTEXT.md, capturas reales de la interfaz, estado de desarrollo en vivo, blog de
+  Snarf (nuevo, vacío hasta el primer artículo real) y una sección de roadmap aspiracional claramente
+  etiquetada como tal (nunca testimonios).
+- `snarf/runtime/vision_status.py` (nuevo) + `GET /vision/status`: parsea en el momento del request el
+  primer párrafo real después de "Estado actual" y "Norte del plan" de
+  `ROADMAP_OBSERVABILIDAD_MULTIUSUARIO_N8N.md`, las últimas 5 entradas de `CHANGELOG.md`, cuenta real de
+  `adr/*.md` y de funciones `def test_` en `tests/test_*.py` — nada hardcodeado ni cacheado.
+- `snarf/telemetry/blog.py` (nuevo): modelo de datos JSONL append-only para artículos del blog de Snarf,
+  con flag `public` (arranca en `False`). Sin ningún artículo real todavía — deliberado, `GET /vision/blog`
+  devuelve `{"articles": []}` hasta que exista contenido real generado desde una investigación de
+  `snarf/specialists/research` y publicado a mano.
+- 3 capturas reales (`web/vision_assets/`, servidas vía un `StaticFiles` montado solo en esa carpeta)
+  tomadas con Playwright contra una instancia descartable en puerto de prueba (nunca contra el server de
+  producción, puerto 8002) — cockpit de escritorio, chat en viewport móvil (estado vacío a propósito, para
+  no exponer conversaciones privadas del fundador en una página pública) y el cerebro en pantalla completa.
+- CTA final decidido con el fundador: enlace al repositorio público (`github.com/JereMasih/SNARF`) y un
+  `mailto:` directo — sin formulario ni backend de lead-gen nuevo.
+- Verificado en navegador real con Playwright (desktop y mobile): cero errores de consola, cero requests
+  fallidos, los tres paneles (estado, changelog, blog) renderizan con datos reales.
+- 12 tests nuevos (`tests/test_blog.py`, `tests/test_vision_status.py`, 3 casos nuevos en
+  `tests/test_app.py`). 1433/1433 tests de la suite completa (`.venv/bin/python -m pytest -q`), 1421
+  previos (post ADR 0166) + 12 nuevos.
+- **Pendiente real:** confirmar con el fundador, viendo una captura de la página ya deployada, si el tono
+  de `--hud-amber` (`#ffb454`) lee bien en este contexto nuevo — pedido explícito suyo antes de dar el
+  resultado por terminado. Brand mark (`#brand-mark`) sigue siendo un placeholder sin resolver, a
+  propósito.
+
 ## [2026-08-14] Canvas en vivo de un turno real en n8n (ADR 0166)
 
 - Cierra el pedido original del fundador: ver un turno real de Snarf procesándose EN VIVO dentro del

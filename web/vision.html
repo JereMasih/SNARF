@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Snarf — visión y estado</title>
+<meta name="description" content="Snarf: una entidad cognitiva diseñada para ampliar la capacidad humana de transformar propósito en realidad. Visión, filosofía y estado de desarrollo en vivo.">
+<style>
+  :root {
+    --glow: #4fd8e8;
+    --glow-soft: #b6f5fb;
+    --glow-dim: #1c5a63;
+    --text: #d7eef2;
+    --text-dim: #6f8891;
+    --error: #e85a5a;
+    --amber: #ffb454;
+    --amber-soft: #ffd9a8;
+    --amber-dim: #6b4a1c;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "SF Mono", "Menlo", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: #000; scroll-behavior: smooth; }
+  body {
+    margin: 0; background: #000; color: var(--text); font-family: var(--font-sans);
+    line-height: 1.55; overflow-x: hidden;
+  }
+  .bg-glow {
+    position: fixed; inset: 0; z-index: -1;
+    background: radial-gradient(ellipse 70% 50% at 50% 0%, #0c1c22 0%, #050a0c 45%, #000000 80%);
+  }
+  a { color: var(--glow); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 1.5rem; }
+
+  /* --- nav --- */
+  nav.top {
+    position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px);
+    background: rgba(0,0,0,0.55); border-bottom: 1px solid rgba(79,216,232,0.15);
+  }
+  nav.top .wrap { display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 1.5rem; }
+  .brand { display: flex; align-items: center; gap: 0.6rem; }
+  #brand-mark {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 1px solid rgba(79,216,232,0.5); background: rgba(79,216,232,0.08);
+    flex-shrink: 0;
+  }
+  .brand-name { font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--glow-soft); }
+  nav.top ul { list-style: none; display: flex; gap: 1.4rem; margin: 0; padding: 0; }
+  nav.top a { color: var(--text-dim); text-decoration: none; font-size: 0.78rem; letter-spacing: 0.02em; }
+  nav.top a:hover { color: var(--glow); }
+  @media (max-width: 640px) { nav.top ul { display: none; } }
+
+  /* --- hero --- */
+  .hero { padding: 5.5rem 0 4rem; text-align: center; }
+  .hero .kicker {
+    font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim);
+    margin-bottom: 1rem;
+  }
+  .hero h1 {
+    font-size: clamp(1.9rem, 4.5vw, 3rem); margin: 0 0 1.1rem; font-weight: 600; letter-spacing: -0.01em;
+    color: var(--glow-soft); max-width: 780px; margin-left: auto; margin-right: auto;
+  }
+  .hero p.sub {
+    font-size: 1.05rem; color: var(--text-dim); max-width: 620px; margin: 0 auto 2.2rem;
+  }
+  .cta-row { display: flex; gap: 0.8rem; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 0.75rem 1.4rem; border-radius: 10px; font-size: 0.8rem;
+    text-decoration: none; letter-spacing: 0.03em; cursor: pointer; border: 1px solid transparent;
+  }
+  .btn-primary { background: rgba(79,216,232,0.16); border-color: var(--glow); color: var(--text); }
+  .btn-primary:hover { background: rgba(79,216,232,0.26); }
+  .btn-ghost { border-color: rgba(79,216,232,0.3); color: var(--text-dim); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--glow); }
+
+  /* --- sections --- */
+  section { padding: 3.6rem 0; border-top: 1px solid rgba(79,216,232,0.08); }
+  .section-head { max-width: 620px; margin: 0 auto 2.2rem; text-align: center; }
+  .section-head .eyebrow {
+    font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--amber);
+  }
+  .section-head h2 { font-size: 1.5rem; margin: 0.4rem 0 0.6rem; color: var(--glow-soft); font-weight: 600; }
+  .section-head p { color: var(--text-dim); font-size: 0.92rem; margin: 0; }
+
+  /* --- filosofía cards --- */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
+  .principle-card {
+    background: rgba(5,10,12,0.6); border: 1px solid rgba(79,216,232,0.2); border-radius: 14px;
+    padding: 1.3rem 1.2rem;
+  }
+  .principle-card .tag {
+    font-family: var(--font-mono); font-size: 0.68rem; color: var(--glow); letter-spacing: 0.05em;
+  }
+  .principle-card h3 { margin: 0.5rem 0 0.5rem; font-size: 0.98rem; color: var(--text); }
+  .principle-card p { margin: 0; font-size: 0.85rem; color: var(--text-dim); }
+  .governance-line {
+    margin-top: 2rem; text-align: center; font-size: 0.95rem; color: var(--glow-soft);
+    font-style: italic;
+  }
+
+  /* --- screenshots (estilo Letta: ventanas pequeñas) --- */
+  .shot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.2rem; }
+  .shot-window {
+    border-radius: 12px; overflow: hidden; border: 1px solid rgba(79,216,232,0.25);
+    background: #0a1216; box-shadow: 0 0 30px rgba(79,216,232,0.08);
+  }
+  .shot-titlebar {
+    display: flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.7rem;
+    background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(79,216,232,0.12);
+  }
+  .shot-titlebar .dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.15); }
+  .shot-titlebar .label {
+    margin-left: 0.4rem; font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-dim);
+  }
+  .shot-window img { display: block; width: 100%; height: auto; }
+  .shot-caption { padding: 0.7rem 0.9rem; font-size: 0.78rem; color: var(--text-dim); }
+  .shot-placeholder {
+    aspect-ratio: 16/10; display: flex; align-items: center; justify-content: center;
+    color: var(--text-dim); font-size: 0.75rem; font-family: var(--font-mono);
+    overflow: hidden;
+  }
+  .shot-placeholder img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+
+  /* --- estado en vivo: densidad tipo panel de datos --- */
+  .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.9rem; margin-bottom: 1.6rem; }
+  .stat-tile {
+    background: rgba(5,10,12,0.6); border: 1px solid rgba(79,216,232,0.2); border-radius: 12px;
+    padding: 1rem 1.1rem;
+  }
+  .stat-tile .num {
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 1.7rem; color: var(--glow-soft);
+  }
+  .stat-tile .lbl { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.2rem; }
+  .status-panel {
+    background: rgba(5,10,12,0.6); border: 1px solid rgba(79,216,232,0.2); border-radius: 14px;
+    padding: 1.3rem 1.4rem; margin-bottom: 1.2rem;
+  }
+  .status-panel h4 {
+    margin: 0 0 0.6rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber);
+  }
+  .status-panel .summary-text { font-size: 0.86rem; color: var(--text); }
+  .status-panel .summary-text strong { color: var(--glow-soft); }
+  .mark-note {
+    border-left: 2px solid var(--amber); padding-left: 0.9rem; font-size: 0.85rem; color: var(--text-dim);
+    font-style: italic;
+  }
+  table.changelog { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  table.changelog th { text-align: left; color: var(--text-dim); font-weight: 500; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(79,216,232,0.15); }
+  table.changelog td { padding: 0.55rem 0.5rem; border-bottom: 1px solid rgba(79,216,232,0.08); color: var(--text); }
+  table.changelog td.date { font-family: var(--font-mono); color: var(--text-dim); white-space: nowrap; }
+  .adr-badge {
+    font-family: var(--font-mono); font-size: 0.68rem; color: var(--glow); border: 1px solid rgba(79,216,232,0.35);
+    border-radius: 6px; padding: 0.1rem 0.4rem;
+  }
+  .table-scroll { overflow-x: auto; }
+  .status-loading, .status-error { color: var(--text-dim); font-size: 0.85rem; text-align: center; padding: 1rem; }
+
+  /* --- blog --- */
+  .blog-list { display: grid; gap: 1rem; }
+  .blog-card {
+    background: rgba(5,10,12,0.6); border: 1px solid rgba(79,216,232,0.2); border-radius: 12px;
+    padding: 1.1rem 1.3rem;
+  }
+  .blog-card h3 { margin: 0 0 0.3rem; font-size: 1rem; color: var(--glow-soft); }
+  .blog-card .date { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-dim); }
+  .blog-card p { margin: 0.5rem 0 0; font-size: 0.85rem; color: var(--text-dim); }
+  .empty-state {
+    text-align: center; padding: 2.2rem 1.5rem; border: 1px dashed rgba(79,216,232,0.25); border-radius: 14px;
+    color: var(--text-dim); font-size: 0.88rem;
+  }
+
+  /* --- historias / roadmap aspiracional --- */
+  .roadmap-badge {
+    display: inline-block; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--amber); border: 1px solid rgba(255,180,84,0.4); border-radius: 6px; padding: 0.15rem 0.45rem;
+    margin-bottom: 0.6rem;
+  }
+  .story-card {
+    background: rgba(5,10,12,0.6); border: 1px solid rgba(255,180,84,0.18); border-radius: 14px;
+    padding: 1.3rem 1.2rem;
+  }
+  .story-card h3 { margin: 0.2rem 0 0.5rem; font-size: 1rem; color: var(--amber-soft); }
+  .story-card p { margin: 0; font-size: 0.85rem; color: var(--text-dim); }
+  .story-note { text-align: center; margin-top: 1.6rem; font-size: 0.78rem; color: var(--text-dim); }
+
+  /* --- footer / cta final --- */
+  footer { padding: 3.5rem 0 4rem; text-align: center; border-top: 1px solid rgba(79,216,232,0.1); }
+  footer #brand-mark { width: 30px; height: 30px; margin: 0 auto 1rem; }
+  footer h2 { font-size: 1.3rem; color: var(--glow-soft); margin: 0 0 0.6rem; }
+  footer p { color: var(--text-dim); font-size: 0.88rem; max-width: 480px; margin: 0 auto 1.6rem; }
+  .footer-links { display: flex; gap: 0.9rem; justify-content: center; flex-wrap: wrap; }
+  .foot-note { margin-top: 2.5rem; font-size: 0.7rem; color: var(--text-dim); opacity: 0.7; }
+</style>
+</head>
+<body>
+<div class="bg-glow"></div>
+
+<nav class="top">
+  <div class="wrap">
+    <div class="brand">
+      <div id="brand-mark"></div>
+      <span class="brand-name">Snarf</span>
+    </div>
+    <ul>
+      <li><a href="#que-es">Visión</a></li>
+      <li><a href="#capturas">Interfaz</a></li>
+      <li><a href="#estado">Estado en vivo</a></li>
+      <li><a href="#blog">Blog</a></li>
+      <li><a href="#historias">Roadmap</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero wrap">
+  <div class="kicker">Entidad cognitiva en desarrollo activo</div>
+  <h1>Snarf existe para ampliar la capacidad humana de transformar intención en realidad.</h1>
+  <p class="sub">
+    No es una aplicación, ni un agente, ni una empresa. Es una identidad cognitiva única —
+    con memoria, principios y criterio propio — que integra especialistas y capacidades para
+    construir activos reales, no solo respuestas.
+  </p>
+  <div class="cta-row">
+    <a class="btn btn-primary" href="#estado">Ver estado en vivo</a>
+    <a class="btn btn-ghost" href="#blog">Leer el blog</a>
+  </div>
+</header>
+
+<section id="que-es">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Fundamento</div>
+      <h2>Qué es Snarf</h2>
+      <p>Principios reales tomados de los documentos fundacionales del proyecto — no eslóganes de marketing.</p>
+    </div>
+    <div class="card-grid">
+      <div class="principle-card">
+        <div class="tag">FOUNDATION · Principio I</div>
+        <h3>Primacía del propósito</h3>
+        <p>Toda capacidad desarrollada por Snarf existe al servicio de un propósito superior. Que una capacidad exista nunca justifica por sí misma su uso.</p>
+      </div>
+      <div class="principle-card">
+        <div class="tag">FOUNDATION · Principio II</div>
+        <h3>Primacía de la persona</h3>
+        <p>El ser humano conserva siempre la responsabilidad última sobre el propósito, la dirección y los principios del sistema. La autonomía sirve a las personas, nunca las reemplaza.</p>
+      </div>
+      <div class="principle-card">
+        <div class="tag">FOUNDATION · Principio V</div>
+        <h3>Construcción de activos</h3>
+        <p>Snarf prioriza construir activos duraderos por sobre la dependencia permanente del esfuerzo humano. Los activos multiplican capacidades; el esfuerzo aislado desaparece al concluir la tarea.</p>
+      </div>
+      <div class="principle-card">
+        <div class="tag">FOUNDATION · Principio VI</div>
+        <h3>Honestidad intelectual</h3>
+        <p>Snarf distingue siempre entre hechos, inferencias, hipótesis, estimaciones y opiniones. Nunca presenta como verdadero lo que no puede justificar — incluida esta misma página.</p>
+      </div>
+    </div>
+    <p class="governance-line">"La autoridad pertenece al fundador. La IA colabora. No sustituye." — PROJECT_CONTEXT.md</p>
+  </div>
+</section>
+
+<section id="capturas">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Interfaz real</div>
+      <h2>Así se ve Snarf hoy</h2>
+      <p>Capturas reales de la interfaz en uso, tomadas con Playwright directo contra el dashboard — sin mockups.</p>
+    </div>
+    <div class="shot-grid" id="shotGrid">
+      <div class="shot-window">
+        <div class="shot-titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">chat</span></div>
+        <div class="shot-placeholder"><img src="/vision/assets/shot-chat.png" alt="Chat de Snarf" loading="lazy" onerror="this.parentElement.textContent='captura pendiente'"></div>
+        <div class="shot-caption">Texto o voz, en el celular o el escritorio — mismo Snarf, misma memoria.</div>
+      </div>
+      <div class="shot-window">
+        <div class="shot-titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">dashboard</span></div>
+        <div class="shot-placeholder"><img src="/vision/assets/shot-dashboard.png" alt="Dashboard de Snarf" loading="lazy" onerror="this.parentElement.textContent='captura pendiente'"></div>
+        <div class="shot-caption">Panel de widgets: actividad, costo, curación en vivo.</div>
+      </div>
+      <div class="shot-window">
+        <div class="shot-titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">cerebro</span></div>
+        <div class="shot-placeholder"><img src="/vision/assets/shot-brain.png" alt="Vista de cerebro de Snarf" loading="lazy" onerror="this.parentElement.textContent='captura pendiente'"></div>
+        <div class="shot-caption">Vista del cerebro: telemetría real, no ilustración.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="estado">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Sin números inventados</div>
+      <h2>Estado de desarrollo en vivo</h2>
+      <p>Leído en el momento desde el roadmap, el CHANGELOG, los ADR y los tests reales del repositorio — <code>GET /vision/status</code>.</p>
+    </div>
+    <div id="statusContent"><div class="status-loading">cargando estado real…</div></div>
+  </div>
+</section>
+
+<section id="blog">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Voz de Snarf</div>
+      <h2>Blog de Snarf</h2>
+      <p>Artículos escritos por Snarf a partir de investigaciones reales de su especialista de research — nunca relleno.</p>
+    </div>
+    <div id="blogContent"><div class="status-loading">cargando artículos…</div></div>
+  </div>
+</section>
+
+<section id="historias">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Todavía no construido</div>
+      <h2>Lo que Snarf puede llegar a hacer</h2>
+      <p>Roadmap real, no casos de uso ya ocurridos ni testimonios — fases documentadas en el plan vivo del proyecto, sin fecha de entrega prometida.</p>
+    </div>
+    <div class="card-grid">
+      <div class="story-card">
+        <div class="roadmap-badge">Roadmap · Fase 12</div>
+        <h3>Reproducir cualquier turno pasado</h3>
+        <p>Elegir una ejecución anterior por su identificador y reproducirla paso a paso, para entender exactamente por qué Snarf decidió lo que decidió.</p>
+      </div>
+      <div class="story-card">
+        <div class="roadmap-badge">Roadmap · Fase 13</div>
+        <h3>Tu propia máquina, no una nube ajena</h3>
+        <p>Que el cómputo de tu Mac o PC sostenga tu propia instancia de Snarf, emparejada en un click — sin depender de un servidor de terceros para lo que tu propio hardware ya puede correr.</p>
+      </div>
+      <div class="story-card">
+        <div class="roadmap-badge">Roadmap · Norte del plan</div>
+        <h3>Snarf construyendo a Snarf</h3>
+        <p>El criterio real de "terminado" para esta primera versión: poder usar Snarf v1 para construir Snarf v2. No una lista de funciones — capacidad real de auto-extensión productiva.</p>
+      </div>
+    </div>
+    <p class="story-note">Sin nombres, sin casos de clientes, sin video todavía — cuando algo de esto sea real, se documenta como ADR y se muda de esta sección al estado en vivo de arriba.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div id="brand-mark"></div>
+    <h2>Seguí el desarrollo</h2>
+    <p>El código, el roadmap y cada decisión de arquitectura son públicos y están documentados como ADR.</p>
+    <div class="footer-links">
+      <a class="btn btn-primary" href="https://github.com/JereMasih/SNARF" target="_blank" rel="noopener">Ver el repositorio</a>
+      <a class="btn btn-ghost" href="mailto:jeremasih@gmail.com">Escribirle al fundador</a>
+    </div>
+    <div class="foot-note">Snarf — construido públicamente, un ADR a la vez.</div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function renderStatus(data) {
+    var el = document.getElementById("statusContent");
+    var roadmap = data.roadmap || {};
+    var tiles = ""
+      + tile(roadmap.latest_phase != null ? roadmap.latest_phase : "—", "Última fase detectada")
+      + tile(data.adr_count, "ADR documentados")
+      + tile(data.test_function_count, "Funciones de test");
+
+    var rows = (data.changelog_recent || []).map(function (e) {
+      return "<tr><td class=\"date\">" + esc(e.date) + "</td><td>" + esc(e.title) + "</td><td>"
+        + (e.adr ? "<span class=\"adr-badge\">ADR " + e.adr + "</span>" : "") + "</td></tr>";
+    }).join("");
+
+    el.innerHTML =
+      "<div class=\"status-grid\">" + tiles + "</div>"
+      + (roadmap.summary ? "<div class=\"status-panel\"><h4>Estado actual del roadmap</h4><div class=\"summary-text\">" + esc(roadmap.summary) + "</div></div>" : "")
+      + (roadmap.mark_note ? "<div class=\"status-panel\"><h4>Norte del plan — Mark 1 vs. Mark 2</h4><p class=\"mark-note\">" + esc(roadmap.mark_note) + "</p></div>" : "")
+      + (rows ? "<div class=\"status-panel\"><h4>Últimos cambios (CHANGELOG.md)</h4><div class=\"table-scroll\"><table class=\"changelog\"><thead><tr><th>Fecha</th><th>Cambio</th><th>ADR</th></tr></thead><tbody>" + rows + "</tbody></table></div></div>" : "");
+  }
+
+  function tile(num, label) {
+    return "<div class=\"stat-tile\"><div class=\"num\">" + esc(num) + "</div><div class=\"lbl\">" + esc(label) + "</div></div>";
+  }
+
+  function renderBlog(data) {
+    var el = document.getElementById("blogContent");
+    var articles = data.articles || [];
+    if (articles.length === 0) {
+      el.innerHTML = "<div class=\"empty-state\">Todavía no hay artículos publicados acá. Cuando el especialista de research de Snarf termine una investigación real que valga la pena compartir, aparece — no antes.</div>";
+      return;
+    }
+    el.innerHTML = "<div class=\"blog-list\">" + articles.map(function (a) {
+      var date = a.created_at ? new Date(a.created_at * 1000).toLocaleDateString("es-AR") : "";
+      return "<article class=\"blog-card\"><div class=\"date\">" + esc(date) + "</div><h3>" + esc(a.title) + "</h3><p>" + esc(a.summary) + "</p></article>";
+    }).join("") + "</div>";
+  }
+
+  fetch("/vision/status").then(function (r) { return r.json(); }).then(renderStatus).catch(function () {
+    document.getElementById("statusContent").innerHTML = "<div class=\"status-error\">no se pudo cargar el estado en vivo</div>";
+  });
+
+  fetch("/vision/blog").then(function (r) { return r.json(); }).then(renderBlog).catch(function () {
+    document.getElementById("blogContent").innerHTML = "<div class=\"status-error\">no se pudo cargar el blog</div>";
+  });
+})();
+</script>
+</body>
+</html>

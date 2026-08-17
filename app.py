@@ -30,6 +30,7 @@ except ImportError:
 
 from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from snarf.capabilities import google_auth
@@ -60,11 +61,13 @@ from snarf.runtime import prompt_registry
 from snarf.runtime import agent_registry
 from snarf.runtime import agent_change_proposals
 from snarf.runtime import n8n_generator
+from snarf.runtime import vision_status
 from snarf.knowledge.extraction import categorize_mime
 from snarf.specialists import dashboard_curator as dashboard_curator_module
 from snarf.specialists.dashboard_curator import DashboardCuratorSpecialist
 from snarf.telemetry import (
     activity_log,
+    blog,
     brain,
     cancellation,
     cost_history,
@@ -96,6 +99,10 @@ from snarf.runtime.web_auth import (
 )
 
 app = FastAPI()
+# Capturas reales de la interfaz para GET /vision (página pública de estado,
+# ADR nuevo) — mount dedicado a esta sola carpeta, nunca un mount genérico
+# de web/ entero, para no exponer nada más que las screenshots.
+app.mount("/vision/assets", StaticFiles(directory="web/vision_assets"), name="vision_assets")
 voice_router = VoiceRouter()
 # Instancia separada solo para subscription_info() del widget de dashboard
 # (cupo real de la cuenta de ElevenLabs) — ya no es quien sintetiza la voz de
@@ -504,6 +511,32 @@ def status():
         "tts_available": voice_router.tts_status()["available"],
         "llm_available": orchestrator.llm_available,
     }
+
+
+@app.get("/vision")
+def vision_page():
+    """Página pública de estado de Snarf — deliberadamente sin gate de
+    login (ADR nuevo): a diferencia de `/`, es de cara afuera, para
+    cualquier visitante que todavía no tiene sesión."""
+    return FileResponse("web/vision.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/vision/status")
+def vision_status_endpoint():
+    """JSON real para el panel de estado de desarrollo de GET /vision —
+    cada número se lee de los archivos reales del repo en el momento del
+    request (roadmap, CHANGELOG, adr/, tests/), nunca hardcodeado (ADR
+    nuevo, Principio VI de FOUNDATION.md)."""
+    return vision_status.build_status()
+
+
+@app.get("/vision/blog")
+def vision_blog():
+    """Artículos públicos del blog de Snarf (ADR nuevo) — vacío hasta que
+    exista al menos un artículo real generado desde una investigación de
+    snarf/specialists/research y publicado a mano (`public: true`); nunca
+    se rellena con contenido de ejemplo."""
+    return {"articles": blog.list_public()}
 
 
 @app.get("/n8n/status")
