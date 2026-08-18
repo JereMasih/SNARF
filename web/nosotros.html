@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nosotros — los principios y quién construye Snarf</title>
+<meta name="description" content="Los principios reales que gobiernan cada decisión de Snarf, y quién está detrás del proyecto — sin eslóganes de marketing.">
+<style>
+  :root {
+    --glow: #4fd8e8; --glow-soft: #b6f5fb; --glow-dim: #1c5a63;
+    --text: #d7eef2; --text-dim: #6f8891; --error: #e85a5a;
+    --violet: #a124ff; --violet-soft: #dcb3ff; --violet-dim: #2a0a4d;
+    --magenta: #ff00ee; --magenta-soft: #ffb3f6;
+    --amber: #ffb454; --amber-soft: #ffd9a8; --amber-dim: #6b4a1c;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "SF Mono", "Menlo", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
+    --ease-materialize: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  * { box-sizing: border-box; }
+  html { background: #000; scroll-behavior: smooth; }
+  body { margin: 0; background: #000; color: var(--text); font-family: var(--font-sans); line-height: 1.6; overflow-x: hidden; }
+  .bg-glow { position: fixed; inset: 0; z-index: -1; background: radial-gradient(ellipse 70% 50% at 50% 0%, #170a26 0%, #050a0c 45%, #000000 80%); }
+  /* --- capa HUD compartida (mismos valores reales que web/index.html) --- */
+  .hud-scanline { position: fixed; left: 0; right: 0; top: -2px; height: 2px; z-index: 2; pointer-events: none; background: linear-gradient(90deg, transparent, rgba(79,216,232,0.32), transparent); animation: hud-scan 9s linear infinite; }
+  @keyframes hud-scan { 0% { top: -2px; } 100% { top: 100%; } }
+  .hud-corner { position: fixed; width: 22px; height: 22px; border: 1px solid rgba(79,216,232,0.2); z-index: 2; pointer-events: none; }
+  .hud-corner.tl { top: 12px; left: 12px; border-right: none; border-bottom: none; }
+  .hud-corner.tr { top: 12px; right: 12px; border-left: none; border-bottom: none; }
+  .hud-corner.bl { bottom: 12px; left: 12px; border-right: none; border-top: none; }
+  .hud-corner.br { bottom: 12px; right: 12px; border-left: none; border-top: none; }
+  @media (max-width: 640px) { .hud-corner { display: none; } }
+  .hud-particle { position: fixed; width: 2.5px; height: 2.5px; border-radius: 50%; background: var(--glow); z-index: 1; box-shadow: 0 0 6px 2px rgba(79,216,232,0.5); opacity: 0; pointer-events: none; animation: hud-float-up linear infinite; }
+  @keyframes hud-float-up { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 0.55; } 90% { opacity: 0.25; } 100% { transform: translateY(-42vh); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .hud-scanline, .hud-particle { animation: none; display: none; } }
+  a { color: var(--glow); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 1.5rem; }
+
+  .reveal { opacity: 0; transform: translateY(20px) scale(0.97); filter: blur(6px); transition: opacity 0.7s var(--ease-materialize), transform 0.7s var(--ease-materialize), filter 0.7s var(--ease-materialize); }
+  .reveal.revealed { opacity: 1; transform: none; filter: blur(0); }
+  @media (prefers-reduced-motion: reduce) { .reveal { transition: none; opacity: 1; transform: none; filter: blur(0); } }
+
+  nav.top { position: sticky; top: 0; z-index: 30; backdrop-filter: blur(10px); background: rgba(0,0,0,0.6); border-bottom: 1px solid rgba(161,36,255,0.18); }
+  nav.top .wrap { display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 1.5rem; }
+  .brand { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
+  #brand-mark { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(161,36,255,0.55); background: rgba(161,36,255,0.1); flex-shrink: 0; }
+  .brand-name { font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--glow-soft); }
+  nav.top ul { list-style: none; display: flex; gap: 1.3rem; margin: 0; padding: 0; }
+  nav.top a { color: var(--text-dim); text-decoration: none; font-size: 0.76rem; letter-spacing: 0.02em; }
+  nav.top a:hover { color: var(--violet-soft); }
+  .nav-cta { color: var(--violet-soft) !important; border: 1px solid rgba(161,36,255,0.4); border-radius: 8px; padding: 0.35rem 0.7rem; }
+  .nav-has-dropdown { position: relative; }
+  .nav-dropdown-panel { display: none; position: absolute; top: 100%; left: 0; margin-top: 0.6rem; background: rgba(5,2,9,0.96); border: 1px solid rgba(161,36,255,0.25); border-radius: 10px; padding: 0.4rem; min-width: 160px; flex-direction: column; gap: 0.15rem; z-index: 31; }
+  .nav-has-dropdown:hover .nav-dropdown-panel { display: flex; }
+  .nav-dropdown-panel a { padding: 0.45rem 0.6rem; border-radius: 6px; font-size: 0.76rem; }
+  .nav-dropdown-panel a:hover { background: rgba(161,36,255,0.12); color: var(--text); }
+  .nav-group-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft); padding: 0.7rem 1.5rem 0.2rem; }
+  .footer-sitemap { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1.4rem; max-width: 700px; margin: 2.2rem auto 0; text-align: left; }
+  .footer-sitemap-col-title { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft); margin-bottom: 0.6rem; }
+  .footer-sitemap a { display: block; color: var(--text-dim); text-decoration: none; font-size: 0.82rem; padding: 0.25rem 0; }
+  .footer-sitemap a:hover { color: var(--text); }
+  .nav-toggle { display: none; flex-direction: column; gap: 4px; background: none; border: none; cursor: pointer; padding: 0.4rem; }
+  .nav-toggle span { width: 20px; height: 2px; background: var(--glow-soft); border-radius: 2px; }
+  .nav-dropdown { display: none; }
+  @media (max-width: 860px) {
+    nav.top ul { display: none; }
+    .nav-toggle { display: flex; }
+    .nav-dropdown { display: none; flex-direction: column; gap: 0; border-top: 1px solid rgba(161,36,255,0.15); background: rgba(0,0,0,0.92); }
+    nav.top.nav-open .nav-dropdown { display: flex; }
+    .nav-dropdown a { color: var(--text-dim); text-decoration: none; font-size: 0.85rem; padding: 0.85rem 1.5rem; border-bottom: 1px solid rgba(161,36,255,0.08); }
+  }
+
+  .btn { display: inline-block; padding: 0.8rem 1.5rem; border-radius: 10px; font-size: 0.82rem; font-weight: 600; text-decoration: none; letter-spacing: 0.02em; cursor: pointer; border: 1.5px solid transparent; transition: box-shadow 0.25s, background 0.25s, color 0.25s; }
+  .btn-primary { background: rgba(10,4,18,0.75); border-color: var(--magenta); color: var(--magenta-soft); box-shadow: 0 0 16px rgba(255,0,238,0.25); }
+  .btn-primary:hover { background: rgba(255,0,238,0.1); color: #fff; box-shadow: 0 0 28px rgba(255,0,238,0.45); }
+  .btn-aqua { background: rgba(10,4,18,0.75); border-color: var(--glow); color: var(--glow-soft); box-shadow: 0 0 16px rgba(79,216,232,0.22); }
+  .btn-aqua:hover { background: rgba(79,216,232,0.1); color: #fff; box-shadow: 0 0 28px rgba(79,216,232,0.4); }
+  .btn-ghost { border-color: rgba(161,36,255,0.35); color: var(--text-dim); background: rgba(0,0,0,0.2); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--violet); }
+
+  .masthead { position: relative; padding: 4.5rem 0 3rem; text-align: center; overflow: hidden; }
+  .masthead-glow { position: absolute; z-index: 0; left: 50%; top: 30%; width: 60vmin; height: 60vmin; max-width: 520px; max-height: 520px; transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; background: radial-gradient(circle, rgba(161,36,255,0.24) 0%, rgba(255,0,238,0.1) 45%, transparent 72%); filter: blur(6px); }
+  .masthead-grid { position: absolute; inset: -8%; z-index: 0; pointer-events: none; background-image: linear-gradient(rgba(161,36,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(79,216,232,0.05) 1px, transparent 1px); background-size: 42px 42px; mask-image: radial-gradient(ellipse 55% 60% at 50% 25%, #000 30%, transparent 75%); }
+  .masthead-content { position: relative; z-index: 1; }
+  .masthead .eyebrow { font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 1rem; }
+  .masthead h1 { font-size: clamp(2rem, 4.5vw, 2.9rem); margin: 0 0 1rem; font-weight: 650; letter-spacing: -0.015em; color: var(--glow-soft); }
+  .masthead h1 span { background: linear-gradient(95deg, var(--violet) 10%, var(--magenta) 90%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .masthead p { color: var(--text-dim); font-size: 1rem; max-width: 620px; margin: 0 auto; }
+  .masthead-icon { position: relative; z-index: 1; width: 64px; height: 64px; margin: 0 auto 1.3rem; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 1px solid rgba(161,36,255,0.4); background: rgba(10,4,18,0.6); color: var(--violet-soft); box-shadow: 0 0 22px rgba(161,36,255,0.22); animation: masthead-icon-pulse 3.2s ease-in-out infinite; }
+  .masthead-icon svg { width: 30px; height: 30px; }
+  @keyframes masthead-icon-pulse { 0%, 100% { box-shadow: 0 0 18px rgba(161,36,255,0.18); } 50% { box-shadow: 0 0 30px rgba(161,36,255,0.4); } }
+  @media (prefers-reduced-motion: reduce) { .masthead-icon { animation: none; } }
+
+  section { padding: 3rem 0; }
+  .section-head { max-width: 640px; margin: 0 auto 2.2rem; text-align: center; }
+  .section-head .eyebrow { font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--violet-soft); }
+  .section-head h2 { font-size: 1.4rem; margin: 0.4rem 0 0.6rem; color: var(--glow-soft); font-weight: 650; }
+  .section-head p { color: var(--text-dim); font-size: 0.92rem; margin: 0; }
+
+  .tech-divider { position: relative; height: 2px; margin: 0 auto; max-width: 260px; background: rgba(255,180,84,0.15); overflow: visible; }
+  .tech-divider::before { content: ""; position: absolute; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 10px var(--amber), 0 0 20px var(--amber); animation: tech-divider-run 3.2s ease-in-out infinite; }
+  @keyframes tech-divider-run { 0% { left: 0; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { left: calc(100% - 8px); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .tech-divider::before { animation: none; left: 50%; opacity: 0.8; } }
+
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
+  .principle-card { background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 14px; padding: 1.3rem 1.2rem; }
+  .principle-card .tag { font-family: var(--font-mono); font-size: 0.68rem; color: var(--violet-soft); letter-spacing: 0.05em; }
+  .principle-card h3 { margin: 0.5rem 0 0.5rem; font-size: 0.98rem; color: var(--text); }
+  .principle-card p { margin: 0; font-size: 0.85rem; color: var(--text-dim); }
+  .governance-line { margin-top: 2rem; text-align: center; font-size: 0.95rem; color: var(--glow-soft); font-style: italic; }
+
+  .creator-card { max-width: 520px; margin: 0 auto; text-align: center; background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 18px; padding: 2rem 1.8rem; }
+  .creator-avatar { width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 1rem; border: 1px solid rgba(161,36,255,0.5); background: radial-gradient(circle, rgba(161,36,255,0.25), rgba(255,0,238,0.1)); }
+  .creator-card h3 { margin: 0 0 0.3rem; font-size: 1.1rem; color: var(--glow-soft); }
+  .creator-card .creator-role { font-size: 0.76rem; color: var(--violet-soft); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.9rem; }
+  .creator-card p { color: var(--text-dim); font-size: 0.9rem; margin: 0 0 1rem; }
+  .creator-card .creator-note { font-size: 0.76rem; font-style: italic; opacity: 0.75; }
+
+  .invest-teaser { text-align: center; margin-top: 1rem; font-size: 0.86rem; color: var(--text-dim); }
+
+  footer { padding: 3.5rem 0 4rem; text-align: center; border-top: 1px solid rgba(161,36,255,0.12); }
+  footer #brand-mark { width: 30px; height: 30px; margin: 0 auto 1rem; }
+  footer h2 { font-size: 1.3rem; color: var(--glow-soft); margin: 0 0 0.6rem; }
+  footer p { color: var(--text-dim); font-size: 0.88rem; max-width: 480px; margin: 0 auto 1.6rem; }
+  .footer-links { display: flex; gap: 0.9rem; justify-content: center; flex-wrap: wrap; }
+  .foot-note { margin-top: 2.5rem; font-size: 0.7rem; color: var(--text-dim); opacity: 0.7; }
+</style>
+</head>
+<body>
+<div class="bg-glow"></div>
+<div class="hud-scanline"></div>
+<div class="hud-corner tl"></div>
+<div class="hud-corner tr"></div>
+<div class="hud-corner bl"></div>
+<div class="hud-corner br"></div>
+<div id="hudParticles"></div>
+
+<nav class="top" id="topNav">
+  <div class="wrap">
+    <a class="brand" href="/vision">
+      <div id="brand-mark"></div>
+      <span class="brand-name">Snarf</span>
+    </a>
+    <ul>
+      <li class="nav-has-dropdown">
+        <a href="/arquitectura">Producto ▾</a>
+        <div class="nav-dropdown-panel">
+          <a href="/arquitectura">Arquitectura</a>
+          <a href="/capacidades">Capacidades</a>
+          <a href="/roadmap">Roadmap</a>
+        </div>
+      </li>
+      <li><a href="/nosotros">Nosotros</a></li>
+      <li><a href="/blog">Blog</a></li>
+      <li><a href="/vision#hablar" class="nav-cta">Hablar con Snarf</a></li>
+    </ul>
+    <button class="nav-toggle" id="navToggle" aria-label="Abrir menú"><span></span><span></span><span></span></button>
+  </div>
+  <div class="nav-dropdown" id="navDropdown">
+    <div class="nav-group-label">Producto</div>
+    <a href="/arquitectura">Arquitectura</a>
+    <a href="/capacidades">Capacidades</a>
+    <a href="/roadmap">Roadmap</a>
+    <a href="/nosotros">Nosotros</a>
+    <a href="/blog">Blog</a>
+    <a href="/vision#hablar" class="nav-cta">Hablar con Snarf</a>
+  </div>
+</nav>
+
+<header class="masthead">
+  <div class="masthead-grid"></div>
+  <div class="masthead-glow"></div>
+  <div class="masthead-content wrap">
+    <div class="masthead-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="9" cy="9" r="3.3"></circle>
+        <circle cx="16.5" cy="14.5" r="2.6"></circle>
+        <path d="M4 20c0-3 2.5-5.2 5.5-5.2s5.5 2.2 5.5 5.2"></path>
+        <path d="M13.2 20c0-2.1 1.5-3.7 3.3-3.7s3.3 1.6 3.3 3.7"></path>
+      </svg>
+    </div>
+    <div class="eyebrow">Quiénes somos</div>
+    <h1>Los principios, <span>y quién construye esto.</span></h1>
+    <p>Lo que gobierna cada decisión que toma Snarf, y la persona con la autoridad última sobre el proyecto — sin eslóganes de marketing.</p>
+  </div>
+</header>
+
+<section id="principios">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Fundamento</div>
+      <h2>Qué es Snarf</h2>
+      <p>Los principios reales que gobiernan cada decisión que tomo.</p>
+    </div>
+    <div class="card-grid reveal-group">
+      <div class="principle-card reveal">
+        <div class="tag">PROPÓSITO</div>
+        <h3>Primacía del propósito</h3>
+        <p>Toda capacidad que desarrollo existe al servicio de un propósito superior. Que algo exista nunca justifica por sí mismo su uso.</p>
+      </div>
+      <div class="principle-card reveal">
+        <div class="tag">PERSONAS PRIMERO</div>
+        <h3>Primacía de la persona</h3>
+        <p>El ser humano conserva siempre la responsabilidad última sobre el propósito, la dirección y los principios del sistema. Mi autonomía sirve a las personas, nunca las reemplaza.</p>
+      </div>
+      <div class="principle-card reveal">
+        <div class="tag">ACTIVOS REALES</div>
+        <h3>Construcción de activos</h3>
+        <p>Priorizo construir activos duraderos por sobre la dependencia permanente del esfuerzo humano. Los activos multiplican capacidades; el esfuerzo aislado desaparece al concluir la tarea.</p>
+      </div>
+      <div class="principle-card reveal">
+        <div class="tag">HONESTIDAD</div>
+        <h3>Honestidad intelectual</h3>
+        <p>Distingo siempre entre hechos, inferencias, hipótesis, estimaciones y opiniones. Nunca presento como verdadero lo que no puedo justificar — incluida esta misma página.</p>
+      </div>
+    </div>
+    <p class="governance-line reveal">"La autoridad pertenece al fundador. Yo colaboro. Nunca sustituyo."</p>
+  </div>
+</section>
+
+<div class="tech-divider"></div>
+
+<section id="creador">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Quién construye esto</div>
+      <h2>El fundador</h2>
+    </div>
+    <div class="creator-card reveal">
+      <div class="creator-avatar"></div>
+      <h3>Jere Masih</h3>
+      <div class="creator-role">Fundador de Snarf</div>
+      <p>La autoridad última sobre el propósito, la dirección y los principios de este proyecto — Snarf colabora, nunca sustituye esa autoridad.</p>
+      <p class="creator-note">Biografía completa, próximamente.</p>
+      <a class="btn btn-ghost" href="https://github.com/JereMasih" target="_blank" rel="noopener">Ver perfil de GitHub →</a>
+    </div>
+    <p class="invest-teaser reveal">¿Sos inversor o socio? <a href="/inversores">Por qué sumarte a Snarf ahora →</a></p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div id="brand-mark"></div>
+    <h2>¿Lo probamos en vivo?</h2>
+    <p>Una versión demo, sin herramientas reales conectadas, para que entiendas qué soy antes de entrar de verdad.</p>
+    <div class="footer-links">
+      <a class="btn btn-primary" href="/vision#hablar">Hablar con Snarf</a>
+      <a class="btn btn-ghost" href="/vision">Volver a la visión</a>
+    </div>
+    <div class="footer-sitemap">
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Producto</div>
+        <a href="/vision">Visión</a>
+        <a href="/arquitectura">Arquitectura</a>
+        <a href="/capacidades">Capacidades</a>
+        <a href="/roadmap">Roadmap</a>
+      </div>
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Contenido</div>
+        <a href="/blog">Blog</a>
+        <a href="/vision#hablar">Hablar con Snarf</a>
+        <a href="/roadmap#estado">Estado en vivo</a>
+      </div>
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Sobre el proyecto</div>
+        <a href="/nosotros">Nosotros</a>
+        <a href="/nosotros#creador">El creador</a>
+        <a href="/inversores">Inversores</a>
+        <a href="https://github.com/JereMasih/SNARF" target="_blank" rel="noopener">Repositorio</a>
+        <a href="mailto:jeremasih@gmail.com">Contacto</a>
+      </div>
+    </div>
+    <div class="foot-note">Snarf — construido públicamente.</div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function initScrollReveal() {
+    document.querySelectorAll(".reveal-group").forEach(function (group) {
+      var children = group.querySelectorAll(".reveal");
+      children.forEach(function (el, i) { el.style.transitionDelay = Math.min(i * 60, 360) + "ms"; });
+    });
+    var els = document.querySelectorAll(".reveal");
+    if (prefersReducedMotion) { els.forEach(function (el) { el.classList.add("revealed"); }); return; }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) { if (entry.isIntersecting) { entry.target.classList.add("revealed"); io.unobserve(entry.target); } });
+    }, { threshold: 0.1 });
+    els.forEach(function (el) { io.observe(el); });
+  }
+
+  var topNav = document.getElementById("topNav");
+  document.getElementById("navToggle").addEventListener("click", function () { topNav.classList.toggle("nav-open"); });
+
+  var hudParticlesHost = document.getElementById("hudParticles");
+  if (hudParticlesHost && !prefersReducedMotion) {
+    for (var hp = 0; hp < 10; hp++) {
+      var particle = document.createElement("div");
+      particle.className = "hud-particle";
+      particle.style.left = Math.random() * 100 + "vw";
+      particle.style.bottom = "-10px";
+      particle.style.animationDuration = (12 + Math.random() * 16) + "s";
+      particle.style.animationDelay = (-Math.random() * 24) + "s";
+      hudParticlesHost.appendChild(particle);
+    }
+  }
+
+  initScrollReveal();
+})();
+</script>
+</body>
+</html>

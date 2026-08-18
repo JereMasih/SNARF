@@ -93,7 +93,7 @@
     background: rgba(0,0,0,0.6); border-bottom: 1px solid rgba(161,36,255,0.18);
   }
   nav.top .wrap { display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 1.5rem; }
-  .brand { display: flex; align-items: center; gap: 0.6rem; }
+  .brand { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
   #brand-mark {
     width: 22px; height: 22px; border-radius: 50%;
     border: 1px solid rgba(161,36,255,0.55); background: rgba(161,36,255,0.1);
@@ -117,18 +117,6 @@
   .footer-sitemap-col-title { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft); margin-bottom: 0.6rem; }
   .footer-sitemap a { display: block; color: var(--text-dim); text-decoration: none; font-size: 0.82rem; padding: 0.25rem 0; }
   .footer-sitemap a:hover { color: var(--text); }
-  .creator-card {
-    max-width: 520px; margin: 0 auto; text-align: center; background: rgba(10,4,18,0.6);
-    border: 1px solid rgba(161,36,255,0.22); border-radius: 18px; padding: 2rem 1.8rem;
-  }
-  .creator-avatar {
-    width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 1rem;
-    border: 1px solid rgba(161,36,255,0.5); background: radial-gradient(circle, rgba(161,36,255,0.25), rgba(255,0,238,0.1));
-  }
-  .creator-card h3 { margin: 0 0 0.3rem; font-size: 1.1rem; color: var(--glow-soft); }
-  .creator-card .creator-role { font-size: 0.76rem; color: var(--violet-soft); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.9rem; }
-  .creator-card p { color: var(--text-dim); font-size: 0.9rem; margin: 0 0 1rem; }
-  .creator-card .creator-note { font-size: 0.76rem; font-style: italic; opacity: 0.75; }
   .nav-toggle {
     display: none; flex-direction: column; gap: 4px; background: none; border: none; cursor: pointer; padding: 0.4rem;
   }
@@ -279,31 +267,6 @@
     font-weight: 600;
   }
 
-  /* --- filosofía cards --- */
-  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
-  .principle-card {
-    background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 14px;
-    padding: 1.3rem 1.2rem;
-  }
-  .principle-card .tag {
-    font-family: var(--font-mono); font-size: 0.68rem; color: var(--violet-soft); letter-spacing: 0.05em;
-  }
-  .principle-card h3 { margin: 0.5rem 0 0.5rem; font-size: 0.98rem; color: var(--text); }
-  .principle-card p { margin: 0; font-size: 0.85rem; color: var(--text-dim); }
-  .governance-line {
-    margin-top: 2rem; text-align: center; font-size: 0.95rem; color: var(--glow-soft);
-    font-style: italic;
-  }
-
-  /* --- por qué sumarte (inversores/socios) --- */
-  .invest-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
-  .invest-card {
-    background: rgba(10,4,18,0.6); border: 1px solid rgba(255,0,238,0.22); border-radius: 14px;
-    padding: 1.3rem 1.3rem;
-  }
-  .invest-card h3 { margin: 0 0 0.5rem; font-size: 1rem; color: var(--magenta-soft); }
-  .invest-card p { margin: 0; font-size: 0.86rem; color: var(--text-dim); }
-
   /* --- cómo funciona (teaser compacto — el detalle completo vive en
        /arquitectura) --- */
   .how-flow { display: flex; align-items: center; justify-content: center; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 1.6rem; }
@@ -341,66 +304,6 @@
   .cap-grid-soon { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.9rem; }
   .cap-grid-soon .cap-card { border-color: rgba(255,180,84,0.22); }
 
-  /* --- screenshots --- */
-  .shot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.2rem; }
-  .shot-window {
-    border-radius: 12px; overflow: hidden; border: 1px solid rgba(79,216,232,0.25);
-    background: #0a1216; animation: shot-window-breathe 5s ease-in-out infinite;
-  }
-  @keyframes shot-window-breathe {
-    0%, 100% { box-shadow: 0 0 22px rgba(79,216,232,0.08); }
-    50% { box-shadow: 0 0 36px rgba(79,216,232,0.2); }
-  }
-  @media (prefers-reduced-motion: reduce) { .shot-window { animation: none; box-shadow: 0 0 22px rgba(79,216,232,0.08); } }
-  .shot-titlebar {
-    display: flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.7rem;
-    background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(79,216,232,0.12);
-  }
-  .shot-titlebar .dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.15); }
-  .shot-titlebar .label {
-    margin-left: 0.4rem; font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-dim);
-  }
-  .shot-window img { display: block; width: 100%; height: auto; }
-  .shot-caption { padding: 0.7rem 0.9rem; font-size: 0.78rem; color: var(--text-dim); }
-  .shot-placeholder {
-    aspect-ratio: 16/10; display: flex; align-items: center; justify-content: center;
-    color: var(--text-dim); font-size: 0.75rem; font-family: var(--font-mono);
-    overflow: hidden;
-  }
-  .shot-placeholder img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
-
-  /* --- estado en vivo --- */
-  .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.9rem; margin-bottom: 1.6rem; }
-  .stat-tile {
-    background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 12px;
-    padding: 1rem 1.1rem;
-  }
-  .stat-tile .num {
-    font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 1.7rem; color: var(--glow-soft);
-  }
-  .stat-tile .lbl { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.2rem; }
-  .status-panel {
-    background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 14px;
-    padding: 1.3rem 1.4rem; margin-bottom: 1.2rem;
-  }
-  .status-panel h4 {
-    margin: 0 0 0.6rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft);
-  }
-  .status-panel .summary-text { font-size: 0.86rem; color: var(--text); }
-  .status-panel .summary-text strong { color: var(--glow-soft); }
-  .mark-note {
-    border-left: 2px solid var(--magenta); padding-left: 0.9rem; font-size: 0.85rem; color: var(--text-dim);
-    font-style: italic;
-  }
-  table.changelog { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-  table.changelog th { text-align: left; color: var(--text-dim); font-weight: 500; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(161,36,255,0.15); }
-  table.changelog td { padding: 0.55rem 0.5rem; border-bottom: 1px solid rgba(161,36,255,0.08); color: var(--text); }
-  table.changelog td.date { font-family: var(--font-mono); color: var(--text-dim); white-space: nowrap; }
-  .adr-badge {
-    font-family: var(--font-mono); font-size: 0.68rem; color: var(--glow); border: 1px solid rgba(79,216,232,0.35);
-    border-radius: 6px; padding: 0.1rem 0.4rem;
-  }
-  .table-scroll { overflow-x: auto; }
   .status-loading, .status-error { color: var(--text-dim); font-size: 0.85rem; text-align: center; padding: 1rem; }
 
   /* --- roadmap timeline --- */
@@ -521,12 +424,11 @@
 
 <nav class="top" id="topNav">
   <div class="wrap">
-    <div class="brand">
+    <a class="brand" href="/vision">
       <div id="brand-mark"></div>
       <span class="brand-name">Snarf</span>
-    </div>
+    </a>
     <ul>
-      <li><a href="#que-es">Visión</a></li>
       <li class="nav-has-dropdown">
         <a href="/arquitectura">Producto ▾</a>
         <div class="nav-dropdown-panel">
@@ -535,22 +437,18 @@
           <a href="/roadmap">Roadmap</a>
         </div>
       </li>
+      <li><a href="/nosotros">Nosotros</a></li>
       <li><a href="/blog">Blog</a></li>
-      <li><a href="#creador">El creador</a></li>
       <li><a href="#hablar" class="nav-cta">Hablar con Snarf</a></li>
     </ul>
     <button class="nav-toggle" id="navToggle" aria-label="Abrir menú"><span></span><span></span><span></span></button>
   </div>
   <div class="nav-dropdown" id="navDropdown">
-    <a href="#que-es">Visión</a>
     <div class="nav-group-label">Producto</div>
     <a href="/arquitectura">Arquitectura</a>
     <a href="/capacidades">Capacidades</a>
     <a href="/roadmap">Roadmap</a>
-    <a href="#capturas">Interfaz</a>
-    <a href="#estado">Estado en vivo</a>
-    <a href="#invertir">Por qué sumarte</a>
-    <a href="#creador">El creador</a>
+    <a href="/nosotros">Nosotros</a>
     <a href="/blog">Blog</a>
     <a href="#hablar" class="nav-cta">Hablar con Snarf</a>
   </div>
@@ -604,41 +502,6 @@
   </div>
 </section>
 
-<div class="tech-divider"></div>
-
-<section id="que-es">
-  <div class="wrap">
-    <div class="section-head reveal">
-      <div class="eyebrow">Fundamento</div>
-      <h2>Qué es Snarf</h2>
-      <p>Los principios reales que gobiernan cada decisión que tomo — no eslóganes de marketing.</p>
-    </div>
-    <div class="card-grid reveal-group">
-      <div class="principle-card reveal">
-        <div class="tag">PROPÓSITO</div>
-        <h3>Primacía del propósito</h3>
-        <p>Toda capacidad que desarrollo existe al servicio de un propósito superior. Que algo exista nunca justifica por sí mismo su uso.</p>
-      </div>
-      <div class="principle-card reveal">
-        <div class="tag">PERSONAS PRIMERO</div>
-        <h3>Primacía de la persona</h3>
-        <p>El ser humano conserva siempre la responsabilidad última sobre el propósito, la dirección y los principios del sistema. Mi autonomía sirve a las personas, nunca las reemplaza.</p>
-      </div>
-      <div class="principle-card reveal">
-        <div class="tag">ACTIVOS REALES</div>
-        <h3>Construcción de activos</h3>
-        <p>Priorizo construir activos duraderos por sobre la dependencia permanente del esfuerzo humano. Los activos multiplican capacidades; el esfuerzo aislado desaparece al concluir la tarea.</p>
-      </div>
-      <div class="principle-card reveal">
-        <div class="tag">HONESTIDAD</div>
-        <h3>Honestidad intelectual</h3>
-        <p>Distingo siempre entre hechos, inferencias, hipótesis, estimaciones y opiniones. Nunca presento como verdadero lo que no puedo justificar — incluida esta misma página.</p>
-      </div>
-    </div>
-    <p class="governance-line reveal">"La autoridad pertenece al fundador. Yo colaboro. Nunca sustituyo."</p>
-  </div>
-</section>
-
 <section id="como-funciona">
   <div class="wrap">
     <div class="section-head reveal">
@@ -670,51 +533,9 @@
       <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Razonamiento con memoria</h3><p>Conversa y razona con memoria real de cada conversación — no una ventana que se resetea sola.</p></div>
       <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Voz, ida y vuelta</h3><p>Hablás y te habla: texto y voz en cualquier dirección, en el celular o el escritorio.</p></div>
       <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Google Suite real</h3><p>Lee, organiza y busca en Gmail, Drive, Calendar y YouTube — con confirmación explícita antes de cualquier acción irreversible.</p></div>
-      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Documentos reales</h3><p>Crea y exporta Docs, Sheets, Slides y PDF — un archivo real en tu Drive o tu disco, no solo texto en el chat.</p></div>
-      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Cerebro / observabilidad</h3><p>Visualización en vivo de tu propia actividad interna: qué se ejecutó, cuándo, con qué costo.</p></div>
       <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Board Ejecutivo</h3><p>7 roles asesores que opinan antes de una decisión importante — nunca ejecutan por su cuenta.</p></div>
     </div>
     <p class="section-cta reveal"><a class="btn btn-aqua" href="/capacidades">Ver las capacidades completas, hoy y en camino →</a></p>
-  </div>
-</section>
-
-<div class="tech-divider"></div>
-
-<section id="capturas">
-  <div class="wrap">
-    <div class="section-head reveal">
-      <div class="eyebrow">Interfaz real</div>
-      <h2>Así se ve Snarf hoy</h2>
-      <p>Capturas reales de la interfaz en uso — sin mockups, sin maquetas armadas para la ocasión.</p>
-    </div>
-    <div class="shot-grid reveal-group" id="shotGrid">
-      <div class="shot-window reveal">
-        <div class="shot-titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">chat</span></div>
-        <div class="shot-placeholder"><img src="/vision/assets/shot-chat.png" alt="Chat de Snarf" loading="lazy" onerror="this.parentElement.textContent='captura pendiente'"></div>
-        <div class="shot-caption">Texto o voz, en el celular o el escritorio — mismo Snarf, misma memoria.</div>
-      </div>
-      <div class="shot-window reveal">
-        <div class="shot-titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">dashboard</span></div>
-        <div class="shot-placeholder"><img src="/vision/assets/shot-dashboard.png" alt="Dashboard de Snarf" loading="lazy" onerror="this.parentElement.textContent='captura pendiente'"></div>
-        <div class="shot-caption">Panel de widgets: actividad, costo, curación en vivo.</div>
-      </div>
-      <div class="shot-window reveal">
-        <div class="shot-titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">cerebro</span></div>
-        <div class="shot-placeholder"><img src="/vision/assets/shot-brain.png" alt="Vista de cerebro de Snarf" loading="lazy" onerror="this.parentElement.textContent='captura pendiente'"></div>
-        <div class="shot-caption">Vista del cerebro: telemetría real, no ilustración.</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="estado">
-  <div class="wrap">
-    <div class="section-head reveal">
-      <div class="eyebrow">Sin números inventados</div>
-      <h2>Estado de desarrollo en vivo</h2>
-      <p>Cada número se actualiza solo, leído en el momento desde nuestro propio historial de desarrollo — nunca inventado, nunca cacheado.</p>
-    </div>
-    <div id="statusContent"><div class="status-loading">cargando estado real…</div></div>
   </div>
 </section>
 
@@ -750,56 +571,6 @@
       </div>
     </div>
     <p class="section-cta reveal"><a class="btn btn-aqua" href="/roadmap">Ver el roadmap completo →</a></p>
-  </div>
-</section>
-
-<div class="tech-divider"></div>
-
-<section id="invertir">
-  <div class="wrap">
-    <div class="section-head reveal">
-      <div class="eyebrow">Para inversores y socios</div>
-      <h2>Por qué sumarte a Snarf ahora</h2>
-      <p>Lo mismo que le mostraría a cualquiera que me pregunte por qué esto vale la pena.</p>
-    </div>
-    <div class="invest-grid reveal-group">
-      <div class="invest-card reveal">
-        <h3>Construido en público, verificable</h3>
-        <p>Cada decisión de arquitectura queda documentada y pública desde el primer día — nada de relato armado después de los hechos. El historial completo está arriba, en vivo.</p>
-      </div>
-      <div class="invest-card reveal">
-        <h3>Profundidad técnica real</h3>
-        <p>Arquitectura propia de tres capas, un board de siete roles asesores, observabilidad completa de su propio funcionamiento — no una capa fina sobre una API de terceros.</p>
-      </div>
-      <div class="invest-card reveal">
-        <h3>Un problema real, sin resolver</h3>
-        <p>Cualquiera que sostenga un negocio propio hoy reparte su memoria entre veinte herramientas que no se hablan entre sí. Nadie más está construyendo la capa que las conecta con criterio propio.</p>
-      </div>
-      <div class="invest-card reveal">
-        <h3>Ambición real de roadmap</h3>
-        <p>Multi-usuario real, que tu propia máquina sostenga tu instancia, un sistema capaz de extenderse a sí mismo — no una lista de features, una dirección clara y ya en marcha.</p>
-      </div>
-    </div>
-    <p class="section-cta reveal"><a class="btn btn-primary" href="mailto:jeremasih@gmail.com">Conversemos</a></p>
-  </div>
-</section>
-
-<div class="tech-divider"></div>
-
-<section id="creador">
-  <div class="wrap">
-    <div class="section-head reveal">
-      <div class="eyebrow">Quién construye esto</div>
-      <h2>El fundador</h2>
-    </div>
-    <div class="creator-card reveal">
-      <div class="creator-avatar"></div>
-      <h3>Jere Masih</h3>
-      <div class="creator-role">Fundador de Snarf</div>
-      <p>La autoridad última sobre el propósito, la dirección y los principios de este proyecto — Snarf colabora, nunca sustituye esa autoridad.</p>
-      <p class="creator-note">Biografía completa, próximamente.</p>
-      <a class="btn btn-ghost" href="https://github.com/JereMasih" target="_blank" rel="noopener">Ver perfil de GitHub →</a>
-    </div>
   </div>
 </section>
 
@@ -870,12 +641,14 @@
       <div class="footer-sitemap-col">
         <div class="footer-sitemap-col-title">Contenido</div>
         <a href="/blog">Blog</a>
-        <a href="/vision#hablar">Hablar con Snarf</a>
-        <a href="/vision#estado">Estado en vivo</a>
+        <a href="#hablar">Hablar con Snarf</a>
+        <a href="/roadmap#estado">Estado en vivo</a>
       </div>
       <div class="footer-sitemap-col">
         <div class="footer-sitemap-col-title">Sobre el proyecto</div>
-        <a href="/vision#creador">El creador</a>
+        <a href="/nosotros">Nosotros</a>
+        <a href="/nosotros#creador">El creador</a>
+        <a href="/inversores">Inversores</a>
         <a href="https://github.com/JereMasih/SNARF" target="_blank" rel="noopener">Repositorio</a>
         <a href="mailto:jeremasih@gmail.com">Contacto</a>
       </div>
@@ -965,8 +738,9 @@
   // cerebro — anillos, paleta violeta/magenta/aqua — pero es animación
   // GENERATIVA, no telemetría en vivo: mezclar "decorativo" con "dato real"
   // sin distinguirlos violaría el Principio VI de FOUNDATION.md. La prueba
-  // de que el cerebro real mide actividad real está más abajo: la captura
-  // de pantalla completa (#capturas) y el panel de estado en vivo (#estado).
+  // de que el cerebro real mide actividad real está en /capacidades
+  // (capturas de pantalla reales) y /roadmap#estado (panel de estado en
+  // vivo).
   // ---------------------------------------------------------------------
   function initHeroCanvas() {
     var canvas = document.getElementById("heroCanvas");
@@ -1153,37 +927,10 @@
   }
 
   // ---------------------------------------------------------------------
-  // Estado en vivo (roadmap/changelog/adr/tests) + hero trust bar +
-  // roadmap dinámico — todo desde el mismo fetch real a /vision/status.
+  // Hero trust bar + roadmap dinámico — desde el mismo fetch real a
+  // /vision/status. El panel completo de Estado en vivo vive ahora en
+  // /roadmap#estado (ADR nuevo).
   // ---------------------------------------------------------------------
-  function tile(num, label) {
-    return "<div class=\"stat-tile\"><div class=\"num\" data-count-num=\"" + esc(num) + "\">0</div><div class=\"lbl\">" + esc(label) + "</div></div>";
-  }
-
-  function renderStatus(data) {
-    var el = document.getElementById("statusContent");
-    var roadmap = data.roadmap || {};
-    var tiles = ""
-      + tile(roadmap.latest_phase != null ? roadmap.latest_phase : 0, "Última fase detectada")
-      + tile(data.adr_count || 0, "ADR documentados")
-      + tile(data.test_function_count || 0, "Funciones de test");
-
-    var rows = (data.changelog_recent || []).map(function (e) {
-      return "<tr><td class=\"date\">" + esc(e.date) + "</td><td>" + esc(e.title) + "</td><td>"
-        + (e.adr ? "<span class=\"adr-badge\">ADR " + e.adr + "</span>" : "") + "</td></tr>";
-    }).join("");
-
-    el.innerHTML =
-      "<div class=\"status-grid\">" + tiles + "</div>"
-      + (roadmap.summary ? "<div class=\"status-panel\"><h4>Estado actual del roadmap</h4><div class=\"summary-text\">" + esc(roadmap.summary) + "</div></div>" : "")
-      + (roadmap.mark_note ? "<div class=\"status-panel\"><h4>Norte del plan — Mark 1 vs. Mark 2</h4><p class=\"mark-note\">" + esc(roadmap.mark_note) + "</p></div>" : "")
-      + (rows ? "<div class=\"status-panel\"><h4>Últimos cambios reales</h4><div class=\"table-scroll\"><table class=\"changelog\"><thead><tr><th>Fecha</th><th>Cambio</th><th>Referencia</th></tr></thead><tbody>" + rows + "</tbody></table></div></div>" : "");
-
-    el.querySelectorAll("[data-count-num]").forEach(function (numEl) {
-      watchCountUp(numEl, parseFloat(numEl.dataset.countNum) || 0);
-    });
-  }
-
   function renderHeroTrust(data) {
     var adrEl = document.getElementById("trustAdr");
     var testsEl = document.getElementById("trustTests");
@@ -1226,12 +973,9 @@
   }
 
   fetch("/vision/status").then(function (r) { return r.json(); }).then(function (data) {
-    renderStatus(data);
     renderHeroTrust(data);
     renderRoadmapDynamic(data);
-  }).catch(function () {
-    document.getElementById("statusContent").innerHTML = "<div class=\"status-error\">no se pudo cargar el estado en vivo</div>";
-  });
+  }).catch(function () {});
 
   fetch("/vision/blog").then(function (r) { return r.json(); }).then(renderBlog).catch(function () {
     document.getElementById("blogContent").innerHTML = "<div class=\"status-error\">no se pudo cargar el blog</div>";

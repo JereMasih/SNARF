@@ -2,6 +2,27 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-18] Reorganización del home: Nosotros e Inversores como páginas propias (ADR 0172)
+
+- El home (`GET /vision`) pasa de 13 secciones + hero a 6 + hero: Problema, Cómo funciona (teaser),
+  Capacidades (teaser recortado de 6 a 4 tarjetas), Roadmap (teaser), Blog (teaser), Hablar con Snarf.
+  Sin cambios de backend — todo el contenido movido sigue sirviéndose desde los endpoints públicos ya
+  existentes.
+- Dos páginas públicas nuevas: `GET /nosotros` (`web/nosotros.html`, principios + el creador) y
+  `GET /inversores` (`web/inversores.html`, pitch para inversores/socios) — separadas a pedido del
+  fundador. "Inversores" queda deliberadamente fuera del nav principal (audiencia de nicho),
+  alcanzable desde `/nosotros` y el footer.
+- Capturas de la interfaz se mudan a `web/capacidades.html` (después del masthead); el panel completo
+  de Estado en vivo se muda a `web/roadmap.html`, reemplazando el stub que ya apuntaba ahí desde ADR
+  0170.
+- Nav de las 7 páginas públicas gana el link "Nosotros"; el logo pasa a linkear a `/vision` en las 7;
+  se saca el ítem "Visión" (sección que ya no existe) y "El creador" deja de ser un ítem de nav propio.
+  CSS muerto eliminado de `vision.html` junto con las secciones removidas.
+- 1472/1472 tests (sin tests de backend nuevos — las 2 rutas son `FileResponse` estáticas, mismo
+  patrón sin test dedicado que sus vecinas). Verificado con Playwright en las 7 páginas, desktop y
+  mobile: cero errores de consola, cero links muertos apuntando a anchors del home ya removidos.
+  Server real de producción pendiente de reinicio. Ver ADR 0172.
+
 ## [2026-08-18] Hero centrado en Snarf, capa HUD compartida, y rediseño del mapa de arquitectura (ADR 0171)
 
 - Hero de la home reescrito para despertar curiosidad por Snarf mismo (no por "para quién es"); canvas del

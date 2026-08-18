@@ -158,6 +158,8 @@ Desde el 2026-08-17 (ADR 0169, mismo día): fix real de un bug de mobile (el cer
 
 Desde el 2026-08-17 (ADR 0170, mismo día): contenido profundo mudado a 3 páginas propias (`GET /arquitectura` con mapa mental real de agentes/capacidades vía `GET /vision/architecture` nuevo, `GET /capacidades`, `GET /roadmap`), sección nueva "Por qué sumarte" para inversores/socios en la home, blog con URL real por artículo (`slug` en `snarf/telemetry/blog.py`) y CMS propio founder-gated (`GET /blog/admin`, editor Markdown + subida de imágenes), y botones rediseñados (fondo oscuro + borde de acento en vez de fill sólido).
 
+Desde el 2026-08-18 (ADR 0172): el home (`GET /vision`) se poda de 13 secciones a 6 + hero. Dos páginas públicas nuevas y separadas: `GET /nosotros` (principios + el creador) y `GET /inversores` (pitch inversores/socios, fuera del nav principal a propósito). Capturas de interfaz mudadas a `GET /capacidades`; panel de Estado en vivo mudado a `GET /roadmap`, reemplazando el stub que ya apuntaba ahí desde ADR 0170. 7 páginas públicas en total: vision, arquitectura, capacidades, roadmap, blog, nosotros, inversores.
+
 ## Business
 
 Unidades económicas, productos, servicios y empresas.

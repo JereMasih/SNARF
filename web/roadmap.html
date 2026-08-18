@@ -123,8 +123,27 @@
   .roadmap-card h3 { margin: 0.1rem 0 0.5rem; font-size: 1.05rem; color: var(--text); }
   .roadmap-card p { margin: 0; font-size: 0.9rem; color: var(--text-dim); }
 
-  .status-teaser { max-width: 900px; margin: 3rem auto 0; padding: 1.4rem 1.6rem; border: 1px solid rgba(161,36,255,0.22); border-radius: 16px; background: rgba(10,4,18,0.6); text-align: center; }
-  .status-teaser p { color: var(--text-dim); font-size: 0.9rem; margin: 0 0 1rem; }
+  .section-head { max-width: 640px; margin: 3.5rem auto 2.2rem; text-align: center; }
+  .section-head .eyebrow { font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--violet-soft); }
+  .section-head h2 { font-size: 1.4rem; margin: 0.4rem 0 0.6rem; color: var(--glow-soft); font-weight: 650; }
+  .section-head p { color: var(--text-dim); font-size: 0.92rem; margin: 0; }
+
+  .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.9rem; margin-bottom: 1.6rem; }
+  .stat-tile { background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 12px; padding: 1rem 1.1rem; }
+  .stat-tile .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 1.7rem; color: var(--glow-soft); }
+  .stat-tile .lbl { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.2rem; }
+  .status-panel { background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 14px; padding: 1.3rem 1.4rem; margin-bottom: 1.2rem; }
+  .status-panel h4 { margin: 0 0 0.6rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft); }
+  .status-panel .summary-text { font-size: 0.86rem; color: var(--text); }
+  .status-panel .summary-text strong { color: var(--glow-soft); }
+  .mark-note { border-left: 2px solid var(--magenta); padding-left: 0.9rem; font-size: 0.85rem; color: var(--text-dim); font-style: italic; }
+  table.changelog { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  table.changelog th { text-align: left; color: var(--text-dim); font-weight: 500; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(161,36,255,0.15); }
+  table.changelog td { padding: 0.55rem 0.5rem; border-bottom: 1px solid rgba(161,36,255,0.08); color: var(--text); }
+  table.changelog td.date { font-family: var(--font-mono); color: var(--text-dim); white-space: nowrap; }
+  .adr-badge { font-family: var(--font-mono); font-size: 0.68rem; color: var(--glow); border: 1px solid rgba(79,216,232,0.35); border-radius: 6px; padding: 0.1rem 0.4rem; }
+  .table-scroll { overflow-x: auto; }
+  .status-loading, .status-error { color: var(--text-dim); font-size: 0.85rem; text-align: center; padding: 1rem; }
 
   footer { padding: 3.5rem 0 4rem; text-align: center; border-top: 1px solid rgba(161,36,255,0.12); }
   footer .wrap { max-width: 1120px; }
@@ -151,7 +170,6 @@
       <span class="brand-name">Snarf</span>
     </a>
     <ul>
-      <li><a href="/vision#que-es">Visión</a></li>
       <li class="nav-has-dropdown">
         <a href="/arquitectura">Producto ▾</a>
         <div class="nav-dropdown-panel">
@@ -160,19 +178,18 @@
           <a href="/roadmap">Roadmap</a>
         </div>
       </li>
+      <li><a href="/nosotros">Nosotros</a></li>
       <li><a href="/blog">Blog</a></li>
-      <li><a href="/vision#creador">El creador</a></li>
       <li><a href="/vision#hablar" class="nav-cta">Hablar con Snarf</a></li>
     </ul>
     <button class="nav-toggle" id="navToggle" aria-label="Abrir menú"><span></span><span></span><span></span></button>
   </div>
   <div class="nav-dropdown" id="navDropdown">
-    <a href="/vision#que-es">Visión</a>
     <div class="nav-group-label">Producto</div>
     <a href="/arquitectura">Arquitectura</a>
     <a href="/capacidades">Capacidades</a>
     <a href="/roadmap">Roadmap</a>
-    <a href="/vision#creador">El creador</a>
+    <a href="/nosotros">Nosotros</a>
     <a href="/blog">Blog</a>
     <a href="/vision#hablar" class="nav-cta">Hablar con Snarf</a>
   </div>
@@ -225,7 +242,7 @@
         <div class="roadmap-card">
           <div class="roadmap-badge roadmap-badge-now" id="roadmapHoyBadge">Hoy</div>
           <h3>En desarrollo activo, todos los días</h3>
-          <p>Observabilidad real de mi propio funcionamiento, automatización más profunda de cómo razono, y los cimientos de una versión multi-usuario. El detalle minuto a minuto está en el panel de estado en vivo de la visión general.</p>
+          <p>Observabilidad real de mi propio funcionamiento, automatización más profunda de cómo razono, y los cimientos de una versión multi-usuario. El detalle minuto a minuto está en el panel de estado en vivo, más abajo.</p>
         </div>
       </div>
       <div class="roadmap-node dot-amber reveal">
@@ -258,10 +275,17 @@
       </div>
     </div>
 
-    <div class="status-teaser reveal">
-      <p>Los números detrás de este roadmap — ADR documentados, tests, últimos cambios reales — se leen en vivo en la visión general, nunca hardcodeados.</p>
-      <a class="btn btn-aqua" href="/vision#estado">Ver el estado de desarrollo en vivo →</a>
+  </div>
+</section>
+
+<section id="estado">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Sin números inventados</div>
+      <h2>Estado de desarrollo en vivo</h2>
+      <p>Cada número se actualiza solo, leído en el momento desde nuestro propio historial de desarrollo — nunca inventado, nunca cacheado.</p>
     </div>
+    <div id="statusContent"><div class="status-loading">cargando estado real…</div></div>
   </div>
 </section>
 
@@ -286,11 +310,13 @@
         <div class="footer-sitemap-col-title">Contenido</div>
         <a href="/blog">Blog</a>
         <a href="/vision#hablar">Hablar con Snarf</a>
-        <a href="/vision#estado">Estado en vivo</a>
+        <a href="/roadmap#estado">Estado en vivo</a>
       </div>
       <div class="footer-sitemap-col">
         <div class="footer-sitemap-col-title">Sobre el proyecto</div>
-        <a href="/vision#creador">El creador</a>
+        <a href="/nosotros">Nosotros</a>
+        <a href="/nosotros#creador">El creador</a>
+        <a href="/inversores">Inversores</a>
         <a href="https://github.com/JereMasih/SNARF" target="_blank" rel="noopener">Repositorio</a>
         <a href="mailto:jeremasih@gmail.com">Contacto</a>
       </div>
@@ -301,6 +327,12 @@
 
 <script>
 (function () {
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
   var prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   function initScrollReveal() {
@@ -315,12 +347,71 @@
   var topNav = document.getElementById("topNav");
   document.getElementById("navToggle").addEventListener("click", function () { topNav.classList.toggle("nav-open"); });
 
+  // ---------------------------------------------------------------------
+  // Estado en vivo — panel completo, portado de web/vision.html (ADR nuevo,
+  // este es ahora el lugar temático real: el roadmap muestra "hacia dónde
+  // va", este panel muestra "con qué números reales" sin nada inventado).
+  // ---------------------------------------------------------------------
+  function animateCountUp(el, target) {
+    if (prefersReducedMotion || !Number.isFinite(target)) { el.textContent = target; return; }
+    var start = 0, duration = 900, startTs = null;
+    function step(ts) {
+      if (startTs === null) startTs = ts;
+      var progress = Math.min((ts - startTs) / duration, 1);
+      var eased = 1 - Math.pow(1 - progress, 3);
+      el.textContent = Math.round(start + (target - start) * eased);
+      if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function watchCountUp(el, target) {
+    if (prefersReducedMotion) { el.textContent = target; return; }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) { animateCountUp(entry.target, target); io.unobserve(entry.target); }
+      });
+    }, { threshold: 0.4 });
+    io.observe(el);
+  }
+
+  function tile(num, label) {
+    return "<div class=\"stat-tile\"><div class=\"num\" data-count-num=\"" + esc(num) + "\">0</div><div class=\"lbl\">" + esc(label) + "</div></div>";
+  }
+
+  function renderStatus(data) {
+    var el = document.getElementById("statusContent");
+    var roadmap = data.roadmap || {};
+    var tiles = ""
+      + tile(roadmap.latest_phase != null ? roadmap.latest_phase : 0, "Última fase detectada")
+      + tile(data.adr_count || 0, "ADR documentados")
+      + tile(data.test_function_count || 0, "Funciones de test");
+
+    var rows = (data.changelog_recent || []).map(function (e) {
+      return "<tr><td class=\"date\">" + esc(e.date) + "</td><td>" + esc(e.title) + "</td><td>"
+        + (e.adr ? "<span class=\"adr-badge\">ADR " + e.adr + "</span>" : "") + "</td></tr>";
+    }).join("");
+
+    el.innerHTML =
+      "<div class=\"status-grid\">" + tiles + "</div>"
+      + (roadmap.summary ? "<div class=\"status-panel\"><h4>Estado actual del roadmap</h4><div class=\"summary-text\">" + esc(roadmap.summary) + "</div></div>" : "")
+      + (roadmap.mark_note ? "<div class=\"status-panel\"><h4>Norte del plan — Mark 1 vs. Mark 2</h4><p class=\"mark-note\">" + esc(roadmap.mark_note) + "</p></div>" : "")
+      + (rows ? "<div class=\"status-panel\"><h4>Últimos cambios reales</h4><div class=\"table-scroll\"><table class=\"changelog\"><thead><tr><th>Fecha</th><th>Cambio</th><th>Referencia</th></tr></thead><tbody>" + rows + "</tbody></table></div></div>" : "");
+
+    el.querySelectorAll("[data-count-num]").forEach(function (numEl) {
+      watchCountUp(numEl, parseFloat(numEl.dataset.countNum) || 0);
+    });
+  }
+
   fetch("/vision/status").then(function (r) { return r.json(); }).then(function (data) {
     var roadmap = data.roadmap || {};
     if (roadmap.latest_phase != null) {
       document.getElementById("roadmapHoyBadge").textContent = "Hoy · Fase " + roadmap.latest_phase;
     }
-  }).catch(function () {});
+    renderStatus(data);
+  }).catch(function () {
+    document.getElementById("statusContent").innerHTML = "<div class=\"status-error\">no se pudo cargar el estado en vivo</div>";
+  });
 
   var hudParticlesHost = document.getElementById("hudParticles");
   if (hudParticlesHost && !prefersReducedMotion) {

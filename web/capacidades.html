@@ -100,6 +100,17 @@
   .cat-head .eyebrow { font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--violet-soft); }
   .cat-head h2 { font-size: 1.3rem; margin: 0.4rem 0 0; color: var(--glow-soft); font-weight: 650; }
 
+  .shot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.2rem; margin-bottom: 1rem; }
+  .shot-window { border-radius: 12px; overflow: hidden; border: 1px solid rgba(79,216,232,0.25); background: #0a1216; animation: shot-window-breathe 5s ease-in-out infinite; }
+  @keyframes shot-window-breathe { 0%, 100% { box-shadow: 0 0 22px rgba(79,216,232,0.08); } 50% { box-shadow: 0 0 36px rgba(79,216,232,0.2); } }
+  @media (prefers-reduced-motion: reduce) { .shot-window { animation: none; box-shadow: 0 0 22px rgba(79,216,232,0.08); } }
+  .shot-titlebar { display: flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.7rem; background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(79,216,232,0.12); }
+  .shot-titlebar .dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.15); }
+  .shot-titlebar .label { margin-left: 0.4rem; font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-dim); }
+  .shot-placeholder { aspect-ratio: 16/10; display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: 0.75rem; font-family: var(--font-mono); overflow: hidden; }
+  .shot-placeholder img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+  .shot-caption { padding: 0.7rem 0.9rem; font-size: 0.78rem; color: var(--text-dim); }
+
   .cap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 3rem; }
   .cap-card { background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 14px; padding: 1.3rem 1.3rem; }
   .cap-badge { display: inline-block; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.07em; border-radius: 6px; padding: 0.15rem 0.45rem; margin-bottom: 0.6rem; }
@@ -140,7 +151,6 @@
       <span class="brand-name">Snarf</span>
     </a>
     <ul>
-      <li><a href="/vision#que-es">Visión</a></li>
       <li class="nav-has-dropdown">
         <a href="/arquitectura">Producto ▾</a>
         <div class="nav-dropdown-panel">
@@ -149,19 +159,18 @@
           <a href="/roadmap">Roadmap</a>
         </div>
       </li>
+      <li><a href="/nosotros">Nosotros</a></li>
       <li><a href="/blog">Blog</a></li>
-      <li><a href="/vision#creador">El creador</a></li>
       <li><a href="/vision#hablar" class="nav-cta">Hablar con Snarf</a></li>
     </ul>
     <button class="nav-toggle" id="navToggle" aria-label="Abrir menú"><span></span><span></span><span></span></button>
   </div>
   <div class="nav-dropdown" id="navDropdown">
-    <a href="/vision#que-es">Visión</a>
     <div class="nav-group-label">Producto</div>
     <a href="/arquitectura">Arquitectura</a>
     <a href="/capacidades">Capacidades</a>
     <a href="/roadmap">Roadmap</a>
-    <a href="/vision#creador">El creador</a>
+    <a href="/nosotros">Nosotros</a>
     <a href="/blog">Blog</a>
     <a href="/vision#hablar" class="nav-cta">Hablar con Snarf</a>
   </div>
@@ -195,6 +204,28 @@
 
 <main class="wrap">
   <section>
+    <div class="cat-head reveal">
+      <div class="eyebrow">Interfaz real</div>
+      <h2>Así se ve hoy</h2>
+    </div>
+    <div class="shot-grid reveal-group">
+      <div class="shot-window reveal">
+        <div class="shot-titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">chat</span></div>
+        <div class="shot-placeholder"><img src="/vision/assets/shot-chat.png" alt="Chat de Snarf" loading="lazy" onerror="this.parentElement.textContent='captura pendiente'"></div>
+        <div class="shot-caption">Texto o voz, en el celular o el escritorio — mismo Snarf, misma memoria.</div>
+      </div>
+      <div class="shot-window reveal">
+        <div class="shot-titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">dashboard</span></div>
+        <div class="shot-placeholder"><img src="/vision/assets/shot-dashboard.png" alt="Dashboard de Snarf" loading="lazy" onerror="this.parentElement.textContent='captura pendiente'"></div>
+        <div class="shot-caption">Panel de widgets: actividad, costo, curación en vivo.</div>
+      </div>
+      <div class="shot-window reveal">
+        <div class="shot-titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">cerebro</span></div>
+        <div class="shot-placeholder"><img src="/vision/assets/shot-brain.png" alt="Vista de cerebro de Snarf" loading="lazy" onerror="this.parentElement.textContent='captura pendiente'"></div>
+        <div class="shot-caption">Vista del cerebro: telemetría real, no ilustración.</div>
+      </div>
+    </div>
+
     <div class="cat-head reveal">
       <div class="eyebrow">Núcleo</div>
       <h2>Razonamiento y voz</h2>
@@ -273,11 +304,13 @@
         <div class="footer-sitemap-col-title">Contenido</div>
         <a href="/blog">Blog</a>
         <a href="/vision#hablar">Hablar con Snarf</a>
-        <a href="/vision#estado">Estado en vivo</a>
+        <a href="/roadmap#estado">Estado en vivo</a>
       </div>
       <div class="footer-sitemap-col">
         <div class="footer-sitemap-col-title">Sobre el proyecto</div>
-        <a href="/vision#creador">El creador</a>
+        <a href="/nosotros">Nosotros</a>
+        <a href="/nosotros#creador">El creador</a>
+        <a href="/inversores">Inversores</a>
         <a href="https://github.com/JereMasih/SNARF" target="_blank" rel="noopener">Repositorio</a>
         <a href="mailto:jeremasih@gmail.com">Contacto</a>
       </div>

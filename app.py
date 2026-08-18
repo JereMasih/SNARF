@@ -582,8 +582,24 @@ def capacidades_page():
 @app.get("/roadmap")
 def roadmap_page():
     """Timeline completo del roadmap real — página propia, mudada de la
-    home."""
+    home. Incluye el panel "Estado en vivo" (antes en /vision), mudado acá
+    por ser el lugar temático natural (ADR nuevo)."""
     return FileResponse("web/roadmap.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/nosotros")
+def nosotros_page():
+    """Principios reales de Snarf + el fundador — página propia, mudada de
+    la home (ADR nuevo) para no dejarla larguísima."""
+    return FileResponse("web/nosotros.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/inversores")
+def inversores_page():
+    """Pitch para inversores/socios — página propia, mudada de la home
+    (ADR nuevo); audiencia de nicho, deliberadamente fuera del nav
+    principal, alcanzable desde /nosotros y el footer."""
+    return FileResponse("web/inversores.html", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/vision/status")
