@@ -2085,6 +2085,12 @@
     <div class="settings-section-head" id="opsProcessesSectionHead"><h3>Control de infraestructura</h3></div>
     <div class="settings-list ops-processes-list" id="opsProcessesList"></div>
 
+    <!-- Leads reales capturados desde GET /vision ("Hablar con Snarf", ADR
+         nuevo) — oculta si GET /leads devuelve 403 (no es el fundador),
+         mismo criterio que opsProcessesSectionHead de arriba. -->
+    <div class="settings-section-head" id="leadsSectionHead"><h3>Leads (landing /vision)</h3></div>
+    <div class="settings-list" id="leadsList"></div>
+
     <div class="settings-section-head"><h3>Chat</h3></div>
     <div class="settings-row">
       <span>Mostrar fecha y hora de los mensajes</span>
@@ -2518,6 +2524,8 @@ const profileNameInput = document.getElementById("profileNameInput");
 const llmRoutingList = document.getElementById("llmRoutingList");
 const opsProcessesSectionHead = document.getElementById("opsProcessesSectionHead");
 const opsProcessesList = document.getElementById("opsProcessesList");
+const leadsSectionHead = document.getElementById("leadsSectionHead");
+const leadsList = document.getElementById("leadsList");
 const brainOverlay = document.getElementById("brainOverlay");
 const brainPanel = document.getElementById("brainPanel");
 const brainCloseBtn = document.getElementById("brainCloseBtn");
@@ -6390,6 +6398,7 @@ const LLM_ROLES = [
   { role: "project_summary", label: "Resumen de proyectos" },
   { role: "conversation_title", label: "Título automático de conversación" },
   { role: "dashboard_curator", label: "Curación del dashboard (Vista HUD)" },
+  { role: "vision_demo", label: "Demo pública (landing /vision, \"Hablar con Snarf\")" },
 ];
 // Nombres de modelo verificados con una llamada real el 2026-07-30 (ver ADR
 // de esta ronda) — gemini-2.5-flash-lite y la nomenclatura con puntos de
@@ -6478,6 +6487,35 @@ async function restartOpsProcess(label) {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmed: true }),
   });
   if (res.ok) renderOpsProcessesSection();
+}
+
+// Leads reales capturados desde "Hablar con Snarf" en GET /vision (ADR
+// nuevo) — mismo criterio que renderOpsProcessesSection: oculta la sección
+// entera si el backend no reconoce al fundador (403), nunca asume quién
+// está logueado de antemano.
+async function renderLeadsSection() {
+  const res = await apiFetch("/leads");
+  if (!res.ok) {
+    leadsSectionHead.style.display = "none";
+    leadsList.style.display = "none";
+    return;
+  }
+  leadsSectionHead.style.display = "";
+  leadsList.style.display = "";
+  const data = await res.json();
+  if (data.leads.length === 0) {
+    leadsList.innerHTML = `<div class="ops-process-row"><div class="ops-process-info"><span class="ops-process-status">Todavía no hay ningún Lead real capturado.</span></div></div>`;
+    return;
+  }
+  leadsList.innerHTML = data.leads.map((lead) => {
+    const date = new Date(lead.created_at * 1000).toLocaleString("es-AR");
+    return `<div class="ops-process-row">
+      <div class="ops-process-info">
+        <span class="ops-process-name">${escapeHtml(lead.name)} — ${escapeHtml(lead.email)}</span>
+        <span class="ops-process-status">${escapeHtml(date)}</span>
+      </div>
+    </div>`;
+  }).join("");
 }
 
 function visibleOrdered(ids) {
@@ -7316,6 +7354,7 @@ function openSettings() {
   renderProfileSection();
   renderLlmRoutingSection();
   renderOpsProcessesSection();
+  renderLeadsSection();
   renderHudChatPositionSection();
   renderTemplateProposalsSection();
   renderShowTimestampsToggle();

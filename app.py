@@ -2,10 +2,12 @@ import asyncio
 import base64
 import json
 import os
+import re
 import secrets
 import socket
 import threading
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -62,6 +64,7 @@ from snarf.runtime import agent_registry
 from snarf.runtime import agent_change_proposals
 from snarf.runtime import n8n_generator
 from snarf.runtime import vision_status
+from snarf.runtime import vision_demo
 from snarf.knowledge.extraction import categorize_mime
 from snarf.specialists import dashboard_curator as dashboard_curator_module
 from snarf.specialists.dashboard_curator import DashboardCuratorSpecialist
@@ -76,6 +79,7 @@ from snarf.telemetry import (
     events,
     input_log,
     input_preprocessing,
+    leads,
     n8n_live_canvas_sink,
     n8n_webhook_sink,
     redis_sink,
@@ -103,6 +107,14 @@ app = FastAPI()
 # ADR nuevo) — mount dedicado a esta sola carpeta, nunca un mount genérico
 # de web/ entero, para no exponer nada más que las screenshots.
 app.mount("/vision/assets", StaticFiles(directory="web/vision_assets"), name="vision_assets")
+# Imágenes subidas desde el CMS del blog (GET /blog/admin) — mismo criterio
+# acotado que vision_assets: mount dedicado a esta sola carpeta, nunca un
+# mount genérico. data/blog_assets/ tiene que existir ANTES del mount (a
+# diferencia de vision_assets, que ya viene poblada en el repo) — se crea acá
+# si todavía no corrió ningún upload real.
+BLOG_ASSETS_DIR = Path("data/blog_assets")
+BLOG_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/blog/assets", StaticFiles(directory=str(BLOG_ASSETS_DIR)), name="blog_assets")
 voice_router = VoiceRouter()
 # Instancia separada solo para subscription_info() del widget de dashboard
 # (cupo real de la cuenta de ElevenLabs) — ya no es quien sintetiza la voz de
@@ -348,6 +360,37 @@ class ConversationProjectRequest(BaseModel):
     project_id: str
 
 
+class LeadRequest(BaseModel):
+    name: str
+    email: str
+
+
+class VisionDemoRequest(BaseModel):
+    lead_id: str
+    message: str
+    history: list[dict] = []
+
+
+class BlogArticleCreateRequest(BaseModel):
+    title: str
+    summary: str
+    body: str
+    source_ref: str
+    tags: list[str] = []
+    public: bool = False
+    cover_image: str | None = None
+
+
+class BlogArticleUpdateRequest(BaseModel):
+    title: str | None = None
+    summary: str | None = None
+    body: str | None = None
+    source_ref: str | None = None
+    tags: list[str] | None = None
+    public: bool | None = None
+    cover_image: str | None = None
+
+
 @app.get("/")
 def index(snarf_session: str | None = Cookie(default=None)):
     if not is_authenticated(snarf_session):
@@ -521,6 +564,28 @@ def vision_page():
     return FileResponse("web/vision.html", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/arquitectura")
+def arquitectura_page():
+    """Página pública de profundidad técnica (mapa mental de agentes/
+    capacidades + explicación de las tres capas) — mismo criterio sin login
+    que GET /vision, mudada de la home para no dejarla larguísima."""
+    return FileResponse("web/arquitectura.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/capacidades")
+def capacidades_page():
+    """Detalle completo de capacidades hoy/en camino — página propia,
+    mudada de la home."""
+    return FileResponse("web/capacidades.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/roadmap")
+def roadmap_page():
+    """Timeline completo del roadmap real — página propia, mudada de la
+    home."""
+    return FileResponse("web/roadmap.html", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/vision/status")
 def vision_status_endpoint():
     """JSON real para el panel de estado de desarrollo de GET /vision —
@@ -530,6 +595,117 @@ def vision_status_endpoint():
     return vision_status.build_status()
 
 
+@app.get("/vision/architecture")
+def vision_architecture():
+    """Jerarquía real y estática de la arquitectura de Snarf (Orchestrator →
+    Especialistas → Capacidades) para el mapa mental de GET /arquitectura —
+    lee directo de snarf/telemetry/brain.py (NODE_TIER/NODE_PARENT), la
+    misma fuente real que ya gobierna el cerebro en vivo del dashboard.
+    Nunca llama a brain.snapshot() (que exige logs de actividad real): esto
+    es solo la ESTRUCTURA, no telemetría — cualquier nodo/Especialista/
+    Capacidad nuevo que se agregue a brain.py aparece acá solo, sin volver a
+    tocar este endpoint."""
+    nodes = [
+        {"id": node_id, "tier": tier, "parent": brain.NODE_PARENT.get(node_id)}
+        for node_id, tier in brain.NODE_TIER.items()
+    ]
+    return {"center": brain.CENTER_NODE, "nodes": nodes}
+
+
+@app.get("/blog")
+def blog_page():
+    """Home del blog de Snarf — categorías (tags reales) y artículos,
+    misma superficie pública sin login que GET /vision, mismo criterio de
+    archivo único. Consume el mismo GET /vision/blog de abajo, sin API
+    paralela."""
+    return FileResponse("web/blog.html", headers={"Cache-Control": "no-store"})
+
+
+def _require_founder(user_id: str) -> None:
+    if user_id != DEFAULT_USER_ID:
+        raise HTTPException(403, "Este endpoint es solo para el fundador.")
+
+
+@app.get("/blog/admin")
+def blog_admin_page(snarf_session: str | None = Cookie(default=None)):
+    """CMS del blog (crear/editar/publicar artículos) — exclusivo del
+    fundador, mismo criterio de redirect a /login que GET / (nunca sirve la
+    página a quien no está autenticado como fundador, ni siquiera para que
+    vea un estado vacío)."""
+    if not is_authenticated(snarf_session):
+        return RedirectResponse("/login")
+    secret = os.environ.get("SESSION_SECRET", "")
+    if verify_session_token(secret, snarf_session) != DEFAULT_USER_ID:
+        return RedirectResponse("/login")
+    return FileResponse("web/blog_admin.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/blog/articles")
+def list_blog_articles(user_id: str = Depends(require_user)):
+    """Todos los artículos reales (publicados y borrador) — para el CMS,
+    nunca expuesto sin el gate de fundador."""
+    _require_founder(user_id)
+    return {"articles": blog.list_all()}
+
+
+@app.post("/blog/articles")
+def create_blog_article(payload: BlogArticleCreateRequest, user_id: str = Depends(require_user)):
+    _require_founder(user_id)
+    entry = blog.append(
+        title=payload.title, body=payload.body, summary=payload.summary,
+        source_ref=payload.source_ref, public=payload.public, tags=payload.tags,
+        cover_image=payload.cover_image,
+    )
+    return entry
+
+
+@app.patch("/blog/articles/{article_id}")
+def update_blog_article(article_id: str, payload: BlogArticleUpdateRequest, user_id: str = Depends(require_user)):
+    _require_founder(user_id)
+    fields = {k: v for k, v in payload.model_dump().items() if v is not None}
+    updated = blog.update(article_id, **fields)
+    if updated is None:
+        raise HTTPException(404, "artículo no encontrado")
+    return updated
+
+
+@app.delete("/blog/articles/{article_id}")
+def delete_blog_article(article_id: str, user_id: str = Depends(require_user)):
+    _require_founder(user_id)
+    if not blog.delete(article_id):
+        raise HTTPException(404, "artículo no encontrado")
+    return {"deleted": True}
+
+
+_BLOG_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+
+@app.post("/blog/admin/images")
+async def upload_blog_image(file: UploadFile, user_id: str = Depends(require_user)):
+    """Sube una imagen real para insertar en el cuerpo Markdown de un
+    artículo (ver web/blog_admin.html) — guardada en data/blog_assets/
+    (gitignored), servida vía el mount dedicado /blog/assets."""
+    _require_founder(user_id)
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in _BLOG_IMAGE_EXTENSIONS:
+        raise HTTPException(400, f"Formato no soportado — usá {sorted(_BLOG_IMAGE_EXTENSIONS)}.")
+    content = await file.read()
+    filename = f"{uuid.uuid4()}{ext}"
+    BLOG_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+    (BLOG_ASSETS_DIR / filename).write_bytes(content)
+    return {"url": f"/blog/assets/{filename}"}
+
+
+@app.get("/blog/{slug}")
+def blog_article_page(slug: str):
+    """Página de un artículo real, URL compartible (ADR nuevo) — mismo
+    archivo que GET /blog, el routing de detalle vs. índice se resuelve del
+    lado del cliente según location.pathname. slug es solo para que la URL
+    sea legible; la resolución real del artículo la hace GET /vision/blog
+    (id o slug) desde el propio navegador."""
+    return FileResponse("web/blog.html", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/vision/blog")
 def vision_blog():
     """Artículos públicos del blog de Snarf (ADR nuevo) — vacío hasta que
@@ -537,6 +713,45 @@ def vision_blog():
     snarf/specialists/research y publicado a mano (`public: true`); nunca
     se rellena con contenido de ejemplo."""
     return {"articles": blog.list_public()}
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+@app.post("/vision/lead")
+def vision_lead(payload: LeadRequest):
+    """Captura un Lead real desde el botón "Hablar con Snarf" de la landing
+    pública (ADR nuevo) — sin gate de login, mismo criterio que el resto de
+    GET /vision. Solo valida forma (nombre no vacío, email con forma de
+    email), nunca envía ningún correo de confirmación ni verifica que la
+    casilla exista de verdad."""
+    name = payload.name.strip()
+    email = payload.email.strip()
+    if not name or not _EMAIL_RE.match(email):
+        raise HTTPException(400, "Nombre y un email válido son obligatorios.")
+    entry = leads.append(name, email)
+    return {"lead_id": entry["id"]}
+
+
+@app.post("/vision/demo")
+def vision_demo_send(payload: VisionDemoRequest):
+    """Un turno de la demo pública de Snarf ("Hablar con Snarf" en GET
+    /vision) — requiere un lead_id real ya creado vía POST /vision/lead, sin
+    gate de login. Nunca ejecuta herramientas reales (ver
+    snarf/runtime/vision_demo.py): conversación pura, con un tope duro de
+    turnos por Lead."""
+    if leads.get(payload.lead_id) is None:
+        raise HTTPException(404, "lead_id no encontrado — creá un lead primero con POST /vision/lead.")
+    return vision_demo.demo_reply(payload.lead_id, payload.message, payload.history)
+
+
+@app.get("/leads")
+def get_leads(user_id: str = Depends(require_user)):
+    """Leads reales capturados desde GET /vision — solo para el fundador,
+    mismo gate que GET /ops/processes."""
+    if user_id != DEFAULT_USER_ID:
+        raise HTTPException(403, "Este endpoint es solo para el fundador.")
+    return {"leads": leads.list_all()}
 
 
 @app.get("/n8n/status")

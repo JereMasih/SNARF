@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Roadmap de Snarf — de dónde viene, hacia dónde va</title>
+<meta name="description" content="El roadmap real de Snarf: origen verificable, lo ya construido, y hacia dónde va — sin fecha de entrega prometida, sin relleno.">
+<style>
+  :root {
+    --glow: #4fd8e8; --glow-soft: #b6f5fb; --glow-dim: #1c5a63;
+    --text: #d7eef2; --text-dim: #6f8891; --error: #e85a5a;
+    --violet: #a124ff; --violet-soft: #dcb3ff; --violet-dim: #2a0a4d;
+    --magenta: #ff00ee; --magenta-soft: #ffb3f6;
+    --amber: #ffb454; --amber-soft: #ffd9a8; --amber-dim: #6b4a1c;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "SF Mono", "Menlo", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
+    --ease-materialize: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  * { box-sizing: border-box; }
+  html { background: #000; scroll-behavior: smooth; }
+  body { margin: 0; background: #000; color: var(--text); font-family: var(--font-sans); line-height: 1.6; overflow-x: hidden; }
+  .bg-glow { position: fixed; inset: 0; z-index: -1; background: radial-gradient(ellipse 70% 50% at 50% 0%, #170a26 0%, #050a0c 45%, #000000 80%); }
+  /* --- capa HUD compartida (mismos valores reales que web/index.html) --- */
+  .hud-scanline { position: fixed; left: 0; right: 0; top: -2px; height: 2px; z-index: 2; pointer-events: none; background: linear-gradient(90deg, transparent, rgba(79,216,232,0.32), transparent); animation: hud-scan 9s linear infinite; }
+  @keyframes hud-scan { 0% { top: -2px; } 100% { top: 100%; } }
+  .hud-corner { position: fixed; width: 22px; height: 22px; border: 1px solid rgba(79,216,232,0.2); z-index: 2; pointer-events: none; }
+  .hud-corner.tl { top: 12px; left: 12px; border-right: none; border-bottom: none; }
+  .hud-corner.tr { top: 12px; right: 12px; border-left: none; border-bottom: none; }
+  .hud-corner.bl { bottom: 12px; left: 12px; border-right: none; border-top: none; }
+  .hud-corner.br { bottom: 12px; right: 12px; border-left: none; border-top: none; }
+  @media (max-width: 640px) { .hud-corner { display: none; } }
+  .hud-particle { position: fixed; width: 2.5px; height: 2.5px; border-radius: 50%; background: var(--glow); z-index: 1; box-shadow: 0 0 6px 2px rgba(79,216,232,0.5); opacity: 0; pointer-events: none; animation: hud-float-up linear infinite; }
+  @keyframes hud-float-up { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 0.55; } 90% { opacity: 0.25; } 100% { transform: translateY(-42vh); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .hud-scanline, .hud-particle { animation: none; display: none; } }
+  a { color: var(--glow); }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 1.5rem; }
+
+  .reveal { opacity: 0; transform: translateY(20px) scale(0.97); filter: blur(6px); transition: opacity 0.7s var(--ease-materialize), transform 0.7s var(--ease-materialize), filter 0.7s var(--ease-materialize); }
+  .reveal.revealed { opacity: 1; transform: none; filter: blur(0); }
+  @media (prefers-reduced-motion: reduce) { .reveal { transition: none; opacity: 1; transform: none; filter: blur(0); } }
+
+  nav.top { position: sticky; top: 0; z-index: 30; backdrop-filter: blur(10px); background: rgba(0,0,0,0.6); border-bottom: 1px solid rgba(161,36,255,0.18); }
+  nav.top .wrap { max-width: 1120px; display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 1.5rem; }
+  .brand { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
+  #brand-mark { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(161,36,255,0.55); background: rgba(161,36,255,0.1); flex-shrink: 0; }
+  .brand-name { font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--glow-soft); }
+  nav.top ul { list-style: none; display: flex; gap: 1.3rem; margin: 0; padding: 0; }
+  nav.top a { color: var(--text-dim); text-decoration: none; font-size: 0.76rem; letter-spacing: 0.02em; }
+  nav.top a:hover { color: var(--violet-soft); }
+  .nav-cta { color: var(--violet-soft) !important; border: 1px solid rgba(161,36,255,0.4); border-radius: 8px; padding: 0.35rem 0.7rem; }
+  .nav-has-dropdown { position: relative; }
+  .nav-dropdown-panel { display: none; position: absolute; top: 100%; left: 0; margin-top: 0.6rem; background: rgba(5,2,9,0.96); border: 1px solid rgba(161,36,255,0.25); border-radius: 10px; padding: 0.4rem; min-width: 160px; flex-direction: column; gap: 0.15rem; z-index: 31; }
+  .nav-has-dropdown:hover .nav-dropdown-panel { display: flex; }
+  .nav-dropdown-panel a { padding: 0.45rem 0.6rem; border-radius: 6px; font-size: 0.76rem; }
+  .nav-dropdown-panel a:hover { background: rgba(161,36,255,0.12); color: var(--text); }
+  .nav-group-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft); padding: 0.7rem 1.5rem 0.2rem; }
+  .footer-sitemap { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1.4rem; max-width: 700px; margin: 2.2rem auto 0; text-align: left; }
+  .footer-sitemap-col-title { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft); margin-bottom: 0.6rem; }
+  .footer-sitemap a { display: block; color: var(--text-dim); text-decoration: none; font-size: 0.82rem; padding: 0.25rem 0; }
+  .footer-sitemap a:hover { color: var(--text); }
+  .nav-toggle { display: none; flex-direction: column; gap: 4px; background: none; border: none; cursor: pointer; padding: 0.4rem; }
+  .nav-toggle span { width: 20px; height: 2px; background: var(--glow-soft); border-radius: 2px; }
+  .nav-dropdown { display: none; }
+  @media (max-width: 860px) {
+    nav.top ul { display: none; }
+    .nav-toggle { display: flex; }
+    .nav-dropdown { display: none; flex-direction: column; gap: 0; border-top: 1px solid rgba(161,36,255,0.15); background: rgba(0,0,0,0.92); }
+    nav.top.nav-open .nav-dropdown { display: flex; }
+    .nav-dropdown a { color: var(--text-dim); text-decoration: none; font-size: 0.85rem; padding: 0.85rem 1.5rem; border-bottom: 1px solid rgba(161,36,255,0.08); }
+  }
+
+  .btn { display: inline-block; padding: 0.8rem 1.5rem; border-radius: 10px; font-size: 0.82rem; font-weight: 600; text-decoration: none; letter-spacing: 0.02em; cursor: pointer; border: 1.5px solid transparent; transition: box-shadow 0.25s, background 0.25s, color 0.25s; }
+  .btn-primary { background: rgba(10,4,18,0.75); border-color: var(--magenta); color: var(--magenta-soft); box-shadow: 0 0 16px rgba(255,0,238,0.25); }
+  .btn-primary:hover { background: rgba(255,0,238,0.1); color: #fff; box-shadow: 0 0 28px rgba(255,0,238,0.45); }
+  .btn-aqua { background: rgba(10,4,18,0.75); border-color: var(--glow); color: var(--glow-soft); box-shadow: 0 0 16px rgba(79,216,232,0.22); }
+  .btn-aqua:hover { background: rgba(79,216,232,0.1); color: #fff; box-shadow: 0 0 28px rgba(79,216,232,0.4); }
+  .btn-ghost { border-color: rgba(161,36,255,0.35); color: var(--text-dim); background: rgba(0,0,0,0.2); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--violet); }
+
+  .masthead { position: relative; padding: 4.5rem 0 3rem; text-align: center; overflow: hidden; }
+  .masthead-glow { position: absolute; z-index: 0; left: 50%; top: 30%; width: 60vmin; height: 60vmin; max-width: 520px; max-height: 520px; transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; background: radial-gradient(circle, rgba(255,0,238,0.18) 0%, rgba(161,36,255,0.14) 45%, transparent 72%); filter: blur(6px); }
+  .masthead-grid { position: absolute; inset: -8%; z-index: 0; pointer-events: none; background-image: linear-gradient(rgba(161,36,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(79,216,232,0.05) 1px, transparent 1px); background-size: 42px 42px; mask-image: radial-gradient(ellipse 55% 60% at 50% 25%, #000 30%, transparent 75%); }
+  .masthead-content { position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; padding: 0 1.5rem; }
+  .masthead .eyebrow { font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 1rem; }
+  .masthead h1 { font-size: clamp(2rem, 4.5vw, 2.9rem); margin: 0 0 1rem; font-weight: 650; letter-spacing: -0.015em; color: var(--glow-soft); }
+  .masthead h1 span { background: linear-gradient(95deg, var(--violet) 10%, var(--magenta) 90%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .masthead p { color: var(--text-dim); font-size: 1rem; max-width: 620px; margin: 0 auto; }
+  .masthead-icon { position: relative; z-index: 1; width: 64px; height: 64px; margin: 0 auto 1.3rem; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 1px solid rgba(255,0,238,0.4); background: rgba(10,4,18,0.6); color: var(--magenta-soft); box-shadow: 0 0 22px rgba(255,0,238,0.22); animation: masthead-icon-pulse 3.2s ease-in-out infinite; }
+  .masthead-icon svg { width: 30px; height: 30px; }
+  @keyframes masthead-icon-pulse { 0%, 100% { box-shadow: 0 0 18px rgba(255,0,238,0.18); } 50% { box-shadow: 0 0 30px rgba(255,0,238,0.4); } }
+  @media (prefers-reduced-motion: reduce) { .masthead-icon { animation: none; } }
+
+  .product-subnav { background: rgba(0,0,0,0.5); border-bottom: 1px solid rgba(161,36,255,0.14); }
+  .product-subnav .wrap { display: flex; gap: 0.5rem; padding: 0.8rem 1.5rem; justify-content: center; flex-wrap: wrap; max-width: 1120px; }
+  .subnav-tab { font-size: 0.78rem; padding: 0.4rem 0.9rem; border-radius: 999px; color: var(--text-dim); text-decoration: none; border: 1px solid transparent; }
+  .subnav-tab:hover { color: var(--text); }
+  .subnav-tab.active { color: var(--violet-soft); border-color: rgba(161,36,255,0.4); background: rgba(161,36,255,0.1); }
+  section { padding: 3rem 0 4rem; }
+
+  .roadmap-timeline { position: relative; padding-left: 2.2rem; display: flex; flex-direction: column; gap: 2rem; }
+  .roadmap-timeline::before {
+    content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px;
+    background: linear-gradient(180deg, var(--glow) 0%, var(--violet) 45%, var(--magenta) 100%);
+    background-size: 100% 200%; animation: roadmap-flow 5s linear infinite; opacity: 0.75;
+  }
+  @keyframes roadmap-flow { 0% { background-position: 0 0; } 100% { background-position: 0 -200%; } }
+  @media (prefers-reduced-motion: reduce) { .roadmap-timeline::before { animation: none; } }
+  .roadmap-node { position: relative; }
+  .roadmap-node::before {
+    content: ""; position: absolute; left: -2.2rem; top: 0.3rem; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--dot-color, var(--violet)); box-shadow: 0 0 12px var(--dot-color, var(--violet));
+  }
+  .roadmap-node.dot-aqua { --dot-color: #4fd8e8; }
+  .roadmap-node.dot-violet { --dot-color: #a124ff; }
+  .roadmap-node.dot-magenta { --dot-color: #ff00ee; }
+  .roadmap-node.dot-amber { --dot-color: #ffb454; }
+  .roadmap-card { background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.2); border-radius: 14px; padding: 1.3rem 1.4rem; }
+  .roadmap-badge { display: inline-block; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; border-radius: 6px; padding: 0.15rem 0.45rem; margin-bottom: 0.6rem; }
+  .roadmap-badge-done { color: var(--glow-soft); border: 1px solid rgba(79,216,232,0.4); background: rgba(79,216,232,0.08); }
+  .roadmap-badge-now { color: var(--violet-soft); border: 1px solid rgba(161,36,255,0.4); background: rgba(161,36,255,0.1); }
+  .roadmap-badge-next { color: var(--amber); border: 1px solid rgba(255,180,84,0.4); background: rgba(255,180,84,0.08); }
+  .roadmap-badge-north { color: var(--magenta-soft); border: 1px solid rgba(255,0,238,0.4); background: rgba(255,0,238,0.08); }
+  .roadmap-card h3 { margin: 0.1rem 0 0.5rem; font-size: 1.05rem; color: var(--text); }
+  .roadmap-card p { margin: 0; font-size: 0.9rem; color: var(--text-dim); }
+
+  .status-teaser { max-width: 900px; margin: 3rem auto 0; padding: 1.4rem 1.6rem; border: 1px solid rgba(161,36,255,0.22); border-radius: 16px; background: rgba(10,4,18,0.6); text-align: center; }
+  .status-teaser p { color: var(--text-dim); font-size: 0.9rem; margin: 0 0 1rem; }
+
+  footer { padding: 3.5rem 0 4rem; text-align: center; border-top: 1px solid rgba(161,36,255,0.12); }
+  footer .wrap { max-width: 1120px; }
+  footer #brand-mark { width: 30px; height: 30px; margin: 0 auto 1rem; }
+  footer h2 { font-size: 1.3rem; color: var(--glow-soft); margin: 0 0 0.6rem; }
+  footer p { color: var(--text-dim); font-size: 0.88rem; max-width: 480px; margin: 0 auto 1.6rem; }
+  .footer-links { display: flex; gap: 0.9rem; justify-content: center; flex-wrap: wrap; }
+  .foot-note { margin-top: 2.5rem; font-size: 0.7rem; color: var(--text-dim); opacity: 0.7; }
+</style>
+</head>
+<body>
+<div class="bg-glow"></div>
+<div class="hud-scanline"></div>
+<div class="hud-corner tl"></div>
+<div class="hud-corner tr"></div>
+<div class="hud-corner bl"></div>
+<div class="hud-corner br"></div>
+<div id="hudParticles"></div>
+
+<nav class="top" id="topNav">
+  <div class="wrap">
+    <a class="brand" href="/vision">
+      <div id="brand-mark"></div>
+      <span class="brand-name">Snarf</span>
+    </a>
+    <ul>
+      <li><a href="/vision#que-es">Visión</a></li>
+      <li class="nav-has-dropdown">
+        <a href="/arquitectura">Producto ▾</a>
+        <div class="nav-dropdown-panel">
+          <a href="/arquitectura">Arquitectura</a>
+          <a href="/capacidades">Capacidades</a>
+          <a href="/roadmap">Roadmap</a>
+        </div>
+      </li>
+      <li><a href="/blog">Blog</a></li>
+      <li><a href="/vision#creador">El creador</a></li>
+      <li><a href="/vision#hablar" class="nav-cta">Hablar con Snarf</a></li>
+    </ul>
+    <button class="nav-toggle" id="navToggle" aria-label="Abrir menú"><span></span><span></span><span></span></button>
+  </div>
+  <div class="nav-dropdown" id="navDropdown">
+    <a href="/vision#que-es">Visión</a>
+    <div class="nav-group-label">Producto</div>
+    <a href="/arquitectura">Arquitectura</a>
+    <a href="/capacidades">Capacidades</a>
+    <a href="/roadmap">Roadmap</a>
+    <a href="/vision#creador">El creador</a>
+    <a href="/blog">Blog</a>
+    <a href="/vision#hablar" class="nav-cta">Hablar con Snarf</a>
+  </div>
+</nav>
+
+<header class="masthead">
+  <div class="masthead-grid"></div>
+  <div class="masthead-glow"></div>
+  <div class="masthead-content">
+    <div class="masthead-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3.5 18 Q 8 6, 12 12 T 20.5 6"></path>
+        <circle cx="3.5" cy="18" r="1.6" fill="currentColor" stroke="none"></circle>
+        <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"></circle>
+        <circle cx="20.5" cy="6" r="1.6" fill="currentColor" stroke="none"></circle>
+      </svg>
+    </div>
+    <div class="eyebrow">De dónde viene, hacia dónde va</div>
+    <h1>El <span>roadmap real.</span></h1>
+    <p>Cada nodo de acá abajo es real y verificable — origen, lo ya construido, y lo que sigue, sin fecha de entrega prometida.</p>
+  </div>
+</header>
+
+<div class="product-subnav">
+  <div class="wrap">
+    <a href="/arquitectura" class="subnav-tab">Arquitectura</a>
+    <a href="/capacidades" class="subnav-tab">Capacidades</a>
+    <a href="/roadmap" class="subnav-tab active">Roadmap</a>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+    <div class="roadmap-timeline">
+      <div class="roadmap-node dot-aqua reveal">
+        <div class="roadmap-card">
+          <div class="roadmap-badge roadmap-badge-done">Origen · 2026-07-25</div>
+          <h3>Un repositorio vacío</h3>
+          <p>Repo git inicializado el 25 de julio de 2026, publicado como público dos días después en github.com/JereMasih/SNARF. Sin arquitectura todavía — solo la decisión de construir en público desde el primer commit.</p>
+        </div>
+      </div>
+      <div class="roadmap-node dot-aqua reveal">
+        <div class="roadmap-card">
+          <div class="roadmap-badge roadmap-badge-done">Fundación técnica</div>
+          <h3>Lo que ya está construido</h3>
+          <p>Arquitectura de tres capas, extracción de cualquier tipo de archivo, vectorización real de Drive, capa de voz, creación de documentos, y la visualización del cerebro — la base sobre la que corre todo lo demás.</p>
+        </div>
+      </div>
+      <div class="roadmap-node dot-violet reveal">
+        <div class="roadmap-card">
+          <div class="roadmap-badge roadmap-badge-now" id="roadmapHoyBadge">Hoy</div>
+          <h3>En desarrollo activo, todos los días</h3>
+          <p>Observabilidad real de mi propio funcionamiento, automatización más profunda de cómo razono, y los cimientos de una versión multi-usuario. El detalle minuto a minuto está en el panel de estado en vivo de la visión general.</p>
+        </div>
+      </div>
+      <div class="roadmap-node dot-amber reveal">
+        <div class="roadmap-card">
+          <div class="roadmap-badge roadmap-badge-next">Roadmap · Fase 12</div>
+          <h3>Reproducir cualquier turno pasado</h3>
+          <p>Elegir una ejecución anterior por su identificador y reproducirla paso a paso, para entender exactamente por qué Snarf decidió lo que decidió.</p>
+        </div>
+      </div>
+      <div class="roadmap-node dot-amber reveal">
+        <div class="roadmap-card">
+          <div class="roadmap-badge roadmap-badge-next">Roadmap · Fase 13</div>
+          <h3>Tu propia máquina, no una nube ajena</h3>
+          <p>Que el cómputo de tu Mac o PC sostenga tu propia instancia de Snarf, emparejada en un click — sin depender de un servidor de terceros para lo que tu propio hardware ya puede correr.</p>
+        </div>
+      </div>
+      <div class="roadmap-node dot-amber reveal">
+        <div class="roadmap-card">
+          <div class="roadmap-badge roadmap-badge-next">Roadmap · Multi-usuario</div>
+          <h3>Que cualquiera conecte su propia cuenta</h3>
+          <p>Los datos ya están namespaced por usuario desde el día uno de cada pieza — falta el resto de la infraestructura (login, aislamiento de sesión) para que un segundo usuario real entre de punta a punta.</p>
+        </div>
+      </div>
+      <div class="roadmap-node dot-magenta reveal">
+        <div class="roadmap-card">
+          <div class="roadmap-badge roadmap-badge-north">Norte del plan</div>
+          <h3>Snarf construyendo a Snarf</h3>
+          <p>El criterio real para dar esta primera versión por terminada: poder usarme, tal como estoy hoy, para construir la versión que sigue. No una fecha, no una función más — capacidad real de auto-extensión productiva.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="status-teaser reveal">
+      <p>Los números detrás de este roadmap — ADR documentados, tests, últimos cambios reales — se leen en vivo en la visión general, nunca hardcodeados.</p>
+      <a class="btn btn-aqua" href="/vision#estado">Ver el estado de desarrollo en vivo →</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div id="brand-mark"></div>
+    <h2>¿Lo probamos en vivo?</h2>
+    <p>Una versión demo, sin herramientas reales conectadas, para que entiendas hacia dónde voy antes de entrar de verdad.</p>
+    <div class="footer-links">
+      <a class="btn btn-primary" href="/vision#hablar">Hablar con Snarf</a>
+      <a class="btn btn-ghost" href="/vision">Volver a la visión</a>
+    </div>
+    <div class="footer-sitemap">
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Producto</div>
+        <a href="/vision">Visión</a>
+        <a href="/arquitectura">Arquitectura</a>
+        <a href="/capacidades">Capacidades</a>
+        <a href="/roadmap">Roadmap</a>
+      </div>
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Contenido</div>
+        <a href="/blog">Blog</a>
+        <a href="/vision#hablar">Hablar con Snarf</a>
+        <a href="/vision#estado">Estado en vivo</a>
+      </div>
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Sobre el proyecto</div>
+        <a href="/vision#creador">El creador</a>
+        <a href="https://github.com/JereMasih/SNARF" target="_blank" rel="noopener">Repositorio</a>
+        <a href="mailto:jeremasih@gmail.com">Contacto</a>
+      </div>
+    </div>
+    <div class="foot-note">Snarf — construido públicamente.</div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function initScrollReveal() {
+    var els = document.querySelectorAll(".reveal:not(.revealed)");
+    if (prefersReducedMotion) { els.forEach(function (el) { el.classList.add("revealed"); }); return; }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) { if (entry.isIntersecting) { entry.target.classList.add("revealed"); io.unobserve(entry.target); } });
+    }, { threshold: 0.1 });
+    els.forEach(function (el) { io.observe(el); });
+  }
+
+  var topNav = document.getElementById("topNav");
+  document.getElementById("navToggle").addEventListener("click", function () { topNav.classList.toggle("nav-open"); });
+
+  fetch("/vision/status").then(function (r) { return r.json(); }).then(function (data) {
+    var roadmap = data.roadmap || {};
+    if (roadmap.latest_phase != null) {
+      document.getElementById("roadmapHoyBadge").textContent = "Hoy · Fase " + roadmap.latest_phase;
+    }
+  }).catch(function () {});
+
+  var hudParticlesHost = document.getElementById("hudParticles");
+  if (hudParticlesHost && !prefersReducedMotion) {
+    for (var hp = 0; hp < 10; hp++) {
+      var particle = document.createElement("div");
+      particle.className = "hud-particle";
+      particle.style.left = Math.random() * 100 + "vw";
+      particle.style.bottom = "-10px";
+      particle.style.animationDuration = (12 + Math.random() * 16) + "s";
+      particle.style.animationDelay = (-Math.random() * 24) + "s";
+      hudParticlesHost.appendChild(particle);
+    }
+  }
+
+  initScrollReveal();
+})();
+</script>
+</body>
+</html>

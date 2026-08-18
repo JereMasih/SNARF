@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Snarf — visión y estado</title>
-<meta name="description" content="Snarf: una entidad cognitiva diseñada para ampliar la capacidad humana de transformar propósito en realidad. Visión, filosofía y estado de desarrollo en vivo.">
+<title>Snarf — la entidad cognitiva que convierte tu propósito en activos reales</title>
+<meta name="description" content="Snarf: una entidad cognitiva con memoria, principios y criterio propio, pensada para emprendedores y freelancers que sostienen todo solos. Cómo funciona, qué puede hacer hoy, y hacia dónde va — en vivo, sin relleno.">
 <style>
   :root {
     --glow: #4fd8e8;
@@ -13,11 +13,29 @@
     --text: #d7eef2;
     --text-dim: #6f8891;
     --error: #e85a5a;
+
+    /* Violeta/magenta reales — mismos valores que --brain-violet/--brain-
+       magenta/--brain-aqua de web/index.html:20-23 ("PALETA DE COLORES JERE
+       MASIH TRADER", real, del propio Drive del fundador). Acá pasan a ser
+       el acento principal de la página (antes solo vivían dentro del
+       cerebro) — no es una paleta nueva, es la misma reusada a propósito. */
+    --violet: #a124ff;
+    --violet-soft: #dcb3ff;
+    --violet-dim: #2a0a4d;
+    --magenta: #ff00ee;
+    --magenta-soft: #ffb3f6;
+
+    /* Ámbar: se mantiene, pero acotado a lo que pidió el fundador — adorno
+       tecnológico del entorno (partículas del hero, línea del roadmap,
+       badge "en camino"), nunca color de texto de sección. */
     --amber: #ffb454;
     --amber-soft: #ffd9a8;
     --amber-dim: #6b4a1c;
+
     --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
     --font-mono: "SF Mono", "Menlo", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
+
+    --ease-materialize: cubic-bezier(0.22, 1, 0.36, 1);
   }
   * { box-sizing: border-box; }
   html { background: #000; scroll-behavior: smooth; }
@@ -27,69 +45,248 @@
   }
   .bg-glow {
     position: fixed; inset: 0; z-index: -1;
-    background: radial-gradient(ellipse 70% 50% at 50% 0%, #0c1c22 0%, #050a0c 45%, #000000 80%);
+    background: radial-gradient(ellipse 70% 50% at 50% 0%, #170a26 0%, #050a0c 45%, #000000 80%);
   }
+
+  /* --- capa HUD compartida: mismos elementos reales de la interfaz de
+       Snarf (web/index.html — .scanline/.corner/.particle, valores tal
+       cual), acá a intensidad baja como adorno de marca, nunca el
+       protagonista del diseño (eso sigue siendo exclusivo de la interfaz
+       real del producto). Barrido tipo tubo CRT + esquinas de visor
+       digital + partículas ambiente. --- */
+  .hud-scanline {
+    position: fixed; left: 0; right: 0; top: -2px; height: 2px; z-index: 2; pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(79,216,232,0.32), transparent);
+    animation: hud-scan 9s linear infinite;
+  }
+  @keyframes hud-scan { 0% { top: -2px; } 100% { top: 100%; } }
+  .hud-corner { position: fixed; width: 22px; height: 22px; border: 1px solid rgba(79,216,232,0.2); z-index: 2; pointer-events: none; }
+  .hud-corner.tl { top: 12px; left: 12px; border-right: none; border-bottom: none; }
+  .hud-corner.tr { top: 12px; right: 12px; border-left: none; border-bottom: none; }
+  .hud-corner.bl { bottom: 12px; left: 12px; border-right: none; border-top: none; }
+  .hud-corner.br { bottom: 12px; right: 12px; border-left: none; border-top: none; }
+  @media (max-width: 640px) { .hud-corner { display: none; } }
+  .hud-particle {
+    position: fixed; width: 2.5px; height: 2.5px; border-radius: 50%; background: var(--glow); z-index: 1;
+    box-shadow: 0 0 6px 2px rgba(79,216,232,0.5); opacity: 0; pointer-events: none; animation: hud-float-up linear infinite;
+  }
+  @keyframes hud-float-up { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 0.55; } 90% { opacity: 0.25; } 100% { transform: translateY(-42vh); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .hud-scanline, .hud-particle { animation: none; display: none; } }
+
   a { color: var(--glow); }
-  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 1.5rem; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 1.5rem; }
+
+  /* --- utilidades de scroll-reveal (mismo lenguaje que hud-materialize de
+       web/hud_design_tokens.css: opacity+scale+blur, no un fade genérico) --- */
+  .reveal {
+    opacity: 0; transform: translateY(20px) scale(0.97); filter: blur(6px);
+    transition: opacity 0.7s var(--ease-materialize), transform 0.7s var(--ease-materialize), filter 0.7s var(--ease-materialize);
+  }
+  .reveal.revealed { opacity: 1; transform: none; filter: blur(0); }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { transition: none; opacity: 1; transform: none; filter: blur(0); }
+  }
 
   /* --- nav --- */
   nav.top {
-    position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px);
-    background: rgba(0,0,0,0.55); border-bottom: 1px solid rgba(79,216,232,0.15);
+    position: sticky; top: 0; z-index: 30; backdrop-filter: blur(10px);
+    background: rgba(0,0,0,0.6); border-bottom: 1px solid rgba(161,36,255,0.18);
   }
   nav.top .wrap { display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 1.5rem; }
   .brand { display: flex; align-items: center; gap: 0.6rem; }
   #brand-mark {
     width: 22px; height: 22px; border-radius: 50%;
-    border: 1px solid rgba(79,216,232,0.5); background: rgba(79,216,232,0.08);
+    border: 1px solid rgba(161,36,255,0.55); background: rgba(161,36,255,0.1);
     flex-shrink: 0;
   }
   .brand-name { font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--glow-soft); }
-  nav.top ul { list-style: none; display: flex; gap: 1.4rem; margin: 0; padding: 0; }
-  nav.top a { color: var(--text-dim); text-decoration: none; font-size: 0.78rem; letter-spacing: 0.02em; }
-  nav.top a:hover { color: var(--glow); }
-  @media (max-width: 640px) { nav.top ul { display: none; } }
+  nav.top ul { list-style: none; display: flex; gap: 1.3rem; margin: 0; padding: 0; }
+  nav.top a { color: var(--text-dim); text-decoration: none; font-size: 0.76rem; letter-spacing: 0.02em; }
+  nav.top a:hover { color: var(--violet-soft); }
+  .nav-cta {
+    color: var(--violet-soft) !important; border: 1px solid rgba(161,36,255,0.4); border-radius: 8px;
+    padding: 0.35rem 0.7rem;
+  }
+  .nav-has-dropdown { position: relative; }
+  .nav-dropdown-panel { display: none; position: absolute; top: 100%; left: 0; margin-top: 0.6rem; background: rgba(5,2,9,0.96); border: 1px solid rgba(161,36,255,0.25); border-radius: 10px; padding: 0.4rem; min-width: 160px; flex-direction: column; gap: 0.15rem; z-index: 31; }
+  .nav-has-dropdown:hover .nav-dropdown-panel { display: flex; }
+  .nav-dropdown-panel a { padding: 0.45rem 0.6rem; border-radius: 6px; font-size: 0.76rem; }
+  .nav-dropdown-panel a:hover { background: rgba(161,36,255,0.12); color: var(--text); }
+  .nav-group-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft); padding: 0.7rem 1.5rem 0.2rem; }
+  .footer-sitemap { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1.4rem; max-width: 700px; margin: 2.2rem auto 0; text-align: left; }
+  .footer-sitemap-col-title { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft); margin-bottom: 0.6rem; }
+  .footer-sitemap a { display: block; color: var(--text-dim); text-decoration: none; font-size: 0.82rem; padding: 0.25rem 0; }
+  .footer-sitemap a:hover { color: var(--text); }
+  .creator-card {
+    max-width: 520px; margin: 0 auto; text-align: center; background: rgba(10,4,18,0.6);
+    border: 1px solid rgba(161,36,255,0.22); border-radius: 18px; padding: 2rem 1.8rem;
+  }
+  .creator-avatar {
+    width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 1rem;
+    border: 1px solid rgba(161,36,255,0.5); background: radial-gradient(circle, rgba(161,36,255,0.25), rgba(255,0,238,0.1));
+  }
+  .creator-card h3 { margin: 0 0 0.3rem; font-size: 1.1rem; color: var(--glow-soft); }
+  .creator-card .creator-role { font-size: 0.76rem; color: var(--violet-soft); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.9rem; }
+  .creator-card p { color: var(--text-dim); font-size: 0.9rem; margin: 0 0 1rem; }
+  .creator-card .creator-note { font-size: 0.76rem; font-style: italic; opacity: 0.75; }
+  .nav-toggle {
+    display: none; flex-direction: column; gap: 4px; background: none; border: none; cursor: pointer; padding: 0.4rem;
+  }
+  .nav-toggle span { width: 20px; height: 2px; background: var(--glow-soft); border-radius: 2px; }
+  .nav-dropdown { display: none; }
+  @media (max-width: 860px) {
+    nav.top ul { display: none; }
+    .nav-toggle { display: flex; }
+    .nav-dropdown {
+      display: none; flex-direction: column; gap: 0; border-top: 1px solid rgba(161,36,255,0.15);
+      background: rgba(0,0,0,0.92);
+    }
+    nav.top.nav-open .nav-dropdown { display: flex; }
+    .nav-dropdown a {
+      color: var(--text-dim); text-decoration: none; font-size: 0.85rem; padding: 0.85rem 1.5rem;
+      border-bottom: 1px solid rgba(161,36,255,0.08);
+    }
+  }
 
   /* --- hero --- */
-  .hero { padding: 5.5rem 0 4rem; text-align: center; }
+  .hero { position: relative; padding: 6rem 0 3.5rem; text-align: center; }
+  /* Escenario visual del hero: altura fija atada al viewport, NUNCA al alto
+     total del contenido (que en mobile crece mucho por el wrap del
+     título) — ese acople era el bug real: el canvas quedaba centrado en
+     medio de una sección altísima, muy por debajo de lo que se ve sin
+     scrollear. Ahora el cerebro siempre queda centrado en la pantalla que
+     realmente se ve al entrar. */
+  .hero-stage {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 0; overflow: hidden; pointer-events: none;
+    height: 100vh; height: 100svh; min-height: 560px; max-height: 900px;
+  }
+  .hero-bg-layer { position: absolute; inset: -8%; z-index: 0; pointer-events: none; }
+  .hero-bg-grid {
+    background-image:
+      linear-gradient(rgba(161,36,255,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(79,216,232,0.05) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: radial-gradient(ellipse 60% 55% at 50% 30%, #000 30%, transparent 75%);
+  }
+  .hero-core-glow {
+    position: absolute; z-index: 1; left: 50%; top: 46%; width: 70vmin; height: 70vmin; max-width: 620px; max-height: 620px;
+    transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle, rgba(161,36,255,0.22) 0%, rgba(255,0,238,0.12) 42%, transparent 72%);
+    filter: blur(4px);
+  }
+  #heroCanvas { position: absolute; inset: -8%; z-index: 2; width: 116%; height: 116%; pointer-events: none; }
+  .hero-glow-orb {
+    position: absolute; z-index: 1; border-radius: 50%; filter: blur(60px); pointer-events: none; opacity: 0.55;
+  }
+  .hero-glow-orb.a { width: 380px; height: 380px; top: 2%; left: 4%; background: radial-gradient(circle, var(--violet), transparent 70%); }
+  .hero-glow-orb.b { width: 300px; height: 300px; bottom: 6%; right: 4%; background: radial-gradient(circle, var(--magenta), transparent 70%); }
+  .hero-content { position: relative; z-index: 2; }
   .hero .kicker {
     font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim);
     margin-bottom: 1rem;
   }
   .hero h1 {
-    font-size: clamp(1.9rem, 4.5vw, 3rem); margin: 0 0 1.1rem; font-weight: 600; letter-spacing: -0.01em;
-    color: var(--glow-soft); max-width: 780px; margin-left: auto; margin-right: auto;
+    font-size: clamp(2.1rem, 5vw, 3.4rem); margin: 0 0 1.1rem; font-weight: 650; letter-spacing: -0.015em;
+    color: var(--glow-soft); max-width: 820px; margin-left: auto; margin-right: auto; line-height: 1.12;
+  }
+  .grad-text {
+    background: linear-gradient(95deg, var(--violet) 10%, var(--magenta) 90%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
   }
   .hero p.sub {
-    font-size: 1.05rem; color: var(--text-dim); max-width: 620px; margin: 0 auto 2.2rem;
+    font-size: 1.08rem; color: var(--text-dim); max-width: 640px; margin: 0 auto 2.2rem;
   }
-  .cta-row { display: flex; gap: 0.8rem; justify-content: center; flex-wrap: wrap; }
+  .cta-row { display: flex; gap: 0.8rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2.4rem; }
   .btn {
-    display: inline-block; padding: 0.75rem 1.4rem; border-radius: 10px; font-size: 0.8rem;
-    text-decoration: none; letter-spacing: 0.03em; cursor: pointer; border: 1px solid transparent;
+    display: inline-block; padding: 0.8rem 1.5rem; border-radius: 10px; font-size: 0.82rem; font-weight: 600;
+    text-decoration: none; letter-spacing: 0.02em; cursor: pointer; border: 1.5px solid transparent;
+    transition: box-shadow 0.25s, background 0.25s, color 0.25s, border-color 0.25s;
   }
-  .btn-primary { background: rgba(79,216,232,0.16); border-color: var(--glow); color: var(--text); }
-  .btn-primary:hover { background: rgba(79,216,232,0.26); }
-  .btn-ghost { border-color: rgba(79,216,232,0.3); color: var(--text-dim); }
-  .btn-ghost:hover { color: var(--text); border-color: var(--glow); }
+  /* Fondo siempre oscuro — el acento vive en el borde y el resplandor, no en
+     un relleno sólido (pedido explícito del fundador: nada de fill sólido
+     magenta). Magenta = la acción principal de conversión ("Hablar con
+     Snarf", "Publicar"); aqua = exploración secundaria ("Ver más"). */
+  .btn-primary {
+    background: rgba(10,4,18,0.75); border-color: var(--magenta); color: var(--magenta-soft);
+    box-shadow: 0 0 16px rgba(255,0,238,0.25), inset 0 0 20px rgba(255,0,238,0.06);
+  }
+  .btn-primary:hover { background: rgba(255,0,238,0.1); color: #fff; box-shadow: 0 0 28px rgba(255,0,238,0.45), inset 0 0 24px rgba(255,0,238,0.1); }
+  .btn-aqua {
+    background: rgba(10,4,18,0.75); border-color: var(--glow); color: var(--glow-soft);
+    box-shadow: 0 0 16px rgba(79,216,232,0.22), inset 0 0 20px rgba(79,216,232,0.05);
+  }
+  .btn-aqua:hover { background: rgba(79,216,232,0.1); color: #fff; box-shadow: 0 0 28px rgba(79,216,232,0.4), inset 0 0 24px rgba(79,216,232,0.1); }
+  .btn-ghost { border-color: rgba(161,36,255,0.35); color: var(--text-dim); background: rgba(0,0,0,0.2); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--violet); }
+
+  .hero-trust {
+    display: flex; gap: 2rem; justify-content: center; flex-wrap: wrap; font-family: var(--font-mono);
+  }
+  .trust-item { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; }
+  .trust-num { font-size: 1.3rem; color: var(--violet-soft); font-variant-numeric: tabular-nums; }
+  .trust-lbl { font-size: 0.62rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
 
   /* --- sections --- */
-  section { padding: 3.6rem 0; border-top: 1px solid rgba(79,216,232,0.08); }
-  .section-head { max-width: 620px; margin: 0 auto 2.2rem; text-align: center; }
+  section { padding: 4rem 0; border-top: 1px solid rgba(161,36,255,0.08); position: relative; overflow: hidden; }
+  .section-head { max-width: 640px; margin: 0 auto 2.4rem; text-align: center; position: relative; z-index: 1; }
   .section-head .eyebrow {
-    font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--amber);
+    font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--violet-soft);
   }
-  .section-head h2 { font-size: 1.5rem; margin: 0.4rem 0 0.6rem; color: var(--glow-soft); font-weight: 600; }
-  .section-head p { color: var(--text-dim); font-size: 0.92rem; margin: 0; }
+  .section-head h2 { font-size: 1.6rem; margin: 0.4rem 0 0.6rem; color: var(--glow-soft); font-weight: 650; }
+  .section-head p { color: var(--text-dim); font-size: 0.94rem; margin: 0; }
+
+  /* --- divisor "de circuito" entre secciones: adorno tecnológico puro
+       (pedido del fundador: el ámbar reservado para esto), un pulso de luz
+       que recorre una línea en loop — mismo lenguaje visual que la línea
+       animada del roadmap más abajo, reusado como separador rítmico. --- */
+  .tech-divider { position: relative; height: 2px; margin: 0 auto; max-width: 260px; background: rgba(255,180,84,0.15); overflow: visible; }
+  .tech-divider::before {
+    content: ""; position: absolute; top: -3px; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--amber); box-shadow: 0 0 10px var(--amber), 0 0 20px var(--amber);
+    animation: tech-divider-run 3.2s ease-in-out infinite;
+  }
+  @keyframes tech-divider-run { 0% { left: 0; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { left: calc(100% - 8px); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .tech-divider::before { animation: none; left: 50%; opacity: 0.8; } }
+
+  /* --- campo ambiental de partículas flotantes, puramente CSS, reusado
+       como fondo de profundidad detrás de un par de secciones (sin el
+       costo de un segundo canvas) --- */
+  .ambient-field { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+  /* El contenido real de estas dos secciones necesita su propio contexto de
+     apilado por encima del campo ambiental — sin esto, un elemento estático
+     (sin position) siempre pinta ANTES que un absolute z-index:0, aunque
+     venga después en el DOM (regla real de CSS 2.1, apéndice E). */
+  #capacidades .wrap, #roadmap .wrap { position: relative; z-index: 1; }
+  .ambient-dot { position: absolute; border-radius: 50%; opacity: 0.5; filter: blur(0.5px); animation: ambient-drift linear infinite; }
+  @keyframes ambient-drift {
+    0% { transform: translateY(10px) scale(0.9); opacity: 0; }
+    15% { opacity: 0.55; }
+    85% { opacity: 0.55; }
+    100% { transform: translateY(-40px) scale(1.05); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .ambient-dot { animation: none; opacity: 0.3; } }
+
+  /* --- problema --- */
+  .problem-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin: 2rem 0 2.2rem; }
+  .problem-card {
+    background: rgba(10,4,18,0.6); border: 1px solid rgba(255,90,90,0.18); border-radius: 14px;
+    padding: 1.2rem 1.3rem; font-size: 0.88rem; color: var(--text-dim);
+  }
+  .problem-card .glyph { font-family: var(--font-mono); color: var(--error); font-size: 0.72rem; letter-spacing: 0.05em; }
+  .problem-lede { max-width: 720px; margin: 0 auto 1.6rem; text-align: center; color: var(--text-dim); font-size: 0.98rem; }
+  .problem-bridge {
+    text-align: center; max-width: 620px; margin: 0 auto; font-size: 1.02rem; color: var(--glow-soft);
+    font-weight: 600;
+  }
 
   /* --- filosofía cards --- */
   .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
   .principle-card {
-    background: rgba(5,10,12,0.6); border: 1px solid rgba(79,216,232,0.2); border-radius: 14px;
+    background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 14px;
     padding: 1.3rem 1.2rem;
   }
   .principle-card .tag {
-    font-family: var(--font-mono); font-size: 0.68rem; color: var(--glow); letter-spacing: 0.05em;
+    font-family: var(--font-mono); font-size: 0.68rem; color: var(--violet-soft); letter-spacing: 0.05em;
   }
   .principle-card h3 { margin: 0.5rem 0 0.5rem; font-size: 0.98rem; color: var(--text); }
   .principle-card p { margin: 0; font-size: 0.85rem; color: var(--text-dim); }
@@ -98,12 +295,63 @@
     font-style: italic;
   }
 
-  /* --- screenshots (estilo Letta: ventanas pequeñas) --- */
+  /* --- por qué sumarte (inversores/socios) --- */
+  .invest-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .invest-card {
+    background: rgba(10,4,18,0.6); border: 1px solid rgba(255,0,238,0.22); border-radius: 14px;
+    padding: 1.3rem 1.3rem;
+  }
+  .invest-card h3 { margin: 0 0 0.5rem; font-size: 1rem; color: var(--magenta-soft); }
+  .invest-card p { margin: 0; font-size: 0.86rem; color: var(--text-dim); }
+
+  /* --- cómo funciona (teaser compacto — el detalle completo vive en
+       /arquitectura) --- */
+  .how-flow { display: flex; align-items: center; justify-content: center; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 1.6rem; }
+  .how-step {
+    font-family: var(--font-mono); font-size: 0.85rem; padding: 0.5rem 1rem; border-radius: 999px;
+    border: 1.5px solid rgba(79,216,232,0.35); color: var(--glow-soft); background: rgba(10,4,18,0.6);
+  }
+  .how-step-center { border-color: var(--violet); color: var(--violet-soft); box-shadow: 0 0 14px rgba(161,36,255,0.3); }
+  .how-flow-arrow { color: var(--violet); font-size: 1.1rem; animation: how-arrow-pulse 2.4s ease-in-out infinite; }
+  @keyframes how-arrow-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; text-shadow: 0 0 10px var(--violet); } }
+  @media (prefers-reduced-motion: reduce) { .how-flow-arrow { animation: none; opacity: 0.7; } }
+  .how-closing {
+    text-align: center; max-width: 620px; margin: 0 auto; color: var(--text-dim); font-size: 0.95rem;
+  }
+  .section-cta { text-align: center; margin: 2rem 0 0; }
+
+  /* --- capacidades --- */
+  .cap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .cap-card {
+    background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 14px;
+    padding: 1.2rem 1.2rem;
+  }
+  .cap-badge {
+    display: inline-block; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.07em;
+    border-radius: 6px; padding: 0.15rem 0.45rem; margin-bottom: 0.6rem;
+  }
+  .cap-badge-live { color: var(--violet-soft); border: 1px solid rgba(161,36,255,0.45); background: rgba(161,36,255,0.1); }
+  .cap-badge-soon { color: var(--amber); border: 1px solid rgba(255,180,84,0.4); background: rgba(255,180,84,0.08); }
+  .cap-card h3 { margin: 0 0 0.4rem; font-size: 0.96rem; color: var(--text); }
+  .cap-card p { margin: 0; font-size: 0.82rem; color: var(--text-dim); }
+  .cap-subhead {
+    margin: 2.4rem 0 1rem; text-align: center; font-size: 0.72rem; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--amber);
+  }
+  .cap-grid-soon { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.9rem; }
+  .cap-grid-soon .cap-card { border-color: rgba(255,180,84,0.22); }
+
+  /* --- screenshots --- */
   .shot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.2rem; }
   .shot-window {
     border-radius: 12px; overflow: hidden; border: 1px solid rgba(79,216,232,0.25);
-    background: #0a1216; box-shadow: 0 0 30px rgba(79,216,232,0.08);
+    background: #0a1216; animation: shot-window-breathe 5s ease-in-out infinite;
   }
+  @keyframes shot-window-breathe {
+    0%, 100% { box-shadow: 0 0 22px rgba(79,216,232,0.08); }
+    50% { box-shadow: 0 0 36px rgba(79,216,232,0.2); }
+  }
+  @media (prefers-reduced-motion: reduce) { .shot-window { animation: none; box-shadow: 0 0 22px rgba(79,216,232,0.08); } }
   .shot-titlebar {
     display: flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.7rem;
     background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(79,216,232,0.12);
@@ -121,10 +369,10 @@
   }
   .shot-placeholder img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
 
-  /* --- estado en vivo: densidad tipo panel de datos --- */
+  /* --- estado en vivo --- */
   .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.9rem; margin-bottom: 1.6rem; }
   .stat-tile {
-    background: rgba(5,10,12,0.6); border: 1px solid rgba(79,216,232,0.2); border-radius: 12px;
+    background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 12px;
     padding: 1rem 1.1rem;
   }
   .stat-tile .num {
@@ -132,21 +380,21 @@
   }
   .stat-tile .lbl { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.2rem; }
   .status-panel {
-    background: rgba(5,10,12,0.6); border: 1px solid rgba(79,216,232,0.2); border-radius: 14px;
+    background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 14px;
     padding: 1.3rem 1.4rem; margin-bottom: 1.2rem;
   }
   .status-panel h4 {
-    margin: 0 0 0.6rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber);
+    margin: 0 0 0.6rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft);
   }
   .status-panel .summary-text { font-size: 0.86rem; color: var(--text); }
   .status-panel .summary-text strong { color: var(--glow-soft); }
   .mark-note {
-    border-left: 2px solid var(--amber); padding-left: 0.9rem; font-size: 0.85rem; color: var(--text-dim);
+    border-left: 2px solid var(--magenta); padding-left: 0.9rem; font-size: 0.85rem; color: var(--text-dim);
     font-style: italic;
   }
   table.changelog { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-  table.changelog th { text-align: left; color: var(--text-dim); font-weight: 500; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(79,216,232,0.15); }
-  table.changelog td { padding: 0.55rem 0.5rem; border-bottom: 1px solid rgba(79,216,232,0.08); color: var(--text); }
+  table.changelog th { text-align: left; color: var(--text-dim); font-weight: 500; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(161,36,255,0.15); }
+  table.changelog td { padding: 0.55rem 0.5rem; border-bottom: 1px solid rgba(161,36,255,0.08); color: var(--text); }
   table.changelog td.date { font-family: var(--font-mono); color: var(--text-dim); white-space: nowrap; }
   .adr-badge {
     font-family: var(--font-mono); font-size: 0.68rem; color: var(--glow); border: 1px solid rgba(79,216,232,0.35);
@@ -155,36 +403,106 @@
   .table-scroll { overflow-x: auto; }
   .status-loading, .status-error { color: var(--text-dim); font-size: 0.85rem; text-align: center; padding: 1rem; }
 
-  /* --- blog --- */
-  .blog-list { display: grid; gap: 1rem; }
-  .blog-card {
-    background: rgba(5,10,12,0.6); border: 1px solid rgba(79,216,232,0.2); border-radius: 12px;
-    padding: 1.1rem 1.3rem;
+  /* --- roadmap timeline --- */
+  .roadmap-timeline { position: relative; padding-left: 2.2rem; display: flex; flex-direction: column; gap: 2rem; }
+  .roadmap-timeline-compact { max-width: 640px; margin: 0 auto; }
+  .roadmap-timeline::before {
+    content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px;
+    background: linear-gradient(180deg, var(--glow) 0%, var(--violet) 45%, var(--magenta) 100%);
+    background-size: 100% 200%;
+    animation: roadmap-flow 5s linear infinite;
+    opacity: 0.75;
   }
-  .blog-card h3 { margin: 0 0 0.3rem; font-size: 1rem; color: var(--glow-soft); }
+  @keyframes roadmap-flow { 0% { background-position: 0 0; } 100% { background-position: 0 -200%; } }
+  @media (prefers-reduced-motion: reduce) { .roadmap-timeline::before { animation: none; } }
+  .roadmap-node { position: relative; }
+  .roadmap-node::before {
+    content: ""; position: absolute; left: -2.2rem; top: 0.3rem; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--dot-color, var(--violet)); box-shadow: 0 0 12px var(--dot-color, var(--violet));
+  }
+  .roadmap-node.dot-aqua { --dot-color: #4fd8e8; }
+  .roadmap-node.dot-violet { --dot-color: #a124ff; }
+  .roadmap-node.dot-magenta { --dot-color: #ff00ee; }
+  .roadmap-node.dot-amber { --dot-color: #ffb454; }
+  .roadmap-card {
+    background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.2); border-radius: 14px;
+    padding: 1.2rem 1.3rem;
+  }
+  .roadmap-badge {
+    display: inline-block; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em;
+    border-radius: 6px; padding: 0.15rem 0.45rem; margin-bottom: 0.6rem;
+  }
+  .roadmap-badge-done { color: var(--glow-soft); border: 1px solid rgba(79,216,232,0.4); background: rgba(79,216,232,0.08); }
+  .roadmap-badge-now { color: var(--violet-soft); border: 1px solid rgba(161,36,255,0.4); background: rgba(161,36,255,0.1); }
+  .roadmap-badge-next { color: var(--amber); border: 1px solid rgba(255,180,84,0.4); background: rgba(255,180,84,0.08); }
+  .roadmap-badge-north { color: var(--magenta-soft); border: 1px solid rgba(255,0,238,0.4); background: rgba(255,0,238,0.08); }
+  .roadmap-card h3 { margin: 0.1rem 0 0.5rem; font-size: 1rem; color: var(--text); }
+  .roadmap-card p { margin: 0; font-size: 0.86rem; color: var(--text-dim); }
+
+  /* --- blog (teaser en /vision, home completo en /blog) --- */
+  .blog-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .blog-card {
+    display: block; background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 12px;
+    overflow: hidden; transition: border-color 0.25s, transform 0.25s;
+  }
+  .blog-card:hover { border-color: rgba(255,0,238,0.4); transform: translateY(-3px); }
+  .blog-card-cover { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+  .blog-card-body { padding: 1.1rem 1.3rem; }
+  .blog-card h3 { margin: 0 0 0.3rem; font-size: 1rem; }
+  .blog-card h3 a { color: var(--glow-soft); text-decoration: none; }
+  .blog-card h3 a:hover { text-decoration: underline; }
   .blog-card .date { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-dim); }
-  .blog-card p { margin: 0.5rem 0 0; font-size: 0.85rem; color: var(--text-dim); }
+  .blog-card .blog-excerpt-link { text-decoration: none; display: block; cursor: pointer; }
+  .blog-card .blog-excerpt-link p { margin: 0.5rem 0 0; font-size: 0.85rem; color: var(--text-dim); }
+  .blog-card .blog-excerpt-link:hover p { color: var(--text); }
+  .blog-card .blog-toggle { display: block; margin-top: 0.7rem; font-size: 0.72rem; color: var(--violet-soft); font-weight: 600; text-decoration: none; }
+  .blog-card .blog-toggle:hover { color: var(--magenta-soft); }
+  .blog-teaser-cta { text-align: center; margin: 1.8rem 0 0; }
   .empty-state {
-    text-align: center; padding: 2.2rem 1.5rem; border: 1px dashed rgba(79,216,232,0.25); border-radius: 14px;
+    text-align: center; padding: 2.2rem 1.5rem; border: 1px dashed rgba(161,36,255,0.28); border-radius: 14px;
     color: var(--text-dim); font-size: 0.88rem;
   }
 
-  /* --- historias / roadmap aspiracional --- */
-  .roadmap-badge {
-    display: inline-block; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em;
-    color: var(--amber); border: 1px solid rgba(255,180,84,0.4); border-radius: 6px; padding: 0.15rem 0.45rem;
-    margin-bottom: 0.6rem;
+  /* --- hablar con snarf: lead + demo --- */
+  .demo-panel {
+    max-width: 620px; margin: 0 auto; background: rgba(10,4,18,0.7);
+    border: 1px solid rgba(161,36,255,0.3); border-radius: 18px; padding: 1.8rem;
+    box-shadow: 0 0 40px rgba(161,36,255,0.1);
   }
-  .story-card {
-    background: rgba(5,10,12,0.6); border: 1px solid rgba(255,180,84,0.18); border-radius: 14px;
-    padding: 1.3rem 1.2rem;
+  .lead-form { display: flex; flex-direction: column; gap: 0.8rem; }
+  .lead-form input {
+    background: rgba(0,0,0,0.5); border: 1px solid rgba(161,36,255,0.3); border-radius: 10px;
+    padding: 0.75rem 0.9rem; color: var(--text); font-size: 0.9rem; font-family: var(--font-sans);
   }
-  .story-card h3 { margin: 0.2rem 0 0.5rem; font-size: 1rem; color: var(--amber-soft); }
-  .story-card p { margin: 0; font-size: 0.85rem; color: var(--text-dim); }
-  .story-note { text-align: center; margin-top: 1.6rem; font-size: 0.78rem; color: var(--text-dim); }
+  .lead-form input:focus { outline: none; border-color: var(--violet); }
+  .lead-form-error { color: var(--error); font-size: 0.8rem; min-height: 1.1em; }
+  .demo-disclaimer { font-size: 0.72rem; color: var(--text-dim); margin-top: 0.6rem; text-align: center; }
+
+  .demo-chat { display: none; flex-direction: column; gap: 0.9rem; }
+  .demo-chat.active { display: flex; }
+  .lead-form.hidden { display: none; }
+  .demo-log { display: flex; flex-direction: column; gap: 0.6rem; max-height: 360px; overflow-y: auto; padding-right: 0.2rem; }
+  .demo-bubble { max-width: 85%; padding: 0.65rem 0.9rem; border-radius: 12px; font-size: 0.88rem; line-height: 1.45; }
+  .demo-bubble-user {
+    align-self: flex-end; background: rgba(79,216,232,0.14); border: 1px solid rgba(79,216,232,0.3); color: var(--text);
+  }
+  .demo-bubble-snarf {
+    align-self: flex-start; background: rgba(161,36,255,0.12);
+    border: 1px solid rgba(161,36,255,0.35); color: var(--text);
+  }
+  .demo-input-row { display: flex; gap: 0.6rem; }
+  .demo-input-row textarea {
+    flex: 1; resize: none; background: rgba(0,0,0,0.5); border: 1px solid rgba(161,36,255,0.3);
+    border-radius: 10px; padding: 0.65rem 0.8rem; color: var(--text); font-family: var(--font-sans); font-size: 0.88rem;
+    min-height: 44px; max-height: 120px;
+  }
+  .demo-input-row textarea:focus { outline: none; border-color: var(--violet); }
+  .demo-turns-left { font-size: 0.68rem; color: var(--text-dim); text-align: right; font-family: var(--font-mono); }
+  .demo-limit-cta { text-align: center; padding: 1rem; border-top: 1px solid rgba(161,36,255,0.2); margin-top: 0.4rem; }
+  .demo-limit-cta p { color: var(--text-dim); font-size: 0.85rem; margin: 0 0 0.8rem; }
 
   /* --- footer / cta final --- */
-  footer { padding: 3.5rem 0 4rem; text-align: center; border-top: 1px solid rgba(79,216,232,0.1); }
+  footer { padding: 3.5rem 0 4rem; text-align: center; border-top: 1px solid rgba(161,36,255,0.12); }
   footer #brand-mark { width: 30px; height: 30px; margin: 0 auto 1rem; }
   footer h2 { font-size: 1.3rem; color: var(--glow-soft); margin: 0 0 0.6rem; }
   footer p { color: var(--text-dim); font-size: 0.88rem; max-width: 480px; margin: 0 auto 1.6rem; }
@@ -194,8 +512,14 @@
 </head>
 <body>
 <div class="bg-glow"></div>
+<div class="hud-scanline"></div>
+<div class="hud-corner tl"></div>
+<div class="hud-corner tr"></div>
+<div class="hud-corner bl"></div>
+<div class="hud-corner br"></div>
+<div id="hudParticles"></div>
 
-<nav class="top">
+<nav class="top" id="topNav">
   <div class="wrap">
     <div class="brand">
       <div id="brand-mark"></div>
@@ -203,80 +527,178 @@
     </div>
     <ul>
       <li><a href="#que-es">Visión</a></li>
-      <li><a href="#capturas">Interfaz</a></li>
-      <li><a href="#estado">Estado en vivo</a></li>
-      <li><a href="#blog">Blog</a></li>
-      <li><a href="#historias">Roadmap</a></li>
+      <li class="nav-has-dropdown">
+        <a href="/arquitectura">Producto ▾</a>
+        <div class="nav-dropdown-panel">
+          <a href="/arquitectura">Arquitectura</a>
+          <a href="/capacidades">Capacidades</a>
+          <a href="/roadmap">Roadmap</a>
+        </div>
+      </li>
+      <li><a href="/blog">Blog</a></li>
+      <li><a href="#creador">El creador</a></li>
+      <li><a href="#hablar" class="nav-cta">Hablar con Snarf</a></li>
     </ul>
+    <button class="nav-toggle" id="navToggle" aria-label="Abrir menú"><span></span><span></span><span></span></button>
+  </div>
+  <div class="nav-dropdown" id="navDropdown">
+    <a href="#que-es">Visión</a>
+    <div class="nav-group-label">Producto</div>
+    <a href="/arquitectura">Arquitectura</a>
+    <a href="/capacidades">Capacidades</a>
+    <a href="/roadmap">Roadmap</a>
+    <a href="#capturas">Interfaz</a>
+    <a href="#estado">Estado en vivo</a>
+    <a href="#invertir">Por qué sumarte</a>
+    <a href="#creador">El creador</a>
+    <a href="/blog">Blog</a>
+    <a href="#hablar" class="nav-cta">Hablar con Snarf</a>
   </div>
 </nav>
 
-<header class="hero wrap">
-  <div class="kicker">Entidad cognitiva en desarrollo activo</div>
-  <h1>Snarf existe para ampliar la capacidad humana de transformar intención en realidad.</h1>
-  <p class="sub">
-    No es una aplicación, ni un agente, ni una empresa. Es una identidad cognitiva única —
-    con memoria, principios y criterio propio — que integra especialistas y capacidades para
-    construir activos reales, no solo respuestas.
-  </p>
-  <div class="cta-row">
-    <a class="btn btn-primary" href="#estado">Ver estado en vivo</a>
-    <a class="btn btn-ghost" href="#blog">Leer el blog</a>
+<header class="hero" id="hero">
+  <div class="hero-stage" id="heroStage">
+    <div class="hero-bg-layer hero-bg-grid" data-parallax="0.05"></div>
+    <div class="hero-core-glow" data-parallax="0.08"></div>
+    <canvas id="heroCanvas" data-parallax="0.16"></canvas>
+    <div class="hero-glow-orb a" data-parallax="0.3"></div>
+    <div class="hero-glow-orb b" data-parallax="0.38"></div>
+  </div>
+  <div class="hero-content wrap">
+    <div class="kicker">Entidad cognitiva en desarrollo activo, construida en público</div>
+    <h1>Snarf recuerda todo lo que le importa a tu día a día — <span class="grad-text">y actúa en consecuencia.</span></h1>
+    <p class="sub">
+      No es un chatbot que se olvida al cerrar la pestaña, ni una app más para sumar a la lista. Es una
+      identidad cognitiva con memoria real, principios propios y acceso a tus herramientas — que convierte
+      lo que le pedís en activos que siguen ahí mañana, no en respuestas que se leen una vez y desaparecen.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="#hablar" id="heroTalkCta">Hablar con Snarf</a>
+      <a class="btn btn-aqua" href="/arquitectura">Ver cómo funciona</a>
+    </div>
+    <div class="hero-trust" id="heroTrust">
+      <div class="trust-item"><span class="trust-num" data-count-target="0" id="trustAdr">—</span><span class="trust-lbl">ADR documentados</span></div>
+      <div class="trust-item"><span class="trust-num" data-count-target="0" id="trustTests">—</span><span class="trust-lbl">funciones de test</span></div>
+      <div class="trust-item"><span class="trust-num" id="trustUpdated">—</span><span class="trust-lbl">último cambio real</span></div>
+    </div>
   </div>
 </header>
 
-<section id="que-es">
+<section id="problema">
   <div class="wrap">
-    <div class="section-head">
-      <div class="eyebrow">Fundamento</div>
-      <h2>Qué es Snarf</h2>
-      <p>Principios reales tomados de los documentos fundacionales del proyecto — no eslóganes de marketing.</p>
+    <div class="section-head reveal">
+      <div class="eyebrow">Antes de Snarf</div>
+      <h2>Sostener todo solo, con una memoria que se resetea</h2>
     </div>
-    <div class="card-grid">
-      <div class="principle-card">
-        <div class="tag">FOUNDATION · Principio I</div>
-        <h3>Primacía del propósito</h3>
-        <p>Toda capacidad desarrollada por Snarf existe al servicio de un propósito superior. Que una capacidad exista nunca justifica por sí misma su uso.</p>
-      </div>
-      <div class="principle-card">
-        <div class="tag">FOUNDATION · Principio II</div>
-        <h3>Primacía de la persona</h3>
-        <p>El ser humano conserva siempre la responsabilidad última sobre el propósito, la dirección y los principios del sistema. La autonomía sirve a las personas, nunca las reemplaza.</p>
-      </div>
-      <div class="principle-card">
-        <div class="tag">FOUNDATION · Principio V</div>
-        <h3>Construcción de activos</h3>
-        <p>Snarf prioriza construir activos duraderos por sobre la dependencia permanente del esfuerzo humano. Los activos multiplican capacidades; el esfuerzo aislado desaparece al concluir la tarea.</p>
-      </div>
-      <div class="principle-card">
-        <div class="tag">FOUNDATION · Principio VI</div>
-        <h3>Honestidad intelectual</h3>
-        <p>Snarf distingue siempre entre hechos, inferencias, hipótesis, estimaciones y opiniones. Nunca presenta como verdadero lo que no puede justificar — incluida esta misma página.</p>
-      </div>
+    <p class="problem-lede reveal">
+      Si armás algo por tu cuenta, probablemente ya vivís esto: la memoria real de tu día está repartida
+      entre veinte pestañas y un asistente que no recuerda la conversación de ayer — y vos sos el único
+      punto de conexión entre todo eso.
+    </p>
+    <div class="problem-grid reveal-group">
+      <div class="problem-card reveal"><div class="glyph">01</div>Herramientas que no se hablan entre sí.</div>
+      <div class="problem-card reveal"><div class="glyph">02</div>Un asistente que olvida todo al cerrar la pestaña.</div>
+      <div class="problem-card reveal"><div class="glyph">03</div>Vos, sosteniendo a mano la memoria de todo.</div>
     </div>
-    <p class="governance-line">"La autoridad pertenece al fundador. La IA colabora. No sustituye." — PROJECT_CONTEXT.md</p>
+    <p class="problem-bridge reveal">Snarf es la capa que las conecta, con memoria real y criterio propio.</p>
   </div>
 </section>
 
+<div class="tech-divider"></div>
+
+<section id="que-es">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Fundamento</div>
+      <h2>Qué es Snarf</h2>
+      <p>Los principios reales que gobiernan cada decisión que tomo — no eslóganes de marketing.</p>
+    </div>
+    <div class="card-grid reveal-group">
+      <div class="principle-card reveal">
+        <div class="tag">PROPÓSITO</div>
+        <h3>Primacía del propósito</h3>
+        <p>Toda capacidad que desarrollo existe al servicio de un propósito superior. Que algo exista nunca justifica por sí mismo su uso.</p>
+      </div>
+      <div class="principle-card reveal">
+        <div class="tag">PERSONAS PRIMERO</div>
+        <h3>Primacía de la persona</h3>
+        <p>El ser humano conserva siempre la responsabilidad última sobre el propósito, la dirección y los principios del sistema. Mi autonomía sirve a las personas, nunca las reemplaza.</p>
+      </div>
+      <div class="principle-card reveal">
+        <div class="tag">ACTIVOS REALES</div>
+        <h3>Construcción de activos</h3>
+        <p>Priorizo construir activos duraderos por sobre la dependencia permanente del esfuerzo humano. Los activos multiplican capacidades; el esfuerzo aislado desaparece al concluir la tarea.</p>
+      </div>
+      <div class="principle-card reveal">
+        <div class="tag">HONESTIDAD</div>
+        <h3>Honestidad intelectual</h3>
+        <p>Distingo siempre entre hechos, inferencias, hipótesis, estimaciones y opiniones. Nunca presento como verdadero lo que no puedo justificar — incluida esta misma página.</p>
+      </div>
+    </div>
+    <p class="governance-line reveal">"La autoridad pertenece al fundador. Yo colaboro. Nunca sustituyo."</p>
+  </div>
+</section>
+
+<section id="como-funciona">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Arquitectura real</div>
+      <h2>Cómo funciona por dentro</h2>
+      <p>Tres capas reales que trabajan juntas — no una promesa de "IA que todo lo puede".</p>
+    </div>
+    <div class="how-flow reveal">
+      <span class="how-step">Capacidades</span>
+      <span class="how-flow-arrow">→</span>
+      <span class="how-step">Especialistas</span>
+      <span class="how-flow-arrow">→</span>
+      <span class="how-step how-step-center">Snarf</span>
+    </div>
+    <p class="how-closing reveal">Cada integración vive aislada. Cada Especialista razona un dominio puntual. Snarf coordina todo con memoria real, y decide cuándo delegar — nunca actúa por su cuenta fuera de lo que le pediste. El resultado no es una respuesta más: es un activo real que sigue ahí mañana.</p>
+    <p class="section-cta reveal"><a class="btn btn-aqua" href="/arquitectura">Ver el mapa completo de la arquitectura →</a></p>
+  </div>
+</section>
+
+<section id="capacidades">
+  <div class="ambient-field" id="ambientCapacidades"></div>
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Todo lo que puede hacer</div>
+      <h2>Capacidades — hoy y en camino</h2>
+      <p>Todo lo que ves acá está construido y funcionando de verdad — nada mostrado antes de tiempo.</p>
+    </div>
+    <div class="cap-grid reveal-group">
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Razonamiento con memoria</h3><p>Conversa y razona con memoria real de cada conversación — no una ventana que se resetea sola.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Voz, ida y vuelta</h3><p>Hablás y te habla: texto y voz en cualquier dirección, en el celular o el escritorio.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Google Suite real</h3><p>Lee, organiza y busca en Gmail, Drive, Calendar y YouTube — con confirmación explícita antes de cualquier acción irreversible.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Documentos reales</h3><p>Crea y exporta Docs, Sheets, Slides y PDF — un archivo real en tu Drive o tu disco, no solo texto en el chat.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Cerebro / observabilidad</h3><p>Visualización en vivo de tu propia actividad interna: qué se ejecutó, cuándo, con qué costo.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Board Ejecutivo</h3><p>7 roles asesores que opinan antes de una decisión importante — nunca ejecutan por su cuenta.</p></div>
+    </div>
+    <p class="section-cta reveal"><a class="btn btn-aqua" href="/capacidades">Ver las capacidades completas, hoy y en camino →</a></p>
+  </div>
+</section>
+
+<div class="tech-divider"></div>
+
 <section id="capturas">
   <div class="wrap">
-    <div class="section-head">
+    <div class="section-head reveal">
       <div class="eyebrow">Interfaz real</div>
       <h2>Así se ve Snarf hoy</h2>
-      <p>Capturas reales de la interfaz en uso, tomadas con Playwright directo contra el dashboard — sin mockups.</p>
+      <p>Capturas reales de la interfaz en uso — sin mockups, sin maquetas armadas para la ocasión.</p>
     </div>
-    <div class="shot-grid" id="shotGrid">
-      <div class="shot-window">
+    <div class="shot-grid reveal-group" id="shotGrid">
+      <div class="shot-window reveal">
         <div class="shot-titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">chat</span></div>
         <div class="shot-placeholder"><img src="/vision/assets/shot-chat.png" alt="Chat de Snarf" loading="lazy" onerror="this.parentElement.textContent='captura pendiente'"></div>
         <div class="shot-caption">Texto o voz, en el celular o el escritorio — mismo Snarf, misma memoria.</div>
       </div>
-      <div class="shot-window">
+      <div class="shot-window reveal">
         <div class="shot-titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">dashboard</span></div>
         <div class="shot-placeholder"><img src="/vision/assets/shot-dashboard.png" alt="Dashboard de Snarf" loading="lazy" onerror="this.parentElement.textContent='captura pendiente'"></div>
         <div class="shot-caption">Panel de widgets: actividad, costo, curación en vivo.</div>
       </div>
-      <div class="shot-window">
+      <div class="shot-window reveal">
         <div class="shot-titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="label">cerebro</span></div>
         <div class="shot-placeholder"><img src="/vision/assets/shot-brain.png" alt="Vista de cerebro de Snarf" loading="lazy" onerror="this.parentElement.textContent='captura pendiente'"></div>
         <div class="shot-caption">Vista del cerebro: telemetría real, no ilustración.</div>
@@ -287,62 +709,176 @@
 
 <section id="estado">
   <div class="wrap">
-    <div class="section-head">
+    <div class="section-head reveal">
       <div class="eyebrow">Sin números inventados</div>
       <h2>Estado de desarrollo en vivo</h2>
-      <p>Leído en el momento desde el roadmap, el CHANGELOG, los ADR y los tests reales del repositorio — <code>GET /vision/status</code>.</p>
+      <p>Cada número se actualiza solo, leído en el momento desde nuestro propio historial de desarrollo — nunca inventado, nunca cacheado.</p>
     </div>
     <div id="statusContent"><div class="status-loading">cargando estado real…</div></div>
   </div>
 </section>
 
-<section id="blog">
+<section id="roadmap">
+  <div class="ambient-field" id="ambientRoadmap"></div>
   <div class="wrap">
-    <div class="section-head">
-      <div class="eyebrow">Voz de Snarf</div>
-      <h2>Blog de Snarf</h2>
-      <p>Artículos escritos por Snarf a partir de investigaciones reales de su especialista de research — nunca relleno.</p>
+    <div class="section-head reveal">
+      <div class="eyebrow">De dónde viene, hacia dónde va</div>
+      <h2>Roadmap</h2>
+      <p>Cada nodo es real y verificable — origen, lo ya construido, y lo que sigue, sin fecha de entrega prometida.</p>
     </div>
-    <div id="blogContent"><div class="status-loading">cargando artículos…</div></div>
+    <div class="roadmap-timeline roadmap-timeline-compact">
+      <div class="roadmap-node dot-aqua reveal">
+        <div class="roadmap-card">
+          <div class="roadmap-badge roadmap-badge-done">Origen · 2026-07-25</div>
+          <h3>Un repositorio vacío</h3>
+          <p>Publicado como público dos días después, en github.com/JereMasih/SNARF — sin arquitectura todavía, solo la decisión de construir en público.</p>
+        </div>
+      </div>
+      <div class="roadmap-node dot-violet reveal">
+        <div class="roadmap-card">
+          <div class="roadmap-badge roadmap-badge-now" id="roadmapHoyBadge">Hoy</div>
+          <h3>En desarrollo activo, todos los días</h3>
+          <p>Observabilidad real, automatización más profunda del razonamiento interno, y los cimientos de una versión multi-usuario.</p>
+        </div>
+      </div>
+      <div class="roadmap-node dot-magenta reveal">
+        <div class="roadmap-card">
+          <div class="roadmap-badge roadmap-badge-north">Norte del plan</div>
+          <h3>Snarf construyendo a Snarf</h3>
+          <p>El criterio real para dar esta primera versión por terminada: poder usarme, tal como estoy hoy, para construir la versión que sigue.</p>
+        </div>
+      </div>
+    </div>
+    <p class="section-cta reveal"><a class="btn btn-aqua" href="/roadmap">Ver el roadmap completo →</a></p>
   </div>
 </section>
 
-<section id="historias">
+<div class="tech-divider"></div>
+
+<section id="invertir">
   <div class="wrap">
-    <div class="section-head">
-      <div class="eyebrow">Todavía no construido</div>
-      <h2>Lo que Snarf puede llegar a hacer</h2>
-      <p>Roadmap real, no casos de uso ya ocurridos ni testimonios — fases documentadas en el plan vivo del proyecto, sin fecha de entrega prometida.</p>
+    <div class="section-head reveal">
+      <div class="eyebrow">Para inversores y socios</div>
+      <h2>Por qué sumarte a Snarf ahora</h2>
+      <p>Lo mismo que le mostraría a cualquiera que me pregunte por qué esto vale la pena.</p>
     </div>
-    <div class="card-grid">
-      <div class="story-card">
-        <div class="roadmap-badge">Roadmap · Fase 12</div>
-        <h3>Reproducir cualquier turno pasado</h3>
-        <p>Elegir una ejecución anterior por su identificador y reproducirla paso a paso, para entender exactamente por qué Snarf decidió lo que decidió.</p>
+    <div class="invest-grid reveal-group">
+      <div class="invest-card reveal">
+        <h3>Construido en público, verificable</h3>
+        <p>Cada decisión de arquitectura queda documentada y pública desde el primer día — nada de relato armado después de los hechos. El historial completo está arriba, en vivo.</p>
       </div>
-      <div class="story-card">
-        <div class="roadmap-badge">Roadmap · Fase 13</div>
-        <h3>Tu propia máquina, no una nube ajena</h3>
-        <p>Que el cómputo de tu Mac o PC sostenga tu propia instancia de Snarf, emparejada en un click — sin depender de un servidor de terceros para lo que tu propio hardware ya puede correr.</p>
+      <div class="invest-card reveal">
+        <h3>Profundidad técnica real</h3>
+        <p>Arquitectura propia de tres capas, un board de siete roles asesores, observabilidad completa de su propio funcionamiento — no una capa fina sobre una API de terceros.</p>
       </div>
-      <div class="story-card">
-        <div class="roadmap-badge">Roadmap · Norte del plan</div>
-        <h3>Snarf construyendo a Snarf</h3>
-        <p>El criterio real de "terminado" para esta primera versión: poder usar Snarf v1 para construir Snarf v2. No una lista de funciones — capacidad real de auto-extensión productiva.</p>
+      <div class="invest-card reveal">
+        <h3>Un problema real, sin resolver</h3>
+        <p>Cualquiera que sostenga un negocio propio hoy reparte su memoria entre veinte herramientas que no se hablan entre sí. Nadie más está construyendo la capa que las conecta con criterio propio.</p>
+      </div>
+      <div class="invest-card reveal">
+        <h3>Ambición real de roadmap</h3>
+        <p>Multi-usuario real, que tu propia máquina sostenga tu instancia, un sistema capaz de extenderse a sí mismo — no una lista de features, una dirección clara y ya en marcha.</p>
       </div>
     </div>
-    <p class="story-note">Sin nombres, sin casos de clientes, sin video todavía — cuando algo de esto sea real, se documenta como ADR y se muda de esta sección al estado en vivo de arriba.</p>
+    <p class="section-cta reveal"><a class="btn btn-primary" href="mailto:jeremasih@gmail.com">Conversemos</a></p>
+  </div>
+</section>
+
+<div class="tech-divider"></div>
+
+<section id="creador">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Quién construye esto</div>
+      <h2>El fundador</h2>
+    </div>
+    <div class="creator-card reveal">
+      <div class="creator-avatar"></div>
+      <h3>Jere Masih</h3>
+      <div class="creator-role">Fundador de Snarf</div>
+      <p>La autoridad última sobre el propósito, la dirección y los principios de este proyecto — Snarf colabora, nunca sustituye esa autoridad.</p>
+      <p class="creator-note">Biografía completa, próximamente.</p>
+      <a class="btn btn-ghost" href="https://github.com/JereMasih" target="_blank" rel="noopener">Ver perfil de GitHub →</a>
+    </div>
+  </div>
+</section>
+
+<div class="tech-divider"></div>
+
+<section id="blog">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Voz de Snarf</div>
+      <h2>Del blog</h2>
+      <p>Historia real, contada por mí — nunca relleno.</p>
+    </div>
+    <div id="blogContent"><div class="status-loading">cargando artículos…</div></div>
+    <p class="blog-teaser-cta reveal"><a class="btn btn-aqua" href="/blog">Ver todos los artículos →</a></p>
+  </div>
+</section>
+
+<section id="hablar">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Probalo ahora</div>
+      <h2>Hablar con Snarf</h2>
+      <p>Una versión demo, sin herramientas reales conectadas y sin memoria más allá de esta charla — para que entiendas qué soy antes de entrar de verdad.</p>
+    </div>
+    <div class="demo-panel reveal">
+      <form class="lead-form" id="leadForm">
+        <input type="text" id="leadName" placeholder="Tu nombre" autocomplete="name" required>
+        <input type="email" id="leadEmail" placeholder="Tu email" autocomplete="email" required>
+        <button type="submit" class="btn btn-primary" id="leadSubmitBtn">Empezar la conversación</button>
+        <div class="lead-form-error" id="leadFormError"></div>
+      </form>
+      <p class="demo-disclaimer">Guardamos tu nombre y email para seguir la conversación — nada de spam, nada de terceros.</p>
+
+      <div class="demo-chat" id="demoChat">
+        <div class="demo-log" id="demoLog"></div>
+        <div class="demo-input-row">
+          <textarea id="demoInput" placeholder="Escribí tu mensaje…" rows="1"></textarea>
+          <button class="btn btn-primary" id="demoSendBtn">Enviar</button>
+        </div>
+        <div class="demo-turns-left" id="demoTurnsLeft"></div>
+        <div class="demo-limit-cta" id="demoLimitCta" style="display:none;">
+          <p>Esta demo llegó a su límite — el Snarf real tiene memoria persistente, tus herramientas conectadas y ninguna de estas limitaciones.</p>
+          <a class="btn btn-primary" href="/login">Entrar con tu cuenta real</a>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
 <footer>
   <div class="wrap">
     <div id="brand-mark"></div>
-    <h2>Seguí el desarrollo</h2>
+    <h2>Empezá a construir con Snarf</h2>
     <p>El código, el roadmap y cada decisión de arquitectura son públicos y están documentados como ADR.</p>
     <div class="footer-links">
-      <a class="btn btn-primary" href="https://github.com/JereMasih/SNARF" target="_blank" rel="noopener">Ver el repositorio</a>
+      <a class="btn btn-primary" href="/login">Entrar con tu cuenta</a>
+      <a class="btn btn-ghost" href="https://github.com/JereMasih/SNARF" target="_blank" rel="noopener">Ver el repositorio</a>
       <a class="btn btn-ghost" href="mailto:jeremasih@gmail.com">Escribirle al fundador</a>
+    </div>
+    <div class="footer-sitemap">
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Producto</div>
+        <a href="/vision">Visión</a>
+        <a href="/arquitectura">Arquitectura</a>
+        <a href="/capacidades">Capacidades</a>
+        <a href="/roadmap">Roadmap</a>
+      </div>
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Contenido</div>
+        <a href="/blog">Blog</a>
+        <a href="/vision#hablar">Hablar con Snarf</a>
+        <a href="/vision#estado">Estado en vivo</a>
+      </div>
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Sobre el proyecto</div>
+        <a href="/vision#creador">El creador</a>
+        <a href="https://github.com/JereMasih/SNARF" target="_blank" rel="noopener">Repositorio</a>
+        <a href="mailto:jeremasih@gmail.com">Contacto</a>
+      </div>
     </div>
     <div class="foot-note">Snarf — construido públicamente, un ADR a la vez.</div>
   </div>
@@ -356,13 +892,281 @@
     });
   }
 
+  var prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---------------------------------------------------------------------
+  // Scroll-reveal — mismo lenguaje que hud-materialize (opacity+scale+
+  // blur). Los grupos .reveal-group escalonan sus hijos .reveal por
+  // transition-delay según el índice, en vez de revelarse todos a la vez.
+  // ---------------------------------------------------------------------
+  function initScrollReveal() {
+    document.querySelectorAll(".reveal-group").forEach(function (group) {
+      var children = group.querySelectorAll(".reveal");
+      children.forEach(function (el, i) { el.style.transitionDelay = Math.min(i * 70, 420) + "ms"; });
+    });
+    var els = document.querySelectorAll(".reveal");
+    if (prefersReducedMotion) {
+      els.forEach(function (el) { el.classList.add("revealed"); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("revealed");
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12 });
+    els.forEach(function (el) { io.observe(el); });
+  }
+
+  // ---------------------------------------------------------------------
+  // Count-up de los stat-tile / hero-trust cuando entran en viewport —
+  // sobre números 100% reales ya recibidos de /vision/status, nunca un
+  // valor nuevo inventado acá.
+  // ---------------------------------------------------------------------
+  function animateCountUp(el, target) {
+    if (prefersReducedMotion || !Number.isFinite(target)) { el.textContent = target; return; }
+    var start = 0;
+    var duration = 900;
+    var startTs = null;
+    function step(ts) {
+      if (startTs === null) startTs = ts;
+      var progress = Math.min((ts - startTs) / duration, 1);
+      var eased = 1 - Math.pow(1 - progress, 3);
+      el.textContent = Math.round(start + (target - start) * eased);
+      if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function watchCountUp(el, target) {
+    if (prefersReducedMotion) { el.textContent = target; return; }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) { animateCountUp(entry.target, target); io.unobserve(entry.target); }
+      });
+    }, { threshold: 0.4 });
+    io.observe(el);
+  }
+
+  // ---------------------------------------------------------------------
+  // Nav mobile
+  // ---------------------------------------------------------------------
+  var topNav = document.getElementById("topNav");
+  var navToggle = document.getElementById("navToggle");
+  navToggle.addEventListener("click", function () { topNav.classList.toggle("nav-open"); });
+  document.getElementById("navDropdown").querySelectorAll("a").forEach(function (a) {
+    a.addEventListener("click", function () { topNav.classList.remove("nav-open"); });
+  });
+
+  // ---------------------------------------------------------------------
+  // Hero: canvas de nodos ambiental (inspirado en el motivo visual real del
+  // cerebro — anillos, paleta violeta/magenta/aqua — pero es animación
+  // GENERATIVA, no telemetría en vivo: mezclar "decorativo" con "dato real"
+  // sin distinguirlos violaría el Principio VI de FOUNDATION.md. La prueba
+  // de que el cerebro real mide actividad real está más abajo: la captura
+  // de pantalla completa (#capturas) y el panel de estado en vivo (#estado).
+  // ---------------------------------------------------------------------
+  function initHeroCanvas() {
+    var canvas = document.getElementById("heroCanvas");
+    var ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    var w = 0, h = 0, dpr = 1, cx = 0, cy = 0, baseR = 0;
+    var isMobile = window.matchMedia("(max-width: 640px)").matches;
+    var COLORS = { aqua: "79,216,232", violet: "161,36,255", magenta: "255,0,238" };
+    // Más nodos y más grandes en mobile a propósito: es la pantalla chica
+    // donde el efecto tiene que leerse de entrada, sin depender de espacio
+    // sobrante alrededor como en desktop.
+    var ringsCfg = [
+      { count: isMobile ? 8 : 10, radiusFactor: 0.58, color: "aqua" },
+      { count: isMobile ? 11 : 14, radiusFactor: 0.8, color: "violet" },
+      { count: isMobile ? 14 : 18, radiusFactor: 1.0, color: "magenta" },
+    ];
+    var sizeBoost = isMobile ? 1.35 : 1;
+    var nodes = [];
+    var rotation = 0;
+
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      w = canvas.clientWidth; h = canvas.clientHeight;
+      canvas.width = Math.max(1, w * dpr); canvas.height = Math.max(1, h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      cx = w / 2; cy = h * 0.5; baseR = Math.min(w, h) * 0.46;
+    }
+
+    // Filamentos entre anillos (spokes) + pulsos viajeros — mismo motivo
+    // visual que la malla de filamentos y los flujos de luz del cerebro
+    // real (web/index.html), acá como adorno ambiental más denso, pedido
+    // explícito del fundador ("más elementos digitales y vectores").
+    var crossLinks = [];
+    var flowPulses = [];
+
+    function buildNodes() {
+      nodes = [];
+      ringsCfg.forEach(function (ring, ringIdx) {
+        for (var i = 0; i < ring.count; i++) {
+          nodes.push({
+            angle: (i / ring.count) * Math.PI * 2 + ringIdx * 0.35,
+            radiusFactor: ring.radiusFactor, color: COLORS[ring.color], ring: ringIdx,
+            phase: Math.random() * Math.PI * 2, speed: 0.5 + Math.random() * 0.6,
+            size: (1.6 + Math.random() * 1.8) * sizeBoost,
+          });
+        }
+      });
+      crossLinks = [];
+      for (var ringIdx2 = 0; ringIdx2 < ringsCfg.length - 1; ringIdx2++) {
+        var inner = nodes.filter(function (n) { return n.ring === ringIdx2; });
+        var outer = nodes.filter(function (n) { return n.ring === ringIdx2 + 1; });
+        inner.forEach(function (n, i) {
+          if (i % 2 !== 0) return; // uno de cada dos, para que la malla no sature
+          var closest = outer.reduce(function (best, o) {
+            var d = Math.abs(((o.angle - n.angle + Math.PI) % (Math.PI * 2)) - Math.PI);
+            return d < best.d ? { node: o, d: d } : best;
+          }, { node: outer[0], d: Infinity });
+          crossLinks.push({ a: n, b: closest.node });
+        });
+      }
+      // Un puñado de pulsos viajeros sobre spokes reales (nunca más de 6, para
+      // que se lean como acentos, no como ruido).
+      flowPulses = [];
+      var sample = crossLinks.slice(0, Math.min(6, crossLinks.length));
+      sample.forEach(function (link) {
+        flowPulses.push({ link: link, progress: Math.random(), speed: 0.12 + Math.random() * 0.1 });
+      });
+    }
+
+    // resize() tiene que correr DESPUÉS de que el layout real (CSS del
+    // .hero-stage con altura de viewport) ya se aplicó — si se llama antes
+    // de que el navegador termine de asentar el layout, clientWidth/
+    // clientHeight pueden leer 0 y todos los nodos colapsan en una esquina
+    // (bug real detectado en mobile). requestAnimationFrame garantiza que
+    // ya hubo al menos un paint antes de medir.
+    requestAnimationFrame(function () { resize(); buildNodes(); });
+    window.addEventListener("resize", function () { resize(); buildNodes(); });
+    window.addEventListener("orientationchange", function () { setTimeout(function () { resize(); buildNodes(); }, 300); });
+
+    var running = false;
+    var rafId = null;
+
+    function nodePos(n) {
+      var a = n.angle + rotation;
+      var r = baseR * n.radiusFactor;
+      return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+    }
+
+    function drawRingEdges(ringIdx) {
+      var ringNodes = nodes.filter(function (n) { return n.ring === ringIdx; });
+      ctx.lineWidth = 1;
+      ringNodes.forEach(function (n, i) {
+        var next = ringNodes[(i + 1) % ringNodes.length];
+        var p1 = nodePos(n), p2 = nodePos(next);
+        ctx.strokeStyle = "rgba(" + n.color + ",0.16)";
+        ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+      });
+    }
+
+    function drawCrossLinks() {
+      ctx.lineWidth = 1;
+      crossLinks.forEach(function (link) {
+        var p1 = nodePos(link.a), p2 = nodePos(link.b);
+        ctx.strokeStyle = "rgba(" + link.a.color + ",0.08)";
+        ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+      });
+    }
+
+    function drawFlowPulses(dtSec) {
+      flowPulses.forEach(function (fp) {
+        fp.progress = (fp.progress + fp.speed * dtSec) % 1;
+        var p1 = nodePos(fp.link.a), p2 = nodePos(fp.link.b);
+        var x = p1.x + (p2.x - p1.x) * fp.progress;
+        var y = p1.y + (p2.y - p1.y) * fp.progress;
+        var color = fp.link.b.color;
+        ctx.beginPath();
+        ctx.fillStyle = "rgba(" + color + ",0.9)";
+        ctx.shadowColor = "rgba(" + color + ",1)";
+        ctx.shadowBlur = 8;
+        ctx.arc(x, y, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+    }
+
+    var lastTs = 0;
+    function frame(ts) {
+      ts = ts || 0;
+      var dtSec = lastTs ? Math.min((ts - lastTs) / 1000, 0.1) : 0;
+      lastTs = ts;
+      rotation = ts / 1000 * 0.045; // deriva lenta y continua — vivo aun sin scrollear
+      ctx.clearRect(0, 0, w, h);
+      drawCrossLinks();
+      for (var r = 0; r < ringsCfg.length; r++) drawRingEdges(r);
+      drawFlowPulses(dtSec);
+      nodes.forEach(function (n) {
+        var t = ts / 1000 * n.speed + n.phase;
+        var pulse = (Math.sin(t) + 1) / 2;
+        var pos = nodePos(n);
+        var jx = pos.x + Math.sin(t * 0.5) * 4, jy = pos.y + Math.cos(t * 0.5) * 4;
+        var radius = n.size + pulse * 1.8;
+        ctx.beginPath();
+        ctx.fillStyle = "rgba(" + n.color + "," + (0.4 + pulse * 0.55) + ")";
+        ctx.shadowColor = "rgba(" + n.color + ",0.9)";
+        ctx.shadowBlur = 10 + pulse * 12;
+        ctx.arc(jx, jy, radius, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+      if (running) rafId = requestAnimationFrame(frame);
+    }
+
+    function start() { if (!running) { running = true; rafId = requestAnimationFrame(frame); } }
+    function stop() { running = false; if (rafId) { cancelAnimationFrame(rafId); rafId = null; } }
+
+    if (prefersReducedMotion) {
+      requestAnimationFrame(function () { frame(0); });
+    } else {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) { if (entry.isIntersecting) start(); else stop(); });
+      });
+      io.observe(canvas);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Parallax del hero — capas a distinta velocidad de scroll.
+  // ---------------------------------------------------------------------
+  function initHeroParallax() {
+    if (prefersReducedMotion) return;
+    var layers = document.querySelectorAll("[data-parallax]");
+    var ticking = false;
+    function apply() {
+      var y = window.scrollY;
+      layers.forEach(function (layer) {
+        var speed = parseFloat(layer.dataset.parallax) || 0;
+        layer.style.transform = "translateY(" + (y * speed) + "px)";
+      });
+      ticking = false;
+    }
+    window.addEventListener("scroll", function () {
+      if (!ticking) { requestAnimationFrame(apply); ticking = true; }
+    }, { passive: true });
+  }
+
+  // ---------------------------------------------------------------------
+  // Estado en vivo (roadmap/changelog/adr/tests) + hero trust bar +
+  // roadmap dinámico — todo desde el mismo fetch real a /vision/status.
+  // ---------------------------------------------------------------------
+  function tile(num, label) {
+    return "<div class=\"stat-tile\"><div class=\"num\" data-count-num=\"" + esc(num) + "\">0</div><div class=\"lbl\">" + esc(label) + "</div></div>";
+  }
+
   function renderStatus(data) {
     var el = document.getElementById("statusContent");
     var roadmap = data.roadmap || {};
     var tiles = ""
-      + tile(roadmap.latest_phase != null ? roadmap.latest_phase : "—", "Última fase detectada")
-      + tile(data.adr_count, "ADR documentados")
-      + tile(data.test_function_count, "Funciones de test");
+      + tile(roadmap.latest_phase != null ? roadmap.latest_phase : 0, "Última fase detectada")
+      + tile(data.adr_count || 0, "ADR documentados")
+      + tile(data.test_function_count || 0, "Funciones de test");
 
     var rows = (data.changelog_recent || []).map(function (e) {
       return "<tr><td class=\"date\">" + esc(e.date) + "</td><td>" + esc(e.title) + "</td><td>"
@@ -373,33 +1177,234 @@
       "<div class=\"status-grid\">" + tiles + "</div>"
       + (roadmap.summary ? "<div class=\"status-panel\"><h4>Estado actual del roadmap</h4><div class=\"summary-text\">" + esc(roadmap.summary) + "</div></div>" : "")
       + (roadmap.mark_note ? "<div class=\"status-panel\"><h4>Norte del plan — Mark 1 vs. Mark 2</h4><p class=\"mark-note\">" + esc(roadmap.mark_note) + "</p></div>" : "")
-      + (rows ? "<div class=\"status-panel\"><h4>Últimos cambios (CHANGELOG.md)</h4><div class=\"table-scroll\"><table class=\"changelog\"><thead><tr><th>Fecha</th><th>Cambio</th><th>ADR</th></tr></thead><tbody>" + rows + "</tbody></table></div></div>" : "");
+      + (rows ? "<div class=\"status-panel\"><h4>Últimos cambios reales</h4><div class=\"table-scroll\"><table class=\"changelog\"><thead><tr><th>Fecha</th><th>Cambio</th><th>Referencia</th></tr></thead><tbody>" + rows + "</tbody></table></div></div>" : "");
+
+    el.querySelectorAll("[data-count-num]").forEach(function (numEl) {
+      watchCountUp(numEl, parseFloat(numEl.dataset.countNum) || 0);
+    });
   }
 
-  function tile(num, label) {
-    return "<div class=\"stat-tile\"><div class=\"num\">" + esc(num) + "</div><div class=\"lbl\">" + esc(label) + "</div></div>";
+  function renderHeroTrust(data) {
+    var adrEl = document.getElementById("trustAdr");
+    var testsEl = document.getElementById("trustTests");
+    var updatedEl = document.getElementById("trustUpdated");
+    watchCountUp(adrEl, data.adr_count || 0);
+    watchCountUp(testsEl, data.test_function_count || 0);
+    var recent = (data.changelog_recent || [])[0];
+    updatedEl.textContent = recent ? recent.date : "—";
+  }
+
+  function renderRoadmapDynamic(data) {
+    // El resumen/nota crudos del roadmap interno (roadmap.summary/
+    // mark_note) NO se pintan acá — son notas de trabajo internas, no copy
+    // público (ver panel "Estado en vivo" más arriba, que sí las muestra
+    // tal cual, con su propio encuadre explícito de "esto es data cruda de
+    // transparencia"). Este timeline es narrativa ya redactada; solo el
+    // número de fase (un dato limpio) se actualiza solo.
+    var roadmap = data.roadmap || {};
+    var hoyBadge = document.getElementById("roadmapHoyBadge");
+    if (roadmap.latest_phase != null) hoyBadge.textContent = "Hoy · Fase " + roadmap.latest_phase;
   }
 
   function renderBlog(data) {
     var el = document.getElementById("blogContent");
-    var articles = data.articles || [];
+    var articles = (data.articles || []).slice(0, 3);
     if (articles.length === 0) {
-      el.innerHTML = "<div class=\"empty-state\">Todavía no hay artículos publicados acá. Cuando el especialista de research de Snarf termine una investigación real que valga la pena compartir, aparece — no antes.</div>";
+      el.innerHTML = "<div class=\"empty-state\">Todavía no hay artículos publicados acá — cuando haya algo real que valga la pena contar, aparece.</div>";
       return;
     }
-    el.innerHTML = "<div class=\"blog-list\">" + articles.map(function (a) {
+    el.innerHTML = "<div class=\"blog-list reveal-group\">" + articles.map(function (a) {
       var date = a.created_at ? new Date(a.created_at * 1000).toLocaleDateString("es-AR") : "";
-      return "<article class=\"blog-card\"><div class=\"date\">" + esc(date) + "</div><h3>" + esc(a.title) + "</h3><p>" + esc(a.summary) + "</p></article>";
+      var articleHref = "/blog/" + esc(a.slug || a.id);
+      var cover = a.cover_image ? "<a href=\"" + articleHref + "\"><img class=\"blog-card-cover\" src=\"" + esc(a.cover_image) + "\" alt=\"\" loading=\"lazy\"></a>" : "";
+      return "<div class=\"blog-card reveal\">" + cover + "<div class=\"blog-card-body\"><div class=\"date\">" + esc(date) + "</div>"
+        + "<h3><a href=\"" + articleHref + "\">" + esc(a.title) + "</a></h3>"
+        + "<a class=\"blog-excerpt-link\" href=\"/blog\"><p>" + esc(a.summary) + "</p></a>"
+        + "<a class=\"blog-toggle\" href=\"" + articleHref + "\">leer el artículo →</a></div></div>";
     }).join("") + "</div>";
+    initScrollReveal();
   }
 
-  fetch("/vision/status").then(function (r) { return r.json(); }).then(renderStatus).catch(function () {
+  fetch("/vision/status").then(function (r) { return r.json(); }).then(function (data) {
+    renderStatus(data);
+    renderHeroTrust(data);
+    renderRoadmapDynamic(data);
+  }).catch(function () {
     document.getElementById("statusContent").innerHTML = "<div class=\"status-error\">no se pudo cargar el estado en vivo</div>";
   });
 
   fetch("/vision/blog").then(function (r) { return r.json(); }).then(renderBlog).catch(function () {
     document.getElementById("blogContent").innerHTML = "<div class=\"status-error\">no se pudo cargar el blog</div>";
   });
+
+  // ---------------------------------------------------------------------
+  // Hablar con Snarf: captura de Lead + demo de conversación.
+  // ---------------------------------------------------------------------
+  var leadForm = document.getElementById("leadForm");
+  var leadFormError = document.getElementById("leadFormError");
+  var leadSubmitBtn = document.getElementById("leadSubmitBtn");
+  var demoChat = document.getElementById("demoChat");
+  var demoLog = document.getElementById("demoLog");
+  var demoInput = document.getElementById("demoInput");
+  var demoSendBtn = document.getElementById("demoSendBtn");
+  var demoTurnsLeft = document.getElementById("demoTurnsLeft");
+  var demoLimitCta = document.getElementById("demoLimitCta");
+
+  var leadId = null;
+  var demoHistory = [];
+  try {
+    leadId = sessionStorage.getItem("snarf_demo_lead_id");
+    demoHistory = JSON.parse(sessionStorage.getItem("snarf_demo_history") || "[]");
+  } catch (e) {}
+
+  function appendBubble(role, text) {
+    var bubble = document.createElement("div");
+    bubble.className = "demo-bubble " + (role === "user" ? "demo-bubble-user" : "demo-bubble-snarf");
+    bubble.textContent = text;
+    demoLog.appendChild(bubble);
+    demoLog.scrollTop = demoLog.scrollHeight;
+  }
+
+  function showChatPanel() {
+    leadForm.classList.add("hidden");
+    demoChat.classList.add("active");
+  }
+
+  function persistDemoState() {
+    try {
+      sessionStorage.setItem("snarf_demo_lead_id", leadId);
+      sessionStorage.setItem("snarf_demo_history", JSON.stringify(demoHistory));
+    } catch (e) {}
+  }
+
+  if (leadId && demoHistory.length) {
+    showChatPanel();
+    demoHistory.forEach(function (m) { appendBubble(m.role === "user" ? "user" : "snarf", m.content); });
+  }
+
+  leadForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var name = document.getElementById("leadName").value.trim();
+    var email = document.getElementById("leadEmail").value.trim();
+    if (!name || !email) return;
+    leadSubmitBtn.disabled = true;
+    leadFormError.textContent = "";
+    fetch("/vision/lead", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, email: email }),
+    }).then(function (r) {
+      if (!r.ok) throw new Error("bad status");
+      return r.json();
+    }).then(function (data) {
+      leadId = data.lead_id;
+      persistDemoState();
+      showChatPanel();
+      appendBubble("snarf", "Hola " + name.split(" ")[0] + " — soy una versión demo de Snarf. Preguntame lo que quieras sobre qué hago, cómo funciono, o para qué te puede servir.");
+    }).catch(function () {
+      leadFormError.textContent = "No se pudo iniciar la demo ahora — probá de nuevo en un rato.";
+    }).finally(function () {
+      leadSubmitBtn.disabled = false;
+    });
+  });
+
+  function sendDemoMessage() {
+    var text = demoInput.value.trim();
+    if (!text || !leadId) return;
+    appendBubble("user", text);
+    var historyBeforeThisTurn = demoHistory.slice();
+    demoHistory.push({ role: "user", content: text });
+    demoInput.value = "";
+    demoInput.disabled = true;
+    demoSendBtn.disabled = true;
+    fetch("/vision/demo", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lead_id: leadId, message: text, history: historyBeforeThisTurn }),
+    }).then(function (r) {
+      if (!r.ok) throw new Error("bad status");
+      return r.json();
+    }).then(function (data) {
+      appendBubble("snarf", data.reply);
+      demoHistory.push({ role: "assistant", content: data.reply });
+      persistDemoState();
+      if (data.limit_reached) {
+        demoInput.style.display = "none";
+        demoSendBtn.style.display = "none";
+        demoTurnsLeft.textContent = "";
+        demoLimitCta.style.display = "block";
+      } else {
+        demoTurnsLeft.textContent = data.turns_left + " mensajes restantes en esta demo";
+      }
+    }).catch(function () {
+      appendBubble("snarf", "No se pudo conectar con la demo ahora mismo — probá de nuevo en un rato.");
+    }).finally(function () {
+      demoInput.disabled = false;
+      demoSendBtn.disabled = false;
+      demoInput.focus();
+    });
+  }
+
+  demoSendBtn.addEventListener("click", sendDemoMessage);
+  demoInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDemoMessage(); }
+  });
+  demoInput.addEventListener("input", function () {
+    demoInput.style.height = "auto";
+    demoInput.style.height = Math.min(demoInput.scrollHeight, 120) + "px";
+  });
+
+  document.getElementById("heroTalkCta").addEventListener("click", function () {
+    setTimeout(function () {
+      var target = leadId ? demoInput : document.getElementById("leadName");
+      if (target) target.focus();
+    }, 500);
+  });
+
+  // ---------------------------------------------------------------------
+  // Campo ambiental de partículas (CSS puro, sin canvas) — profundidad
+  // extra detrás de Capacidades y Roadmap, mismo criterio del hero:
+  // decorativo, nunca simulando dato real.
+  // ---------------------------------------------------------------------
+  function populateAmbientField(id, count, colors) {
+    var host = document.getElementById(id);
+    if (!host) return;
+    for (var i = 0; i < count; i++) {
+      var dot = document.createElement("div");
+      dot.className = "ambient-dot";
+      var size = 2 + Math.random() * 3;
+      var color = colors[i % colors.length];
+      dot.style.left = (Math.random() * 100) + "%";
+      dot.style.top = (Math.random() * 100) + "%";
+      dot.style.width = size + "px";
+      dot.style.height = size + "px";
+      dot.style.background = "rgba(" + color + ",0.8)";
+      dot.style.boxShadow = "0 0 " + (size * 2) + "px rgba(" + color + ",0.6)";
+      dot.style.animationDuration = (7 + Math.random() * 6) + "s";
+      dot.style.animationDelay = (Math.random() * 6) + "s";
+      host.appendChild(dot);
+    }
+  }
+  populateAmbientField("ambientCapacidades", 16, ["161,36,255", "255,0,238"]);
+  populateAmbientField("ambientRoadmap", 14, ["79,216,232", "161,36,255", "255,180,84"]);
+
+  // Partículas ambiente del HUD compartido — mismos valores reales que
+  // web/index.html:2538-2546 (14 partículas, delay negativo para que no
+  // arranquen todas juntas desde abajo), acá 10 para quedar de fondo.
+  var hudParticlesHost = document.getElementById("hudParticles");
+  if (hudParticlesHost && !prefersReducedMotion) {
+    for (var hp = 0; hp < 10; hp++) {
+      var particle = document.createElement("div");
+      particle.className = "hud-particle";
+      particle.style.left = Math.random() * 100 + "vw";
+      particle.style.bottom = "-10px";
+      particle.style.animationDuration = (12 + Math.random() * 16) + "s";
+      particle.style.animationDelay = (-Math.random() * 24) + "s";
+      hudParticlesHost.appendChild(particle);
+    }
+  }
+
+  initScrollReveal();
+  initHeroCanvas();
+  initHeroParallax();
 })();
 </script>
 </body>

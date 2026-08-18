@@ -148,6 +148,202 @@ def test_vision_blog_is_empty_until_an_article_is_published_and_reachable_withou
     assert res.json() == {"articles": []}
 
 
+def test_vision_architecture_returns_the_real_static_hierarchy_without_a_session_cookie():
+    from snarf.telemetry import brain
+
+    with TestClient(app_module.app) as c:
+        res = c.get("/vision/architecture")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["center"] == "orchestrator"
+    nodes_by_id = {n["id"]: n for n in body["nodes"]}
+    assert "specialist_gmail" in nodes_by_id
+    assert nodes_by_id["specialist_gmail"]["tier"] == "specialist"
+    assert nodes_by_id["llm"]["tier"] == "capability"
+    assert nodes_by_id["specialist_executive_board_cto"]["parent"] == "specialist_executive_board"
+    assert len(body["nodes"]) == len(brain.NODE_TIER)
+
+
+def test_blog_article_page_is_served_without_a_session_cookie():
+    with TestClient(app_module.app) as c:
+        res = c.get("/blog/cualquier-slug")
+    assert res.status_code == 200
+    assert "Snarf" in res.text
+
+
+def test_blog_admin_page_redirects_anonymous_visitors_to_login(monkeypatch):
+    monkeypatch.setenv("SESSION_SECRET", "test-session-secret")
+    with TestClient(app_module.app, follow_redirects=False) as c:
+        res = c.get("/blog/admin")
+    assert res.status_code in (302, 307)
+    assert res.headers["location"] == "/login"
+
+
+def test_blog_admin_page_redirects_a_non_founder_session(monkeypatch):
+    from snarf.runtime.web_auth import create_session_token
+
+    monkeypatch.setenv("SESSION_SECRET", "test-session-secret")
+    token = create_session_token("test-session-secret", "usuario_de_prueba")
+    with TestClient(app_module.app, follow_redirects=False) as c:
+        c.cookies.set("snarf_session", token)
+        res = c.get("/blog/admin")
+    assert res.status_code in (302, 307)
+    assert res.headers["location"] == "/login"
+
+
+def test_blog_admin_page_is_served_to_the_founder(client):
+    res = client.get("/blog/admin")
+    assert res.status_code == 200
+    assert "Snarf" in res.text
+
+
+def test_list_blog_articles_is_forbidden_for_a_non_founder_user(client, tmp_path, monkeypatch):
+    from snarf.runtime.web_auth import create_session_token
+
+    monkeypatch.setattr(app_module.blog, "DEFAULT_PATH", tmp_path / "blog_posts.jsonl")
+    token = create_session_token("test-session-secret", "usuario_de_prueba")
+    client.cookies.set("snarf_session", token)
+    res = client.get("/blog/articles")
+    assert res.status_code == 403
+
+
+def test_blog_admin_crud_roundtrip(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module.blog, "DEFAULT_PATH", tmp_path / "blog_posts.jsonl")
+
+    create_res = client.post("/blog/articles", json={
+        "title": "Artículo de prueba", "summary": "resumen", "body": "cuerpo",
+        "source_ref": "manual:founder", "tags": ["prueba"], "public": False,
+        "cover_image": "/blog/assets/portada.png",
+    })
+    assert create_res.status_code == 200
+    article = create_res.json()
+    assert article["public"] is False
+    assert article["slug"] == "articulo-de-prueba"
+    assert article["cover_image"] == "/blog/assets/portada.png"
+
+    list_res = client.get("/blog/articles")
+    assert [a["title"] for a in list_res.json()["articles"]] == ["Artículo de prueba"]
+
+    patch_res = client.patch(
+        f"/blog/articles/{article['id']}",
+        json={"public": True, "title": "Editado", "cover_image": "/blog/assets/nueva.png"},
+    )
+    assert patch_res.status_code == 200
+    assert patch_res.json()["public"] is True
+    assert patch_res.json()["title"] == "Editado"
+    assert patch_res.json()["slug"] == "articulo-de-prueba"
+    assert patch_res.json()["cover_image"] == "/blog/assets/nueva.png"
+
+    public_res = client.get("/vision/blog")
+    assert [a["title"] for a in public_res.json()["articles"]] == ["Editado"]
+
+    delete_res = client.delete(f"/blog/articles/{article['id']}")
+    assert delete_res.status_code == 200
+    assert client.get("/blog/articles").json()["articles"] == []
+
+
+def test_update_blog_article_returns_404_for_a_missing_article(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module.blog, "DEFAULT_PATH", tmp_path / "blog_posts.jsonl")
+    res = client.patch("/blog/articles/no-existe", json={"public": True})
+    assert res.status_code == 404
+
+
+def test_delete_blog_article_returns_404_for_a_missing_article(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module.blog, "DEFAULT_PATH", tmp_path / "blog_posts.jsonl")
+    res = client.delete("/blog/articles/no-existe")
+    assert res.status_code == 404
+
+
+def test_upload_blog_image_is_forbidden_for_a_non_founder_user(client, tmp_path, monkeypatch):
+    from snarf.runtime.web_auth import create_session_token
+
+    monkeypatch.setattr(app_module, "BLOG_ASSETS_DIR", tmp_path / "blog_assets")
+    token = create_session_token("test-session-secret", "usuario_de_prueba")
+    client.cookies.set("snarf_session", token)
+    res = client.post("/blog/admin/images", files={"file": ("foto.png", b"fake-bytes", "image/png")})
+    assert res.status_code == 403
+
+
+def test_upload_blog_image_saves_a_real_file_and_returns_its_url(client, tmp_path, monkeypatch):
+    assets_dir = tmp_path / "blog_assets"
+    monkeypatch.setattr(app_module, "BLOG_ASSETS_DIR", assets_dir)
+    res = client.post("/blog/admin/images", files={"file": ("foto.png", b"fake-bytes", "image/png")})
+    assert res.status_code == 200
+    url = res.json()["url"]
+    assert url.startswith("/blog/assets/")
+    saved_files = list(assets_dir.iterdir())
+    assert len(saved_files) == 1
+    assert saved_files[0].read_bytes() == b"fake-bytes"
+
+
+def test_upload_blog_image_rejects_an_unsupported_extension(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "BLOG_ASSETS_DIR", tmp_path / "blog_assets")
+    res = client.post("/blog/admin/images", files={"file": ("archivo.exe", b"x", "application/octet-stream")})
+    assert res.status_code == 400
+
+
+def test_vision_lead_creates_a_real_lead_without_a_session_cookie(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module.leads, "DEFAULT_PATH", tmp_path / "leads.jsonl")
+    with TestClient(app_module.app) as c:
+        res = c.post("/vision/lead", json={"name": "Ada", "email": "ada@example.com"})
+    assert res.status_code == 200
+    lead_id = res.json()["lead_id"]
+    assert app_module.leads.get(lead_id, path=tmp_path / "leads.jsonl")["email"] == "ada@example.com"
+
+
+def test_vision_lead_rejects_an_invalid_email(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module.leads, "DEFAULT_PATH", tmp_path / "leads.jsonl")
+    with TestClient(app_module.app) as c:
+        res = c.post("/vision/lead", json={"name": "Ada", "email": "no-es-un-email"})
+    assert res.status_code == 400
+
+
+def test_vision_lead_rejects_an_empty_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module.leads, "DEFAULT_PATH", tmp_path / "leads.jsonl")
+    with TestClient(app_module.app) as c:
+        res = c.post("/vision/lead", json={"name": "  ", "email": "ada@example.com"})
+    assert res.status_code == 400
+
+
+def test_vision_demo_requires_an_existing_lead_id(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module.leads, "DEFAULT_PATH", tmp_path / "leads.jsonl")
+    with TestClient(app_module.app) as c:
+        res = c.post("/vision/demo", json={"lead_id": "no-existe", "message": "hola", "history": []})
+    assert res.status_code == 404
+
+
+def test_vision_demo_returns_a_reply_for_a_valid_lead(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module.leads, "DEFAULT_PATH", tmp_path / "leads.jsonl")
+    monkeypatch.setattr(
+        app_module.vision_demo, "demo_reply",
+        lambda lead_id, message, history: {"reply": "hola, soy la demo", "turns_left": 19, "limit_reached": False},
+    )
+    with TestClient(app_module.app) as c:
+        lead_id = c.post("/vision/lead", json={"name": "Ada", "email": "ada@example.com"}).json()["lead_id"]
+        res = c.post("/vision/demo", json={"lead_id": lead_id, "message": "hola", "history": []})
+    assert res.status_code == 200
+    assert res.json() == {"reply": "hola, soy la demo", "turns_left": 19, "limit_reached": False}
+
+
+def test_get_leads_is_forbidden_for_a_non_founder_user(client, tmp_path, monkeypatch):
+    from snarf.runtime.web_auth import create_session_token
+
+    monkeypatch.setattr(app_module.leads, "DEFAULT_PATH", tmp_path / "leads.jsonl")
+    token = create_session_token("test-session-secret", "usuario_de_prueba")
+    client.cookies.set("snarf_session", token)
+    res = client.get("/leads")
+    assert res.status_code == 403
+
+
+def test_get_leads_returns_real_leads_for_the_founder(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module.leads, "DEFAULT_PATH", tmp_path / "leads.jsonl")
+    app_module.leads.append("Ada", "ada@example.com", path=tmp_path / "leads.jsonl")
+    res = client.get("/leads")
+    assert res.status_code == 200
+    emails = [entry["email"] for entry in res.json()["leads"]]
+    assert emails == ["ada@example.com"]
+
+
 def test_send_echo_mode_roundtrip(client):
     res = client.post("/send", json={"text": "hola", "conversation_id": "abc"})
     assert res.status_code == 200

@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Capacidades de Snarf — hoy y en camino</title>
+<meta name="description" content="Todo lo que Snarf puede hacer hoy, capacidad por capacidad, y lo que viene en el roadmap — sin nada mostrado antes de estar construido de verdad.">
+<style>
+  :root {
+    --glow: #4fd8e8; --glow-soft: #b6f5fb; --glow-dim: #1c5a63;
+    --text: #d7eef2; --text-dim: #6f8891; --error: #e85a5a;
+    --violet: #a124ff; --violet-soft: #dcb3ff; --violet-dim: #2a0a4d;
+    --magenta: #ff00ee; --magenta-soft: #ffb3f6;
+    --amber: #ffb454; --amber-soft: #ffd9a8; --amber-dim: #6b4a1c;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "SF Mono", "Menlo", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
+    --ease-materialize: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  * { box-sizing: border-box; }
+  html { background: #000; scroll-behavior: smooth; }
+  body { margin: 0; background: #000; color: var(--text); font-family: var(--font-sans); line-height: 1.6; overflow-x: hidden; }
+  .bg-glow { position: fixed; inset: 0; z-index: -1; background: radial-gradient(ellipse 70% 50% at 50% 0%, #170a26 0%, #050a0c 45%, #000000 80%); }
+  /* --- capa HUD compartida (mismos valores reales que web/index.html) --- */
+  .hud-scanline { position: fixed; left: 0; right: 0; top: -2px; height: 2px; z-index: 2; pointer-events: none; background: linear-gradient(90deg, transparent, rgba(79,216,232,0.32), transparent); animation: hud-scan 9s linear infinite; }
+  @keyframes hud-scan { 0% { top: -2px; } 100% { top: 100%; } }
+  .hud-corner { position: fixed; width: 22px; height: 22px; border: 1px solid rgba(79,216,232,0.2); z-index: 2; pointer-events: none; }
+  .hud-corner.tl { top: 12px; left: 12px; border-right: none; border-bottom: none; }
+  .hud-corner.tr { top: 12px; right: 12px; border-left: none; border-bottom: none; }
+  .hud-corner.bl { bottom: 12px; left: 12px; border-right: none; border-top: none; }
+  .hud-corner.br { bottom: 12px; right: 12px; border-left: none; border-top: none; }
+  @media (max-width: 640px) { .hud-corner { display: none; } }
+  .hud-particle { position: fixed; width: 2.5px; height: 2.5px; border-radius: 50%; background: var(--glow); z-index: 1; box-shadow: 0 0 6px 2px rgba(79,216,232,0.5); opacity: 0; pointer-events: none; animation: hud-float-up linear infinite; }
+  @keyframes hud-float-up { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 0.55; } 90% { opacity: 0.25; } 100% { transform: translateY(-42vh); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .hud-scanline, .hud-particle { animation: none; display: none; } }
+  a { color: var(--glow); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 1.5rem; }
+
+  .reveal { opacity: 0; transform: translateY(20px) scale(0.97); filter: blur(6px); transition: opacity 0.7s var(--ease-materialize), transform 0.7s var(--ease-materialize), filter 0.7s var(--ease-materialize); }
+  .reveal.revealed { opacity: 1; transform: none; filter: blur(0); }
+  @media (prefers-reduced-motion: reduce) { .reveal { transition: none; opacity: 1; transform: none; filter: blur(0); } }
+
+  nav.top { position: sticky; top: 0; z-index: 30; backdrop-filter: blur(10px); background: rgba(0,0,0,0.6); border-bottom: 1px solid rgba(161,36,255,0.18); }
+  nav.top .wrap { display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 1.5rem; }
+  .brand { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
+  #brand-mark { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(161,36,255,0.55); background: rgba(161,36,255,0.1); flex-shrink: 0; }
+  .brand-name { font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--glow-soft); }
+  nav.top ul { list-style: none; display: flex; gap: 1.3rem; margin: 0; padding: 0; }
+  nav.top a { color: var(--text-dim); text-decoration: none; font-size: 0.76rem; letter-spacing: 0.02em; }
+  nav.top a:hover { color: var(--violet-soft); }
+  .nav-cta { color: var(--violet-soft) !important; border: 1px solid rgba(161,36,255,0.4); border-radius: 8px; padding: 0.35rem 0.7rem; }
+  .nav-has-dropdown { position: relative; }
+  .nav-dropdown-panel { display: none; position: absolute; top: 100%; left: 0; margin-top: 0.6rem; background: rgba(5,2,9,0.96); border: 1px solid rgba(161,36,255,0.25); border-radius: 10px; padding: 0.4rem; min-width: 160px; flex-direction: column; gap: 0.15rem; z-index: 31; }
+  .nav-has-dropdown:hover .nav-dropdown-panel { display: flex; }
+  .nav-dropdown-panel a { padding: 0.45rem 0.6rem; border-radius: 6px; font-size: 0.76rem; }
+  .nav-dropdown-panel a:hover { background: rgba(161,36,255,0.12); color: var(--text); }
+  .nav-group-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft); padding: 0.7rem 1.5rem 0.2rem; }
+  .footer-sitemap { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1.4rem; max-width: 700px; margin: 2.2rem auto 0; text-align: left; }
+  .footer-sitemap-col-title { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft); margin-bottom: 0.6rem; }
+  .footer-sitemap a { display: block; color: var(--text-dim); text-decoration: none; font-size: 0.82rem; padding: 0.25rem 0; }
+  .footer-sitemap a:hover { color: var(--text); }
+  .nav-toggle { display: none; flex-direction: column; gap: 4px; background: none; border: none; cursor: pointer; padding: 0.4rem; }
+  .nav-toggle span { width: 20px; height: 2px; background: var(--glow-soft); border-radius: 2px; }
+  .nav-dropdown { display: none; }
+  @media (max-width: 860px) {
+    nav.top ul { display: none; }
+    .nav-toggle { display: flex; }
+    .nav-dropdown { display: none; flex-direction: column; gap: 0; border-top: 1px solid rgba(161,36,255,0.15); background: rgba(0,0,0,0.92); }
+    nav.top.nav-open .nav-dropdown { display: flex; }
+    .nav-dropdown a { color: var(--text-dim); text-decoration: none; font-size: 0.85rem; padding: 0.85rem 1.5rem; border-bottom: 1px solid rgba(161,36,255,0.08); }
+  }
+
+  .btn { display: inline-block; padding: 0.8rem 1.5rem; border-radius: 10px; font-size: 0.82rem; font-weight: 600; text-decoration: none; letter-spacing: 0.02em; cursor: pointer; border: 1.5px solid transparent; transition: box-shadow 0.25s, background 0.25s, color 0.25s; }
+  .btn-primary { background: rgba(10,4,18,0.75); border-color: var(--magenta); color: var(--magenta-soft); box-shadow: 0 0 16px rgba(255,0,238,0.25); }
+  .btn-primary:hover { background: rgba(255,0,238,0.1); color: #fff; box-shadow: 0 0 28px rgba(255,0,238,0.45); }
+  .btn-aqua { background: rgba(10,4,18,0.75); border-color: var(--glow); color: var(--glow-soft); box-shadow: 0 0 16px rgba(79,216,232,0.22); }
+  .btn-aqua:hover { background: rgba(79,216,232,0.1); color: #fff; box-shadow: 0 0 28px rgba(79,216,232,0.4); }
+  .btn-ghost { border-color: rgba(161,36,255,0.35); color: var(--text-dim); background: rgba(0,0,0,0.2); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--violet); }
+
+  .masthead { position: relative; padding: 4.5rem 0 3rem; text-align: center; overflow: hidden; }
+  .masthead-glow { position: absolute; z-index: 0; left: 50%; top: 30%; width: 60vmin; height: 60vmin; max-width: 520px; max-height: 520px; transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; background: radial-gradient(circle, rgba(79,216,232,0.22) 0%, rgba(161,36,255,0.1) 45%, transparent 72%); filter: blur(6px); }
+  .masthead-grid { position: absolute; inset: -8%; z-index: 0; pointer-events: none; background-image: linear-gradient(rgba(161,36,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(79,216,232,0.05) 1px, transparent 1px); background-size: 42px 42px; mask-image: radial-gradient(ellipse 55% 60% at 50% 25%, #000 30%, transparent 75%); }
+  .masthead-content { position: relative; z-index: 1; }
+  .masthead .eyebrow { font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 1rem; }
+  .masthead h1 { font-size: clamp(2rem, 4.5vw, 2.9rem); margin: 0 0 1rem; font-weight: 650; letter-spacing: -0.015em; color: var(--glow-soft); }
+  .masthead h1 span { background: linear-gradient(95deg, var(--glow) 10%, var(--violet) 90%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .masthead p { color: var(--text-dim); font-size: 1rem; max-width: 620px; margin: 0 auto; }
+  .masthead-icon { position: relative; z-index: 1; width: 64px; height: 64px; margin: 0 auto 1.3rem; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 1px solid rgba(79,216,232,0.4); background: rgba(10,4,18,0.6); color: var(--glow-soft); box-shadow: 0 0 22px rgba(79,216,232,0.22); animation: masthead-icon-pulse 3.2s ease-in-out infinite; }
+  .masthead-icon svg { width: 30px; height: 30px; }
+  @keyframes masthead-icon-pulse { 0%, 100% { box-shadow: 0 0 18px rgba(79,216,232,0.18); } 50% { box-shadow: 0 0 30px rgba(79,216,232,0.4); } }
+  @media (prefers-reduced-motion: reduce) { .masthead-icon { animation: none; } }
+
+  .product-subnav { background: rgba(0,0,0,0.5); border-bottom: 1px solid rgba(161,36,255,0.14); }
+  .product-subnav .wrap { display: flex; gap: 0.5rem; padding: 0.8rem 1.5rem; justify-content: center; flex-wrap: wrap; max-width: 1120px; }
+  .subnav-tab { font-size: 0.78rem; padding: 0.4rem 0.9rem; border-radius: 999px; color: var(--text-dim); text-decoration: none; border: 1px solid transparent; }
+  .subnav-tab:hover { color: var(--text); }
+  .subnav-tab.active { color: var(--violet-soft); border-color: rgba(161,36,255,0.4); background: rgba(161,36,255,0.1); }
+  section { padding: 3rem 0; }
+  .cat-head { max-width: 680px; margin: 0 auto 1.6rem; text-align: center; }
+  .cat-head .eyebrow { font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--violet-soft); }
+  .cat-head h2 { font-size: 1.3rem; margin: 0.4rem 0 0; color: var(--glow-soft); font-weight: 650; }
+
+  .cap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 3rem; }
+  .cap-card { background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 14px; padding: 1.3rem 1.3rem; }
+  .cap-badge { display: inline-block; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.07em; border-radius: 6px; padding: 0.15rem 0.45rem; margin-bottom: 0.6rem; }
+  .cap-badge-live { color: var(--violet-soft); border: 1px solid rgba(161,36,255,0.45); background: rgba(161,36,255,0.1); }
+  .cap-badge-soon { color: var(--amber); border: 1px solid rgba(255,180,84,0.4); background: rgba(255,180,84,0.08); }
+  .cap-card h3 { margin: 0 0 0.4rem; font-size: 1rem; color: var(--text); }
+  .cap-card p { margin: 0; font-size: 0.86rem; color: var(--text-dim); }
+
+  .soon-head { text-align: center; margin: 1rem 0 1.6rem; }
+  .soon-head .eyebrow { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--amber); }
+  .soon-head h2 { font-size: 1.4rem; margin: 0.4rem 0 0.5rem; color: var(--glow-soft); }
+  .soon-head p { color: var(--text-dim); font-size: 0.9rem; max-width: 560px; margin: 0 auto; }
+  .cap-grid-soon .cap-card { border-color: rgba(255,180,84,0.22); }
+
+  .section-cta { text-align: center; margin: 1rem 0 0; }
+
+  footer { padding: 3.5rem 0 4rem; text-align: center; border-top: 1px solid rgba(161,36,255,0.12); }
+  footer #brand-mark { width: 30px; height: 30px; margin: 0 auto 1rem; }
+  footer h2 { font-size: 1.3rem; color: var(--glow-soft); margin: 0 0 0.6rem; }
+  footer p { color: var(--text-dim); font-size: 0.88rem; max-width: 480px; margin: 0 auto 1.6rem; }
+  .footer-links { display: flex; gap: 0.9rem; justify-content: center; flex-wrap: wrap; }
+  .foot-note { margin-top: 2.5rem; font-size: 0.7rem; color: var(--text-dim); opacity: 0.7; }
+</style>
+</head>
+<body>
+<div class="bg-glow"></div>
+<div class="hud-scanline"></div>
+<div class="hud-corner tl"></div>
+<div class="hud-corner tr"></div>
+<div class="hud-corner bl"></div>
+<div class="hud-corner br"></div>
+<div id="hudParticles"></div>
+
+<nav class="top" id="topNav">
+  <div class="wrap">
+    <a class="brand" href="/vision">
+      <div id="brand-mark"></div>
+      <span class="brand-name">Snarf</span>
+    </a>
+    <ul>
+      <li><a href="/vision#que-es">Visión</a></li>
+      <li class="nav-has-dropdown">
+        <a href="/arquitectura">Producto ▾</a>
+        <div class="nav-dropdown-panel">
+          <a href="/arquitectura">Arquitectura</a>
+          <a href="/capacidades">Capacidades</a>
+          <a href="/roadmap">Roadmap</a>
+        </div>
+      </li>
+      <li><a href="/blog">Blog</a></li>
+      <li><a href="/vision#creador">El creador</a></li>
+      <li><a href="/vision#hablar" class="nav-cta">Hablar con Snarf</a></li>
+    </ul>
+    <button class="nav-toggle" id="navToggle" aria-label="Abrir menú"><span></span><span></span><span></span></button>
+  </div>
+  <div class="nav-dropdown" id="navDropdown">
+    <a href="/vision#que-es">Visión</a>
+    <div class="nav-group-label">Producto</div>
+    <a href="/arquitectura">Arquitectura</a>
+    <a href="/capacidades">Capacidades</a>
+    <a href="/roadmap">Roadmap</a>
+    <a href="/vision#creador">El creador</a>
+    <a href="/blog">Blog</a>
+    <a href="/vision#hablar" class="nav-cta">Hablar con Snarf</a>
+  </div>
+</nav>
+
+<header class="masthead">
+  <div class="masthead-grid"></div>
+  <div class="masthead-glow"></div>
+  <div class="masthead-content wrap">
+    <div class="masthead-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="4" width="6.5" height="6.5" rx="1.4"></rect>
+        <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.4"></rect>
+        <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.4"></rect>
+        <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.4"></rect>
+      </svg>
+    </div>
+    <div class="eyebrow">Todo lo que puede hacer</div>
+    <h1>Capacidades, <span>hoy y en camino.</span></h1>
+    <p>Cada tarjeta acá abajo está construida y funcionando de verdad — nada mostrado antes de tiempo. Lo que todavía no existe queda claramente marcado como roadmap, nunca disfrazado de producto terminado.</p>
+  </div>
+</header>
+
+<div class="product-subnav">
+  <div class="wrap">
+    <a href="/arquitectura" class="subnav-tab">Arquitectura</a>
+    <a href="/capacidades" class="subnav-tab active">Capacidades</a>
+    <a href="/roadmap" class="subnav-tab">Roadmap</a>
+  </div>
+</div>
+
+<main class="wrap">
+  <section>
+    <div class="cat-head reveal">
+      <div class="eyebrow">Núcleo</div>
+      <h2>Razonamiento y voz</h2>
+    </div>
+    <div class="cap-grid reveal-group">
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Razonamiento con memoria</h3><p>Conversa y razona con memoria real de cada conversación pasada — nunca una ventana de contexto que se resetea sola. Cada intercambio queda disponible para el siguiente, sin que tengas que repetirte.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Voz, ida y vuelta</h3><p>Hablás y te habla: texto o voz en cualquier dirección, en el celular o el escritorio, con el mismo Snarf y la misma memoria de fondo.</p></div>
+    </div>
+
+    <div class="cat-head reveal">
+      <div class="eyebrow">Google Workspace</div>
+      <h2>Tu cuenta real, con confirmación explícita</h2>
+    </div>
+    <div class="cap-grid reveal-group">
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Gmail</h3><p>Lee, categoriza y organiza tu bandeja de entrada real. Enviar un correo o borrar una etiqueta exige tu confirmación explícita antes de ejecutarse — nunca una acción irreversible en silencio.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Drive</h3><p>Busca, organiza y mueve archivos reales en tu Drive — y los indexa para búsqueda semántica (ver Base de conocimiento, abajo).</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Calendar</h3><p>Ve tus próximos eventos reales y puede crear o editar reuniones cuando se lo pedís.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>YouTube</h3><p>Ve los canales reales a los que estás suscripto — punto de partida para research y curación de contenido.</p></div>
+    </div>
+
+    <div class="cat-head reveal">
+      <div class="eyebrow">Documentos y conocimiento</div>
+      <h2>Activos reales, no solo texto en el chat</h2>
+    </div>
+    <div class="cap-grid reveal-group">
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Documentos reales</h3><p>Crea y exporta Docs, Sheets, Slides y PDF — un archivo real en tu Drive o tu disco, editable, no una respuesta de chat que se pierde al cerrar la pestaña.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Base de conocimiento</h3><p>Indexa y busca semánticamente tu Drive entero: PDFs, imágenes, audio, video, Office — encuentra lo que necesitás por significado, no solo por nombre de archivo.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Proyectos</h3><p>Cada frente que llevás tiene su propia carpeta, su propio prompt, sus propias tareas y notas — memoria separada para cada cosa, sin mezclarse entre sí.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Notion</h3><p>Conecta con tu espacio real de Notion cuando lo necesitás como fuente de conocimiento adicional.</p></div>
+    </div>
+
+    <div class="cat-head reveal">
+      <div class="eyebrow">Observabilidad y gobierno</div>
+      <h2>Nada corriendo a ciegas</h2>
+    </div>
+    <div class="cap-grid reveal-group">
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Costo y uso en vivo</h3><p>Panel real de cuánto gasta cada llamada a cada proveedor — nunca una estimación a ciegas de lo que está costando tenerme prendido.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Cerebro / observabilidad</h3><p>Visualización en vivo de mi propia actividad interna: qué se ejecutó, cuándo, con qué costo — la misma estructura real que alimenta el <a href="/arquitectura">mapa de arquitectura</a>.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Board Ejecutivo</h3><p>7 roles asesores (CEO, CTO, CFO, CMO, COO, Research, Creative) que opinan antes de una decisión importante — nunca ejecutan una herramienta por su cuenta.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-live">Disponible hoy</div><h3>Automatización n8n</h3><p>Canvas en vivo del Board Ejecutivo, para ver el flujo de razonamiento mientras ocurre, no reconstruido después leyendo un log.</p></div>
+    </div>
+
+    <div class="soon-head reveal">
+      <div class="eyebrow">En camino</div>
+      <h2>Roadmap real, sin fecha prometida</h2>
+      <p>Nada de esto existe todavía — se muestra acá con la misma honestidad que todo lo de arriba: claramente marcado, nunca disfrazado.</p>
+    </div>
+    <div class="cap-grid cap-grid-soon reveal-group">
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-soon">En camino</div><h3>Datos de mercado</h3><p>Bitcoin, oro, S&amp;P 500 y más, integrados en el dashboard en vivo.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-soon">En camino</div><h3>Multi-usuario real</h3><p>Que cualquier persona conecte su propia cuenta, con su propia memoria y su propio Drive — el namespacing de datos ya está listo para esto desde el día uno.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-soon">En camino</div><h3>Reproducir cualquier turno</h3><p>Elegir una ejecución pasada por su identificador y entenderla paso a paso, para saber exactamente por qué decidió lo que decidió.</p></div>
+      <div class="cap-card reveal"><div class="cap-badge cap-badge-soon">En camino</div><h3>Tu propia máquina</h3><p>Que el cómputo de tu Mac o PC sostenga tu propia instancia, emparejada en un click — sin depender de un servidor ajeno.</p></div>
+    </div>
+    <p class="section-cta reveal"><a class="btn btn-aqua" href="/roadmap">Ver el roadmap completo →</a></p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div id="brand-mark"></div>
+    <h2>¿Lo probamos en vivo?</h2>
+    <p>Una versión demo, sin herramientas reales conectadas, para que entiendas qué puedo hacer antes de entrar de verdad.</p>
+    <div class="footer-links">
+      <a class="btn btn-primary" href="/vision#hablar">Hablar con Snarf</a>
+      <a class="btn btn-ghost" href="/vision">Volver a la visión</a>
+    </div>
+    <div class="footer-sitemap">
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Producto</div>
+        <a href="/vision">Visión</a>
+        <a href="/arquitectura">Arquitectura</a>
+        <a href="/capacidades">Capacidades</a>
+        <a href="/roadmap">Roadmap</a>
+      </div>
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Contenido</div>
+        <a href="/blog">Blog</a>
+        <a href="/vision#hablar">Hablar con Snarf</a>
+        <a href="/vision#estado">Estado en vivo</a>
+      </div>
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Sobre el proyecto</div>
+        <a href="/vision#creador">El creador</a>
+        <a href="https://github.com/JereMasih/SNARF" target="_blank" rel="noopener">Repositorio</a>
+        <a href="mailto:jeremasih@gmail.com">Contacto</a>
+      </div>
+    </div>
+    <div class="foot-note">Snarf — construido públicamente.</div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function initScrollReveal() {
+    document.querySelectorAll(".reveal-group").forEach(function (group) {
+      var children = group.querySelectorAll(".reveal");
+      children.forEach(function (el, i) { el.style.transitionDelay = Math.min(i * 60, 360) + "ms"; });
+    });
+    var els = document.querySelectorAll(".reveal");
+    if (prefersReducedMotion) { els.forEach(function (el) { el.classList.add("revealed"); }); return; }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) { if (entry.isIntersecting) { entry.target.classList.add("revealed"); io.unobserve(entry.target); } });
+    }, { threshold: 0.1 });
+    els.forEach(function (el) { io.observe(el); });
+  }
+
+  var topNav = document.getElementById("topNav");
+  document.getElementById("navToggle").addEventListener("click", function () { topNav.classList.toggle("nav-open"); });
+
+  var hudParticlesHost = document.getElementById("hudParticles");
+  if (hudParticlesHost && !prefersReducedMotion) {
+    for (var hp = 0; hp < 10; hp++) {
+      var particle = document.createElement("div");
+      particle.className = "hud-particle";
+      particle.style.left = Math.random() * 100 + "vw";
+      particle.style.bottom = "-10px";
+      particle.style.animationDuration = (12 + Math.random() * 16) + "s";
+      particle.style.animationDelay = (-Math.random() * 24) + "s";
+      hudParticlesHost.appendChild(particle);
+    }
+  }
+
+  initScrollReveal();
+})();
+</script>
+</body>
+</html>

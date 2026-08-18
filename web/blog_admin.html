@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CMS del blog — Snarf</title>
+<style>
+  :root {
+    --glow: #4fd8e8; --glow-soft: #b6f5fb; --glow-dim: #1c5a63;
+    --text: #d7eef2; --text-dim: #6f8891; --error: #e85a5a;
+    --violet: #a124ff; --violet-soft: #dcb3ff; --violet-dim: #2a0a4d;
+    --magenta: #ff00ee; --magenta-soft: #ffb3f6;
+    --amber: #ffb454; --amber-soft: #ffd9a8;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "SF Mono", "Menlo", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: #000; }
+  body { margin: 0; background: #000; color: var(--text); font-family: var(--font-sans); line-height: 1.55; }
+  .bg-glow { position: fixed; inset: 0; z-index: -1; background: radial-gradient(ellipse 70% 50% at 50% 0%, #170a26 0%, #050a0c 45%, #000000 80%); }
+  a { color: var(--glow); }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 1.5rem; }
+
+  nav.top { position: sticky; top: 0; z-index: 30; backdrop-filter: blur(10px); background: rgba(0,0,0,0.7); border-bottom: 1px solid rgba(161,36,255,0.18); }
+  nav.top .wrap { display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 1.5rem; }
+  .brand { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
+  #brand-mark { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(161,36,255,0.55); background: rgba(161,36,255,0.1); }
+  .brand-name { font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--glow-soft); }
+  .cms-tag { font-family: var(--font-mono); font-size: 0.68rem; color: var(--amber); border: 1px solid rgba(255,180,84,0.4); border-radius: 6px; padding: 0.1rem 0.45rem; }
+  nav.top .nav-right { display: flex; align-items: center; gap: 0.9rem; }
+  nav.top a.plain { color: var(--text-dim); text-decoration: none; font-size: 0.8rem; }
+
+  h1 { font-size: 1.5rem; color: var(--glow-soft); margin: 2rem 0 1.5rem; }
+
+  .btn { display: inline-block; padding: 0.6rem 1.1rem; border-radius: 8px; font-size: 0.8rem; font-weight: 600; text-decoration: none; letter-spacing: 0.01em; cursor: pointer; border: 1.5px solid transparent; background: rgba(10,4,18,0.75); transition: box-shadow 0.2s, background 0.2s; }
+  .btn-primary { border-color: var(--magenta); color: var(--magenta-soft); box-shadow: 0 0 12px rgba(255,0,238,0.2); }
+  .btn-primary:hover { background: rgba(255,0,238,0.1); color: #fff; }
+  .btn-aqua { border-color: var(--glow); color: var(--glow-soft); box-shadow: 0 0 12px rgba(79,216,232,0.18); }
+  .btn-aqua:hover { background: rgba(79,216,232,0.1); color: #fff; }
+  .btn-ghost { border-color: rgba(161,36,255,0.35); color: var(--text-dim); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--violet); }
+  .btn-danger { border-color: var(--error); color: #ffb3b3; }
+  .btn-danger:hover { background: rgba(232,90,90,0.12); color: #fff; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; margin-bottom: 3rem; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  .panel { background: rgba(10,4,18,0.6); border: 1px solid rgba(161,36,255,0.22); border-radius: 14px; padding: 1.3rem 1.4rem; }
+  .panel h2 { font-size: 0.95rem; margin: 0 0 1rem; color: var(--glow-soft); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; }
+
+  label { display: block; font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin: 0.9rem 0 0.35rem; }
+  label:first-of-type { margin-top: 0; }
+  input[type="text"], textarea {
+    width: 100%; background: rgba(0,0,0,0.5); border: 1px solid rgba(161,36,255,0.3); border-radius: 8px;
+    padding: 0.6rem 0.75rem; color: var(--text); font-family: var(--font-sans); font-size: 0.88rem;
+  }
+  input[type="text"]:focus, textarea:focus { outline: none; border-color: var(--violet); }
+  textarea#bodyInput { font-family: var(--font-mono); font-size: 0.82rem; min-height: 320px; resize: vertical; }
+  .toolbar { display: flex; gap: 0.4rem; margin-bottom: 0.4rem; flex-wrap: wrap; }
+  .toolbar button {
+    background: rgba(0,0,0,0.4); border: 1px solid rgba(161,36,255,0.25); color: var(--text-dim);
+    border-radius: 6px; padding: 0.3rem 0.6rem; font-size: 0.72rem; cursor: pointer; font-family: var(--font-mono);
+  }
+  .toolbar button:hover { color: var(--text); border-color: var(--violet); }
+  .cover-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+  .cover-preview { width: 90px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid rgba(161,36,255,0.3); }
+  .publish-row { display: flex; align-items: center; gap: 0.6rem; margin-top: 1rem; }
+  .publish-row input[type="checkbox"] { width: 16px; height: 16px; }
+  .form-actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; flex-wrap: wrap; }
+  .form-status { font-size: 0.78rem; color: var(--text-dim); min-height: 1.2em; margin-top: 0.6rem; }
+
+  .preview-body { font-size: 0.88rem; color: var(--text); max-height: 600px; overflow-y: auto; }
+  .preview-body h1, .preview-body h2, .preview-body h3 { color: var(--glow-soft); }
+  .preview-body img { max-width: 100%; border-radius: 8px; }
+  .preview-body a { color: var(--glow); }
+  .preview-meta { font-size: 0.72rem; color: var(--text-dim); margin-bottom: 0.8rem; padding-bottom: 0.8rem; border-bottom: 1px solid rgba(161,36,255,0.15); }
+
+  .filter-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  .filter-chip { font-size: 0.75rem; padding: 0.35rem 0.8rem; border-radius: 999px; border: 1px solid rgba(161,36,255,0.3); color: var(--text-dim); cursor: pointer; background: rgba(0,0,0,0.3); }
+  .filter-chip.active { color: #fff; background: rgba(161,36,255,0.25); border-color: var(--violet); }
+
+  table.article-list { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  table.article-list th { text-align: left; color: var(--text-dim); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.5rem; border-bottom: 1px solid rgba(161,36,255,0.2); }
+  table.article-list td { padding: 0.6rem 0.5rem; border-bottom: 1px solid rgba(161,36,255,0.08); vertical-align: middle; }
+  table.article-list tr:hover td { background: rgba(161,36,255,0.05); }
+  .status-pill { font-size: 0.65rem; text-transform: uppercase; padding: 0.12rem 0.5rem; border-radius: 6px; }
+  .status-pill.published { color: var(--glow-soft); border: 1px solid rgba(79,216,232,0.4); background: rgba(79,216,232,0.08); }
+  .status-pill.draft { color: var(--amber); border: 1px solid rgba(255,180,84,0.4); background: rgba(255,180,84,0.08); }
+  .row-actions { display: flex; gap: 0.4rem; }
+  .row-actions button { font-size: 0.7rem; padding: 0.25rem 0.6rem; }
+  .empty-row td { color: var(--text-dim); text-align: center; padding: 2rem; }
+</style>
+</head>
+<body>
+<div class="bg-glow"></div>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="brand" href="/vision">
+      <div id="brand-mark"></div>
+      <span class="brand-name">Snarf</span>
+    </a>
+    <div class="nav-right">
+      <span class="cms-tag">CMS · solo fundador</span>
+      <a class="plain" href="/blog" target="_blank">Ver el blog público ↗</a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+  <h1>Artículos del blog</h1>
+
+  <div class="layout">
+    <div class="panel">
+      <h2 id="formTitle">Nuevo artículo</h2>
+      <label for="titleInput">Título</label>
+      <input type="text" id="titleInput" placeholder="Título del artículo">
+
+      <label for="summaryInput">Resumen</label>
+      <textarea id="summaryInput" rows="2" placeholder="1-2 líneas, se usa como bajada en las tarjetas"></textarea>
+
+      <label for="tagsInput">Categorías (separadas por coma)</label>
+      <input type="text" id="tagsInput" placeholder="ej: arquitectura, roadmap">
+
+      <label>Imagen de portada</label>
+      <div class="cover-row">
+        <img id="coverPreview" class="cover-preview" style="display:none;" alt="Portada">
+        <button type="button" class="btn btn-ghost" id="coverBtn">Subir portada</button>
+        <button type="button" class="btn btn-ghost" id="coverRemoveBtn" style="display:none;">Quitar</button>
+        <input type="file" id="coverFile" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none;">
+      </div>
+
+      <label for="sourceRefInput">Referencia interna (nunca pública)</label>
+      <input type="text" id="sourceRefInput" placeholder="ej: manual:founder, research:trend_scan:...">
+
+      <label for="bodyInput">Cuerpo (Markdown liviano: # títulos, **negrita**, [link](url), ![alt](url), listas con "- ")</label>
+      <div class="toolbar">
+        <button type="button" data-wrap="**|**">Negrita</button>
+        <button type="button" data-prefix="## ">Header</button>
+        <button type="button" data-wrap="[|](url)">Link</button>
+        <button type="button" id="imageBtn">Insertar imagen</button>
+        <input type="file" id="imageFile" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none;">
+      </div>
+      <textarea id="bodyInput" placeholder="Escribí el artículo acá…"></textarea>
+
+      <div class="publish-row">
+        <input type="checkbox" id="publicInput">
+        <label for="publicInput" style="margin:0;text-transform:none;letter-spacing:0;color:var(--text);font-size:0.85rem;">Publicado (visible en /blog)</label>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn-primary" id="saveBtn">Guardar</button>
+        <button class="btn btn-ghost" id="newBtn">Nuevo artículo</button>
+        <button class="btn btn-danger" id="deleteBtn" style="display:none;">Eliminar</button>
+      </div>
+      <div class="form-status" id="formStatus"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Vista previa</h2>
+      <div class="preview-meta" id="previewMeta">Sin título todavía</div>
+      <div class="preview-body" id="previewBody"></div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:3rem;">
+    <h2>Todos los artículos</h2>
+    <div class="filter-row">
+      <div class="filter-chip active" data-filter="all">Todos</div>
+      <div class="filter-chip" data-filter="published">Publicados</div>
+      <div class="filter-chip" data-filter="draft">Borradores</div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="article-list">
+        <thead><tr><th>Título</th><th>Estado</th><th>Fecha</th><th></th></tr></thead>
+        <tbody id="articleListBody"><tr class="empty-row"><td colspan="4">cargando…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  // -----------------------------------------------------------------
+  // Renderer Markdown liviano, hecho a mano (mismo criterio de
+  // autocontención que el resto de web/: sin librería externa vía CDN).
+  // Soporta: # ## ### headers, **negrita**, [link](url), ![alt](url),
+  // listas "- item", párrafos separados por línea en blanco.
+  // -----------------------------------------------------------------
+  function renderMarkdown(md) {
+    var html = esc(md || "");
+    html = html.replace(/^### (.*)$/gm, "<h3>$1</h3>");
+    html = html.replace(/^## (.*)$/gm, "<h2>$1</h2>");
+    html = html.replace(/^# (.*)$/gm, "<h1>$1</h1>");
+    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/(^- .*(?:\n- .*)*)/gm, function (block) {
+      var items = block.split("\n").map(function (line) { return "<li>" + line.replace(/^- /, "") + "</li>"; }).join("");
+      return "<ul>" + items + "</ul>";
+    });
+    html = html.split(/\n\n+/).map(function (block) {
+      var trimmed = block.trim();
+      if (/^<(h1|h2|h3|ul)/.test(trimmed)) return block;
+      if (trimmed === "") return "";
+      return "<p>" + block.replace(/\n/g, "<br>") + "</p>";
+    }).join("");
+    return html;
+  }
+
+  var titleInput = document.getElementById("titleInput");
+  var summaryInput = document.getElementById("summaryInput");
+  var tagsInput = document.getElementById("tagsInput");
+  var sourceRefInput = document.getElementById("sourceRefInput");
+  var bodyInput = document.getElementById("bodyInput");
+  var publicInput = document.getElementById("publicInput");
+  var formTitle = document.getElementById("formTitle");
+  var formStatus = document.getElementById("formStatus");
+  var saveBtn = document.getElementById("saveBtn");
+  var newBtn = document.getElementById("newBtn");
+  var deleteBtn = document.getElementById("deleteBtn");
+  var previewMeta = document.getElementById("previewMeta");
+  var previewBody = document.getElementById("previewBody");
+  var articleListBody = document.getElementById("articleListBody");
+
+  var editingId = null;
+  var allArticles = [];
+  var activeFilter = "all";
+  var coverImageUrl = null;
+  var coverPreview = document.getElementById("coverPreview");
+  var coverRemoveBtn = document.getElementById("coverRemoveBtn");
+
+  function setCoverImage(url) {
+    // "" (nunca null) para que PATCH /blog/articles/{id} siempre mande el
+    // campo — el backend filtra valores None de un update parcial, así que
+    // null nunca podría "limpiar" una portada ya puesta.
+    coverImageUrl = url || "";
+    if (url) {
+      coverPreview.src = url; coverPreview.style.display = "block";
+      coverRemoveBtn.style.display = "inline-block";
+    } else {
+      coverPreview.style.display = "none";
+      coverRemoveBtn.style.display = "none";
+    }
+  }
+
+  function updatePreview() {
+    previewMeta.textContent = (titleInput.value || "Sin título todavía") + (tagsInput.value ? " — " + tagsInput.value : "");
+    previewBody.innerHTML = renderMarkdown(bodyInput.value);
+  }
+  [titleInput, summaryInput, tagsInput, bodyInput].forEach(function (el) {
+    el.addEventListener("input", updatePreview);
+  });
+  updatePreview();
+
+  function clearForm() {
+    editingId = null;
+    titleInput.value = ""; summaryInput.value = ""; tagsInput.value = ""; sourceRefInput.value = "manual:founder";
+    bodyInput.value = ""; publicInput.checked = false;
+    setCoverImage(null);
+    formTitle.textContent = "Nuevo artículo";
+    deleteBtn.style.display = "none";
+    formStatus.textContent = "";
+    updatePreview();
+  }
+  sourceRefInput.value = "manual:founder";
+
+  function loadIntoForm(article) {
+    editingId = article.id;
+    titleInput.value = article.title || "";
+    summaryInput.value = article.summary || "";
+    tagsInput.value = (article.tags || []).join(", ");
+    setCoverImage(article.cover_image || null);
+    sourceRefInput.value = article.source_ref || "";
+    bodyInput.value = article.body || "";
+    publicInput.checked = !!article.public;
+    formTitle.textContent = "Editando: " + article.title;
+    deleteBtn.style.display = "inline-block";
+    formStatus.textContent = "";
+    updatePreview();
+  }
+
+  function renderList() {
+    var visible = allArticles.filter(function (a) {
+      if (activeFilter === "published") return a.public;
+      if (activeFilter === "draft") return !a.public;
+      return true;
+    });
+    if (visible.length === 0) {
+      articleListBody.innerHTML = '<tr class="empty-row"><td colspan="4">Todavía no hay artículos acá.</td></tr>';
+      return;
+    }
+    articleListBody.innerHTML = visible.map(function (a) {
+      var date = a.created_at ? new Date(a.created_at * 1000).toLocaleDateString("es-AR") : "";
+      return "<tr>"
+        + "<td>" + esc(a.title) + "</td>"
+        + "<td><span class=\"status-pill " + (a.public ? "published" : "draft") + "\">" + (a.public ? "Publicado" : "Borrador") + "</span></td>"
+        + "<td>" + esc(date) + "</td>"
+        + "<td class=\"row-actions\"><button class=\"btn btn-aqua\" data-edit=\"" + esc(a.id) + "\">Editar</button></td>"
+        + "</tr>";
+    }).join("");
+    articleListBody.querySelectorAll("[data-edit]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var article = allArticles.filter(function (a) { return a.id === btn.dataset.edit; })[0];
+        if (article) { loadIntoForm(article); window.scrollTo({ top: 0, behavior: "smooth" }); }
+      });
+    });
+  }
+
+  function loadArticles() {
+    fetch("/blog/articles").then(function (r) {
+      if (r.status === 403) { formStatus.textContent = "No autorizado."; return { articles: [] }; }
+      return r.json();
+    }).then(function (data) {
+      allArticles = data.articles || [];
+      renderList();
+    }).catch(function () {
+      articleListBody.innerHTML = '<tr class="empty-row"><td colspan="4">No se pudo cargar la lista.</td></tr>';
+    });
+  }
+
+  document.querySelectorAll(".filter-chip").forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      document.querySelectorAll(".filter-chip").forEach(function (c) { c.classList.remove("active"); });
+      chip.classList.add("active");
+      activeFilter = chip.dataset.filter;
+      renderList();
+    });
+  });
+
+  newBtn.addEventListener("click", clearForm);
+
+  saveBtn.addEventListener("click", function () {
+    var title = titleInput.value.trim();
+    if (!title) { formStatus.textContent = "El título es obligatorio."; return; }
+    var payload = {
+      title: title, summary: summaryInput.value.trim(), body: bodyInput.value,
+      source_ref: sourceRefInput.value.trim() || "manual:founder",
+      tags: tagsInput.value.split(",").map(function (t) { return t.trim(); }).filter(Boolean),
+      public: publicInput.checked, cover_image: coverImageUrl,
+    };
+    saveBtn.disabled = true;
+    formStatus.textContent = "Guardando…";
+    var req = editingId
+      ? fetch("/blog/articles/" + editingId, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+      : fetch("/blog/articles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    req.then(function (r) {
+      if (!r.ok) throw new Error("bad status");
+      return r.json();
+    }).then(function (article) {
+      formStatus.textContent = "Guardado.";
+      loadIntoForm(article);
+      loadArticles();
+    }).catch(function () {
+      formStatus.textContent = "No se pudo guardar — probá de nuevo.";
+    }).finally(function () {
+      saveBtn.disabled = false;
+    });
+  });
+
+  deleteBtn.addEventListener("click", function () {
+    if (!editingId) return;
+    if (!confirm("¿Eliminar este artículo? No se puede deshacer.")) return;
+    fetch("/blog/articles/" + editingId, { method: "DELETE" }).then(function (r) {
+      if (!r.ok) throw new Error("bad status");
+      clearForm();
+      loadArticles();
+    }).catch(function () {
+      formStatus.textContent = "No se pudo eliminar.";
+    });
+  });
+
+  // -----------------------------------------------------------------
+  // Toolbar: negrita/header/link envuelven o prefijan la selección
+  // actual del textarea; la imagen sube un archivo real y pega
+  // ![alt](url) donde estaba el cursor.
+  // -----------------------------------------------------------------
+  document.querySelectorAll(".toolbar [data-wrap]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var parts = btn.dataset.wrap.split("|");
+      var start = bodyInput.selectionStart, end = bodyInput.selectionEnd;
+      var selected = bodyInput.value.slice(start, end) || "texto";
+      var replacement = parts[0] + selected + parts[1];
+      bodyInput.setRangeText(replacement, start, end, "end");
+      bodyInput.focus();
+      updatePreview();
+    });
+  });
+  document.querySelectorAll(".toolbar [data-prefix]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var start = bodyInput.selectionStart;
+      bodyInput.setRangeText(btn.dataset.prefix, start, start, "end");
+      bodyInput.focus();
+      updatePreview();
+    });
+  });
+
+  var imageFile = document.getElementById("imageFile");
+  document.getElementById("imageBtn").addEventListener("click", function () { imageFile.click(); });
+  imageFile.addEventListener("change", function () {
+    var file = imageFile.files[0];
+    if (!file) return;
+    var formData = new FormData();
+    formData.append("file", file);
+    formStatus.textContent = "Subiendo imagen…";
+    fetch("/blog/admin/images", { method: "POST", body: formData }).then(function (r) {
+      if (!r.ok) throw new Error("bad status");
+      return r.json();
+    }).then(function (data) {
+      var start = bodyInput.selectionStart;
+      var snippet = "![" + file.name + "](" + data.url + ")";
+      bodyInput.setRangeText(snippet, start, start, "end");
+      bodyInput.focus();
+      updatePreview();
+      formStatus.textContent = "Imagen subida.";
+    }).catch(function () {
+      formStatus.textContent = "No se pudo subir la imagen.";
+    }).finally(function () {
+      imageFile.value = "";
+    });
+  });
+
+  var coverFile = document.getElementById("coverFile");
+  document.getElementById("coverBtn").addEventListener("click", function () { coverFile.click(); });
+  coverRemoveBtn.addEventListener("click", function () { setCoverImage(null); });
+  coverFile.addEventListener("change", function () {
+    var file = coverFile.files[0];
+    if (!file) return;
+    var formData = new FormData();
+    formData.append("file", file);
+    formStatus.textContent = "Subiendo portada…";
+    fetch("/blog/admin/images", { method: "POST", body: formData }).then(function (r) {
+      if (!r.ok) throw new Error("bad status");
+      return r.json();
+    }).then(function (data) {
+      setCoverImage(data.url);
+      formStatus.textContent = "Portada subida.";
+    }).catch(function () {
+      formStatus.textContent = "No se pudo subir la portada.";
+    }).finally(function () {
+      coverFile.value = "";
+    });
+  });
+
+  clearForm();
+  loadArticles();
+})();
+</script>
+</body>
+</html>

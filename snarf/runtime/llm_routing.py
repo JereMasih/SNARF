@@ -82,6 +82,13 @@ ROLES = (
     # rápido no alcanza para código real, cambiar acá a mlx_local/
     # mlx_local_mid (más capaces, más lentos) sin reiniciar el server.
     "skill_factory_writer",
+    # "Hablar con Snarf" de la landing pública (GET /vision, ver
+    # snarf/runtime/vision_demo.py y ADR de esta ronda) — conversación
+    # pública sin login con un desconocido, nunca ejecuta herramientas
+    # reales. Decisión explícita del fundador: corre en el modelo local
+    # (mlx_local_fast, gratis) hasta nuevo aviso, y tiene que quedar
+    # elegible desde Configuración como cualquier otro rol, no hardcodeado.
+    "vision_demo",
 )
 
 # Definida acá arriba (no junto a MLX_LOCAL_FAST_BASE_URL más abajo, donde
@@ -126,6 +133,7 @@ DEFAULT_ROUTING = {
     "books_categorize": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
     "client_status": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
     "skill_factory_writer": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
+    "vision_demo": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
 }
 
 # Cada proveedor mapea a una de las 3 Capacidades reales. xai/groq_llama

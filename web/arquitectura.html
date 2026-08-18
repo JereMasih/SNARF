@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Arquitectura de Snarf — cómo funciona por dentro</title>
+<meta name="description" content="El mapa real de la arquitectura de Snarf: Orchestrator, Especialistas Cognitivos y Capacidades — leído en vivo de la misma estructura que gobierna el cerebro del producto, nunca dibujado a mano.">
+<style>
+  :root {
+    --glow: #4fd8e8; --glow-soft: #b6f5fb; --glow-dim: #1c5a63;
+    --text: #d7eef2; --text-dim: #6f8891; --error: #e85a5a;
+    --violet: #a124ff; --violet-soft: #dcb3ff; --violet-dim: #2a0a4d;
+    --magenta: #ff00ee; --magenta-soft: #ffb3f6;
+    --amber: #ffb454; --amber-soft: #ffd9a8; --amber-dim: #6b4a1c;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "SF Mono", "Menlo", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
+    --ease-materialize: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  * { box-sizing: border-box; }
+  html { background: #000; scroll-behavior: smooth; }
+  body { margin: 0; background: #000; color: var(--text); font-family: var(--font-sans); line-height: 1.6; overflow-x: hidden; }
+  .bg-glow { position: fixed; inset: 0; z-index: -1; background: radial-gradient(ellipse 70% 50% at 50% 0%, #170a26 0%, #050a0c 45%, #000000 80%); }
+  /* --- capa HUD compartida (mismos valores reales que web/index.html) --- */
+  .hud-scanline { position: fixed; left: 0; right: 0; top: -2px; height: 2px; z-index: 2; pointer-events: none; background: linear-gradient(90deg, transparent, rgba(79,216,232,0.32), transparent); animation: hud-scan 9s linear infinite; }
+  @keyframes hud-scan { 0% { top: -2px; } 100% { top: 100%; } }
+  .hud-corner { position: fixed; width: 22px; height: 22px; border: 1px solid rgba(79,216,232,0.2); z-index: 2; pointer-events: none; }
+  .hud-corner.tl { top: 12px; left: 12px; border-right: none; border-bottom: none; }
+  .hud-corner.tr { top: 12px; right: 12px; border-left: none; border-bottom: none; }
+  .hud-corner.bl { bottom: 12px; left: 12px; border-right: none; border-top: none; }
+  .hud-corner.br { bottom: 12px; right: 12px; border-left: none; border-top: none; }
+  @media (max-width: 640px) { .hud-corner { display: none; } }
+  .hud-particle { position: fixed; width: 2.5px; height: 2.5px; border-radius: 50%; background: var(--glow); z-index: 1; box-shadow: 0 0 6px 2px rgba(79,216,232,0.5); opacity: 0; pointer-events: none; animation: hud-float-up linear infinite; }
+  @keyframes hud-float-up { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 0.55; } 90% { opacity: 0.25; } 100% { transform: translateY(-42vh); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .hud-scanline, .hud-particle { animation: none; display: none; } }
+  a { color: var(--glow); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 1.5rem; }
+
+  .reveal { opacity: 0; transform: translateY(20px) scale(0.97); filter: blur(6px); transition: opacity 0.7s var(--ease-materialize), transform 0.7s var(--ease-materialize), filter 0.7s var(--ease-materialize); }
+  .reveal.revealed { opacity: 1; transform: none; filter: blur(0); }
+  @media (prefers-reduced-motion: reduce) { .reveal { transition: none; opacity: 1; transform: none; filter: blur(0); } }
+
+  nav.top { position: sticky; top: 0; z-index: 30; backdrop-filter: blur(10px); background: rgba(0,0,0,0.6); border-bottom: 1px solid rgba(161,36,255,0.18); }
+  nav.top .wrap { display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 1.5rem; }
+  .brand { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
+  #brand-mark { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(161,36,255,0.55); background: rgba(161,36,255,0.1); flex-shrink: 0; }
+  .brand-name { font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--glow-soft); }
+  nav.top ul { list-style: none; display: flex; gap: 1.3rem; margin: 0; padding: 0; }
+  nav.top a { color: var(--text-dim); text-decoration: none; font-size: 0.76rem; letter-spacing: 0.02em; }
+  nav.top a:hover { color: var(--violet-soft); }
+  .nav-cta { color: var(--violet-soft) !important; border: 1px solid rgba(161,36,255,0.4); border-radius: 8px; padding: 0.35rem 0.7rem; }
+  .nav-has-dropdown { position: relative; }
+  .nav-dropdown-panel { display: none; position: absolute; top: 100%; left: 0; margin-top: 0.6rem; background: rgba(5,2,9,0.96); border: 1px solid rgba(161,36,255,0.25); border-radius: 10px; padding: 0.4rem; min-width: 160px; flex-direction: column; gap: 0.15rem; z-index: 31; }
+  .nav-has-dropdown:hover .nav-dropdown-panel { display: flex; }
+  .nav-dropdown-panel a { padding: 0.45rem 0.6rem; border-radius: 6px; font-size: 0.76rem; }
+  .nav-dropdown-panel a:hover { background: rgba(161,36,255,0.12); color: var(--text); }
+  .nav-group-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft); padding: 0.7rem 1.5rem 0.2rem; }
+  .footer-sitemap { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1.4rem; max-width: 700px; margin: 2.2rem auto 0; text-align: left; }
+  .footer-sitemap-col-title { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--violet-soft); margin-bottom: 0.6rem; }
+  .footer-sitemap a { display: block; color: var(--text-dim); text-decoration: none; font-size: 0.82rem; padding: 0.25rem 0; }
+  .footer-sitemap a:hover { color: var(--text); }
+  .nav-toggle { display: none; flex-direction: column; gap: 4px; background: none; border: none; cursor: pointer; padding: 0.4rem; }
+  .nav-toggle span { width: 20px; height: 2px; background: var(--glow-soft); border-radius: 2px; }
+  .nav-dropdown { display: none; }
+  @media (max-width: 860px) {
+    nav.top ul { display: none; }
+    .nav-toggle { display: flex; }
+    .nav-dropdown { display: none; flex-direction: column; gap: 0; border-top: 1px solid rgba(161,36,255,0.15); background: rgba(0,0,0,0.92); }
+    nav.top.nav-open .nav-dropdown { display: flex; }
+    .nav-dropdown a { color: var(--text-dim); text-decoration: none; font-size: 0.85rem; padding: 0.85rem 1.5rem; border-bottom: 1px solid rgba(161,36,255,0.08); }
+  }
+
+  .btn { display: inline-block; padding: 0.8rem 1.5rem; border-radius: 10px; font-size: 0.82rem; font-weight: 600; text-decoration: none; letter-spacing: 0.02em; cursor: pointer; border: 1.5px solid transparent; transition: box-shadow 0.25s, background 0.25s, color 0.25s; }
+  .btn-primary { background: rgba(10,4,18,0.75); border-color: var(--magenta); color: var(--magenta-soft); box-shadow: 0 0 16px rgba(255,0,238,0.25); }
+  .btn-primary:hover { background: rgba(255,0,238,0.1); color: #fff; box-shadow: 0 0 28px rgba(255,0,238,0.45); }
+  .btn-aqua { background: rgba(10,4,18,0.75); border-color: var(--glow); color: var(--glow-soft); box-shadow: 0 0 16px rgba(79,216,232,0.22); }
+  .btn-aqua:hover { background: rgba(79,216,232,0.1); color: #fff; box-shadow: 0 0 28px rgba(79,216,232,0.4); }
+  .btn-ghost { border-color: rgba(161,36,255,0.35); color: var(--text-dim); background: rgba(0,0,0,0.2); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--violet); }
+
+  .masthead { position: relative; padding: 4.5rem 0 3rem; text-align: center; overflow: hidden; }
+  .masthead-glow { position: absolute; z-index: 0; left: 50%; top: 30%; width: 60vmin; height: 60vmin; max-width: 520px; max-height: 520px; transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; background: radial-gradient(circle, rgba(161,36,255,0.24) 0%, rgba(255,0,238,0.1) 45%, transparent 72%); filter: blur(6px); }
+  .masthead-grid { position: absolute; inset: -8%; z-index: 0; pointer-events: none; background-image: linear-gradient(rgba(161,36,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(79,216,232,0.05) 1px, transparent 1px); background-size: 42px 42px; mask-image: radial-gradient(ellipse 55% 60% at 50% 25%, #000 30%, transparent 75%); }
+  .masthead-content { position: relative; z-index: 1; }
+  .masthead .eyebrow { font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 1rem; }
+  .masthead h1 { font-size: clamp(2rem, 4.5vw, 2.9rem); margin: 0 0 1rem; font-weight: 650; letter-spacing: -0.015em; color: var(--glow-soft); }
+  .masthead h1 span { background: linear-gradient(95deg, var(--violet) 10%, var(--magenta) 90%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .masthead p { color: var(--text-dim); font-size: 1rem; max-width: 620px; margin: 0 auto; }
+  .masthead-icon { position: relative; z-index: 1; width: 64px; height: 64px; margin: 0 auto 1.3rem; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 1px solid rgba(255,0,238,0.4); background: rgba(10,4,18,0.6); color: var(--magenta-soft); box-shadow: 0 0 22px rgba(255,0,238,0.22); animation: masthead-icon-pulse 3.2s ease-in-out infinite; }
+  .masthead-icon svg { width: 30px; height: 30px; }
+  @keyframes masthead-icon-pulse { 0%, 100% { box-shadow: 0 0 18px rgba(255,0,238,0.18); } 50% { box-shadow: 0 0 30px rgba(255,0,238,0.4); } }
+  @media (prefers-reduced-motion: reduce) { .masthead-icon { animation: none; } }
+
+  .product-subnav { background: rgba(0,0,0,0.5); border-bottom: 1px solid rgba(161,36,255,0.14); }
+  .product-subnav .wrap { display: flex; gap: 0.5rem; padding: 0.8rem 1.5rem; justify-content: center; flex-wrap: wrap; max-width: 1120px; }
+  .subnav-tab { font-size: 0.78rem; padding: 0.4rem 0.9rem; border-radius: 999px; color: var(--text-dim); text-decoration: none; border: 1px solid transparent; }
+  .subnav-tab:hover { color: var(--text); }
+  .subnav-tab.active { color: var(--violet-soft); border-color: rgba(161,36,255,0.4); background: rgba(161,36,255,0.1); }
+  section { padding: 3.5rem 0; border-top: 1px solid rgba(161,36,255,0.08); }
+  .section-head { max-width: 680px; margin: 0 auto 2.2rem; text-align: center; }
+  .section-head .eyebrow { font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--violet-soft); }
+  .section-head h2 { font-size: 1.5rem; margin: 0.4rem 0 0.6rem; color: var(--glow-soft); font-weight: 650; }
+  .section-head p { color: var(--text-dim); font-size: 0.94rem; margin: 0; }
+
+  /* --- capas explicadas --- */
+  .layer-list { display: flex; flex-direction: column; gap: 1rem; max-width: 760px; margin: 0 auto; }
+  .layer-card { background: rgba(10,4,18,0.6); border: 1px solid rgba(79,216,232,0.22); border-radius: 16px; padding: 1.5rem 1.6rem; }
+  .layer-card .layer-index { font-family: var(--font-mono); font-size: 0.72rem; color: var(--glow); letter-spacing: 0.08em; margin-bottom: 0.4rem; }
+  .layer-card h3 { margin: 0 0 0.5rem; font-size: 1.1rem; color: var(--glow-soft); }
+  .layer-card p { margin: 0; font-size: 0.9rem; color: var(--text-dim); }
+
+  /* --- mapa mental --- */
+  .map-legend { display: flex; gap: 1.4rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.6rem; font-size: 0.78rem; color: var(--text-dim); }
+  .map-legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 0.4rem; }
+  .map-loading { text-align: center; color: var(--text-dim); font-size: 0.85rem; padding: 3rem 0; }
+  .map-note { text-align: center; color: var(--text-dim); font-size: 0.78rem; margin-top: 1.4rem; }
+
+  /* --- organigrama de arquitectura: CSS puro (grid + conectores simples),
+       reemplaza un intento anterior en SVG que no se apreciaba bien ni en
+       desktop ni en mobile — acá escala con el contenedor real, sin scroll
+       horizontal forzado, y se reordena a una sola columna en mobile. --- */
+  .arch-diagram {
+    max-width: 1000px; margin: 0 auto; border: 1px solid rgba(161,36,255,0.16); border-radius: 20px;
+    background: rgba(5,2,9,0.45); padding: 2rem 1.5rem 1.6rem;
+  }
+  .arch-hub-row { display: flex; flex-direction: column; align-items: center; gap: 1rem; }
+  .arch-hub {
+    width: 108px; height: 108px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle, rgba(255,255,255,0.14), rgba(161,36,255,0.1));
+    border: 2px solid rgba(255,255,255,0.55); box-shadow: 0 0 28px rgba(161,36,255,0.35);
+    font-weight: 700; font-size: 1.05rem; color: #fff; text-align: center; flex-shrink: 0;
+  }
+  .arch-input-row { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+  .arch-input-chip {
+    font-family: var(--font-mono); font-size: 0.66rem; padding: 0.3rem 0.7rem; border-radius: 999px;
+    border: 1px solid rgba(161,36,255,0.4); color: var(--violet-soft); background: rgba(161,36,255,0.08);
+  }
+  .arch-trunk { width: 2px; height: 28px; background: linear-gradient(180deg, rgba(255,255,255,0.4), rgba(161,36,255,0.15)); margin: 0 auto; }
+  .arch-split { height: 2px; width: min(640px, 88%); margin: 0 auto; background: rgba(161,36,255,0.22); }
+  .arch-branches { display: grid; grid-template-columns: 1fr 1fr; gap: 1.8rem; margin-top: 0; }
+  @media (max-width: 860px) {
+    .arch-branches { grid-template-columns: 1fr; gap: 2.4rem; }
+    .arch-split { display: none; }
+    .arch-trunk { height: 20px; }
+  }
+  .arch-branch { position: relative; padding-top: 1.5rem; }
+  .arch-branch::before {
+    content: ""; position: absolute; top: 0; left: 50%; width: 2px; height: 1.5rem;
+    background: rgba(161,36,255,0.25); transform: translateX(-50%);
+  }
+  .arch-branch-head-wrap { text-align: center; margin-bottom: 1.1rem; }
+  .arch-branch-head { display: inline-block; font-weight: 700; font-size: 0.95rem; padding: 0.55rem 1.3rem; border-radius: 10px; border: 1.5px solid; }
+  .arch-branch.specialists .arch-branch-head { color: var(--magenta-soft); border-color: var(--magenta); background: rgba(255,0,238,0.08); }
+  .arch-branch.capabilities .arch-branch-head { color: var(--glow-soft); border-color: var(--glow); background: rgba(79,216,232,0.08); }
+  .arch-node-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.7rem; }
+  .arch-node { background: rgba(10,4,18,0.65); border-radius: 12px; padding: 0.85rem 1rem; border: 1px solid; }
+  .arch-branch.specialists .arch-node { border-color: rgba(255,0,238,0.22); }
+  .arch-branch.capabilities .arch-node { border-color: rgba(79,216,232,0.22); }
+  .arch-node-label { font-weight: 600; font-size: 0.86rem; color: var(--text); margin-bottom: 0.3rem; }
+  .arch-node-caption { font-size: 0.72rem; color: var(--text-dim); line-height: 1.4; }
+  .arch-node-pills { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.55rem; }
+  .arch-node-pill {
+    font-size: 0.6rem; font-family: var(--font-mono); padding: 0.15rem 0.45rem; border-radius: 6px;
+    border: 1px solid rgba(255,0,238,0.32); color: var(--magenta-soft);
+  }
+
+  .section-cta { text-align: center; margin: 2.2rem 0 0; }
+
+  footer { padding: 3.5rem 0 4rem; text-align: center; border-top: 1px solid rgba(161,36,255,0.12); }
+  footer #brand-mark { width: 30px; height: 30px; margin: 0 auto 1rem; }
+  footer h2 { font-size: 1.3rem; color: var(--glow-soft); margin: 0 0 0.6rem; }
+  footer p { color: var(--text-dim); font-size: 0.88rem; max-width: 480px; margin: 0 auto 1.6rem; }
+  .footer-links { display: flex; gap: 0.9rem; justify-content: center; flex-wrap: wrap; }
+  .foot-note { margin-top: 2.5rem; font-size: 0.7rem; color: var(--text-dim); opacity: 0.7; }
+</style>
+</head>
+<body>
+<div class="bg-glow"></div>
+<div class="hud-scanline"></div>
+<div class="hud-corner tl"></div>
+<div class="hud-corner tr"></div>
+<div class="hud-corner bl"></div>
+<div class="hud-corner br"></div>
+<div id="hudParticles"></div>
+
+<nav class="top" id="topNav">
+  <div class="wrap">
+    <a class="brand" href="/vision">
+      <div id="brand-mark"></div>
+      <span class="brand-name">Snarf</span>
+    </a>
+    <ul>
+      <li><a href="/vision#que-es">Visión</a></li>
+      <li class="nav-has-dropdown">
+        <a href="/arquitectura">Producto ▾</a>
+        <div class="nav-dropdown-panel">
+          <a href="/arquitectura">Arquitectura</a>
+          <a href="/capacidades">Capacidades</a>
+          <a href="/roadmap">Roadmap</a>
+        </div>
+      </li>
+      <li><a href="/blog">Blog</a></li>
+      <li><a href="/vision#creador">El creador</a></li>
+      <li><a href="/vision#hablar" class="nav-cta">Hablar con Snarf</a></li>
+    </ul>
+    <button class="nav-toggle" id="navToggle" aria-label="Abrir menú"><span></span><span></span><span></span></button>
+  </div>
+  <div class="nav-dropdown" id="navDropdown">
+    <a href="/vision#que-es">Visión</a>
+    <div class="nav-group-label">Producto</div>
+    <a href="/arquitectura">Arquitectura</a>
+    <a href="/capacidades">Capacidades</a>
+    <a href="/roadmap">Roadmap</a>
+    <a href="/vision#creador">El creador</a>
+    <a href="/blog">Blog</a>
+    <a href="/vision#hablar" class="nav-cta">Hablar con Snarf</a>
+  </div>
+</nav>
+
+<header class="masthead">
+  <div class="masthead-grid"></div>
+  <div class="masthead-glow"></div>
+  <div class="masthead-content wrap">
+    <div class="masthead-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+        <circle cx="12" cy="5" r="2.4"></circle>
+        <circle cx="5" cy="18" r="2.4"></circle>
+        <circle cx="12" cy="18" r="2.4"></circle>
+        <circle cx="19" cy="18" r="2.4"></circle>
+        <path d="M12 7.4V13M12 13H5V15.6M12 13H12V15.6M12 13H19V15.6"></path>
+      </svg>
+    </div>
+    <div class="eyebrow">Arquitectura real</div>
+    <h1>Cómo funciono <span>por dentro.</span></h1>
+    <p>Tres capas reales que trabajan juntas, y el mapa completo de qué agente hace qué — leído en vivo de la misma estructura que gobierna mi propio cerebro, nunca dibujado a mano.</p>
+  </div>
+</header>
+
+<div class="product-subnav">
+  <div class="wrap">
+    <a href="/arquitectura" class="subnav-tab active">Arquitectura</a>
+    <a href="/capacidades" class="subnav-tab">Capacidades</a>
+    <a href="/roadmap" class="subnav-tab">Roadmap</a>
+  </div>
+</div>
+
+<section id="capas">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Las tres capas</div>
+      <h2>Capacidades → Especialistas → Snarf</h2>
+      <p>No es una promesa de "IA que todo lo puede" — es una jerarquía real de responsabilidad, con un límite claro en cada nivel.</p>
+    </div>
+    <div class="layer-list">
+      <div class="layer-card reveal">
+        <div class="layer-index">01 · CAPACIDADES</div>
+        <h3>Cada integración, aislada</h3>
+        <p>Gmail, Drive, voz, documentos, base de conocimiento — cada una es una pieza autocontenida que sabe hacer una cosa real (leer un correo, transcribir audio, buscar en un índice) sin saber nada de quién la invoca ni por qué. Se agregan sin romper lo que ya funcionaba, y se pueden reemplazar una por una sin tocar el resto del sistema.</p>
+      </div>
+      <div class="layer-card reveal">
+        <div class="layer-index">02 · ESPECIALISTAS COGNITIVOS</div>
+        <h3>Razonamiento acotado por dominio</h3>
+        <p>Un Especialista no es un menú de opciones — es criterio aplicado a un dominio puntual: interpretar una bandeja de Gmail y decidir qué importa, resumir el estado real de un proyecto, evaluar una decisión desde la mirada de un CFO. Combinan una o varias Capacidades para producir juicio, no solo ejecución.</p>
+      </div>
+      <div class="layer-card reveal">
+        <div class="layer-index">03 · SNARF (ORCHESTRATOR)</div>
+        <h3>Memoria y criterio propio, en el centro</h3>
+        <p>Coordina todo con memoria real de cada conversación. Decide cuándo delegar en un Especialista y cuándo resolver directo, nunca actúa por su cuenta fuera de lo que se le pidió. Es el único punto que ve el sistema completo — cada Capacidad y cada Especialista solo ve su propio dominio.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="mapa">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Mapa en vivo</div>
+      <h2>Cada agente y cada capacidad, real</h2>
+      <p>Generado en el momento desde la misma estructura que usa el cerebro del producto — si mañana se agrega un Especialista nuevo, aparece acá solo.</p>
+    </div>
+    <div class="map-legend reveal">
+      <span><span class="dot" style="background:#a124ff;box-shadow:0 0 6px #a124ff;"></span>Snarf / Entrada</span>
+      <span><span class="dot" style="background:#ff00ee;box-shadow:0 0 6px #ff00ee;"></span>Especialistas Cognitivos</span>
+      <span><span class="dot" style="background:#4fd8e8;box-shadow:0 0 6px #4fd8e8;"></span>Capacidades</span>
+    </div>
+    <div id="mapLoading" class="map-loading">cargando arquitectura real…</div>
+    <div class="arch-diagram" id="archDiagram"></div>
+    <p class="map-note">Los nodos agrupados (ej. "Google Workspace", "Board Ejecutivo") muestran sus partes reales debajo del nombre, o sus sub-roles como chips — nunca una jerarquía inventada.</p>
+    <p class="section-cta reveal"><a class="btn btn-aqua" href="/capacidades">Ver el detalle de cada capacidad →</a></p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div id="brand-mark"></div>
+    <h2>¿Lo probamos en vivo?</h2>
+    <p>Una versión demo, sin herramientas reales conectadas, para que entiendas cómo razono antes de entrar de verdad.</p>
+    <div class="footer-links">
+      <a class="btn btn-primary" href="/vision#hablar">Hablar con Snarf</a>
+      <a class="btn btn-ghost" href="/vision">Volver a la visión</a>
+    </div>
+    <div class="footer-sitemap">
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Producto</div>
+        <a href="/vision">Visión</a>
+        <a href="/arquitectura">Arquitectura</a>
+        <a href="/capacidades">Capacidades</a>
+        <a href="/roadmap">Roadmap</a>
+      </div>
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Contenido</div>
+        <a href="/blog">Blog</a>
+        <a href="/vision#hablar">Hablar con Snarf</a>
+        <a href="/vision#estado">Estado en vivo</a>
+      </div>
+      <div class="footer-sitemap-col">
+        <div class="footer-sitemap-col-title">Sobre el proyecto</div>
+        <a href="/vision#creador">El creador</a>
+        <a href="https://github.com/JereMasih/SNARF" target="_blank" rel="noopener">Repositorio</a>
+        <a href="mailto:jeremasih@gmail.com">Contacto</a>
+      </div>
+    </div>
+    <div class="foot-note">Snarf — construido públicamente.</div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function initScrollReveal() {
+    var els = document.querySelectorAll(".reveal:not(.revealed)");
+    if (prefersReducedMotion) { els.forEach(function (el) { el.classList.add("revealed"); }); return; }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) { if (entry.isIntersecting) { entry.target.classList.add("revealed"); io.unobserve(entry.target); } });
+    }, { threshold: 0.1 });
+    els.forEach(function (el) { io.observe(el); });
+  }
+
+  var topNav = document.getElementById("topNav");
+  document.getElementById("navToggle").addEventListener("click", function () { topNav.classList.toggle("nav-open"); });
+
+  // -------------------------------------------------------------------
+  // Mapa mental — agrupación de PRESENTACIÓN sobre datos 100% reales de
+  // GET /vision/architecture (que a su vez lee snarf/telemetry/brain.py
+  // directo). Los clusters de abajo son solo para que se lea bien: cada
+  // "member" tiene que existir de verdad en la respuesta real, o el
+  // cluster entero se descarta — nunca se dibuja un nodo que el server no
+  // confirmó. Cualquier nodo real que NO esté en ningún cluster de acá
+  // (una Capacidad/Especialista agregado después de escribir este mapa)
+  // se muestra igual, suelto, en vez de desaparecer en silencio.
+  // -------------------------------------------------------------------
+  var CLUSTERS = [
+    { id: "gmail", label: "Gmail", tier: "specialist", members: ["specialist_gmail"] },
+    { id: "calendar", label: "Calendario", tier: "specialist", members: ["specialist_calendar"] },
+    { id: "morning_routine", label: "Rutina matutina", tier: "specialist", members: ["specialist_morning_routine"] },
+    {
+      id: "executive_board", label: "Board Ejecutivo", tier: "specialist", members: ["specialist_executive_board"],
+      satellites: [
+        { id: "specialist_executive_board_ceo", label: "CEO" },
+        { id: "specialist_executive_board_cto", label: "CTO" },
+        { id: "specialist_executive_board_cfo", label: "CFO" },
+        { id: "specialist_executive_board_cmo", label: "CMO" },
+        { id: "specialist_executive_board_coo", label: "COO" },
+        { id: "specialist_executive_board_research", label: "Research" },
+        { id: "specialist_executive_board_creative", label: "Creative" },
+      ],
+    },
+    { id: "research", label: "Research", tier: "specialist", members: ["specialist_research"] },
+    { id: "content", label: "Content", tier: "specialist", members: ["specialist_content"] },
+    { id: "sales", label: "Sales", tier: "specialist", members: ["specialist_sales"] },
+    { id: "finance", label: "Finance", tier: "specialist", members: ["specialist_finance"] },
+    { id: "community", label: "Community", tier: "specialist", members: ["specialist_community"] },
+    { id: "agency", label: "Agency", tier: "specialist", members: ["specialist_agency"] },
+    {
+      id: "projects", label: "Proyectos", tier: "specialist",
+      members: ["specialist_projects_manage", "specialist_projects_tasks", "specialist_projects_conversations"],
+      subLabels: { specialist_projects_manage: "Gestión", specialist_projects_tasks: "Tareas", specialist_projects_conversations: "Conversaciones" },
+    },
+    { id: "skill_factory", label: "Skill Factory", tier: "specialist", members: ["specialist_skill_factory"] },
+    { id: "llm", label: "Razonamiento", tier: "capability", members: ["llm"] },
+    { id: "voice", label: "Voz", tier: "capability", members: ["stt", "tts"], subLabels: { stt: "Escucha", tts: "Habla" } },
+    {
+      id: "google", label: "Google Workspace", tier: "capability",
+      members: ["drive", "gmail_read", "gmail_manage", "gmail_send", "calendar_view", "calendar_edit", "youtube"],
+      subLabels: { drive: "Drive", gmail_read: "Gmail (leer)", gmail_manage: "Gmail (organizar)", gmail_send: "Gmail (enviar)", calendar_view: "Calendar (ver)", calendar_edit: "Calendar (editar)", youtube: "YouTube" },
+    },
+    {
+      id: "knowledge", label: "Conocimiento y documentos", tier: "capability",
+      members: ["knowledge", "documents", "memory"],
+      subLabels: { knowledge: "Búsqueda semántica", documents: "Crear documentos", memory: "Memoria episódica" },
+    },
+    { id: "notion", label: "Notion", tier: "capability", members: ["notion"] },
+    { id: "system", label: "Sistema", tier: "capability", members: ["personality", "utility"], subLabels: { personality: "Personalidad", utility: "Utilidad" } },
+  ];
+  var INPUT_LABELS = { input_text: "Texto", input_voice: "Voz", input_file: "Archivos" };
+
+  function buildLayout(realNodes) {
+    var byId = {};
+    realNodes.forEach(function (n) { byId[n.id] = n; });
+    var covered = {};
+    var specialistClusters = [];
+    var capabilityClusters = [];
+    CLUSTERS.forEach(function (cluster) {
+      var present = cluster.members.filter(function (m) { return byId[m]; });
+      if (present.length === 0) return;
+      present.forEach(function (m) { covered[m] = true; });
+      var satellites = (cluster.satellites || []).filter(function (s) { return byId[s.id]; });
+      satellites.forEach(function (s) { covered[s.id] = true; });
+      var entry = { id: cluster.id, label: cluster.label, members: present, subLabels: cluster.subLabels || {}, satellites: satellites };
+      (cluster.tier === "specialist" ? specialistClusters : capabilityClusters).push(entry);
+    });
+    // Cualquier nodo real no cubierto por ningún cluster de arriba (nuevo,
+    // agregado después de escribir este mapa) se muestra suelto — nunca
+    // desaparece en silencio.
+    realNodes.forEach(function (n) {
+      if (covered[n.id] || n.id === "orchestrator" || n.tier === "input") return;
+      var entry = { id: n.id, label: n.id.replace(/^specialist_/, "").replace(/_/g, " "), members: [n.id], subLabels: {}, satellites: [] };
+      (n.tier === "specialist" ? specialistClusters : capabilityClusters).push(entry);
+    });
+    return { specialistClusters: specialistClusters, capabilityClusters: capabilityClusters };
+  }
+
+  function makeEl(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function renderNodeCard(cluster) {
+    var card = makeEl("div", "arch-node");
+    card.appendChild(makeEl("div", "arch-node-label", cluster.label));
+    if (cluster.members.length > 1) {
+      var caption = cluster.members.map(function (m) { return cluster.subLabels[m] || m; }).join(" · ");
+      card.appendChild(makeEl("div", "arch-node-caption", caption));
+    }
+    if (cluster.satellites && cluster.satellites.length) {
+      var pillRow = makeEl("div", "arch-node-pills");
+      cluster.satellites.forEach(function (s) { pillRow.appendChild(makeEl("span", "arch-node-pill", s.label)); });
+      card.appendChild(pillRow);
+    }
+    return card;
+  }
+
+  function renderBranchDom(title, clusters, extraClass) {
+    var branch = makeEl("div", "arch-branch " + extraClass);
+    var headWrap = makeEl("div", "arch-branch-head-wrap");
+    headWrap.appendChild(makeEl("div", "arch-branch-head", title));
+    branch.appendChild(headWrap);
+    var grid = makeEl("div", "arch-node-grid");
+    clusters.forEach(function (c) { grid.appendChild(renderNodeCard(c)); });
+    branch.appendChild(grid);
+    return branch;
+  }
+
+  // Organigrama en CSS/DOM puro — reemplaza un primer intento en SVG que no
+  // se apreciaba bien en desktop ni en mobile (nodos superpuestos, scroll
+  // horizontal forzado). Esta versión escala con el ancho real del
+  // contenedor y se reordena a una columna en mobile (ver media query de
+  // .arch-branches), aprovechando el espacio real del dispositivo.
+  function renderMap(data) {
+    document.getElementById("mapLoading").style.display = "none";
+    var layout = buildLayout(data.nodes || []);
+    var root = document.getElementById("archDiagram");
+    root.innerHTML = "";
+
+    var hubRow = makeEl("div", "arch-hub-row");
+    hubRow.appendChild(makeEl("div", "arch-hub", "Snarf"));
+    var inputRow = makeEl("div", "arch-input-row");
+    Object.keys(INPUT_LABELS).forEach(function (id) { inputRow.appendChild(makeEl("div", "arch-input-chip", INPUT_LABELS[id])); });
+    hubRow.appendChild(inputRow);
+    root.appendChild(hubRow);
+    root.appendChild(makeEl("div", "arch-trunk"));
+    root.appendChild(makeEl("div", "arch-split"));
+
+    var branches = makeEl("div", "arch-branches");
+    branches.appendChild(renderBranchDom("Especialistas Cognitivos", layout.specialistClusters, "specialists"));
+    branches.appendChild(renderBranchDom("Capacidades", layout.capabilityClusters, "capabilities"));
+    root.appendChild(branches);
+
+    initScrollReveal();
+  }
+
+  fetch("/vision/architecture").then(function (r) { return r.json(); }).then(renderMap).catch(function () {
+    document.getElementById("mapLoading").textContent = "no se pudo cargar el mapa en vivo";
+  });
+
+  var hudParticlesHost = document.getElementById("hudParticles");
+  if (hudParticlesHost && !prefersReducedMotion) {
+    for (var hp = 0; hp < 10; hp++) {
+      var particle = document.createElement("div");
+      particle.className = "hud-particle";
+      particle.style.left = Math.random() * 100 + "vw";
+      particle.style.bottom = "-10px";
+      particle.style.animationDuration = (12 + Math.random() * 16) + "s";
+      particle.style.animationDelay = (-Math.random() * 24) + "s";
+      hudParticlesHost.appendChild(particle);
+    }
+  }
+
+  initScrollReveal();
+})();
+</script>
+</body>
+</html>

@@ -35,6 +35,9 @@ data/tool_subsets.json
 data/agent_graph.json
 data/llm_routing_history.json
 data/n8n_pending_changes.json
+data/blog_posts.jsonl
+data/leads.jsonl
+data/blog_assets/
 data_backups/
 credentials/
 server.log

@@ -2,6 +2,100 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-18] Hero centrado en Snarf, capa HUD compartida, y rediseño del mapa de arquitectura (ADR 0171)
+
+- Hero de la home reescrito para despertar curiosidad por Snarf mismo (no por "para quién es"); canvas del
+  hero gana conectores tipo radio entre anillos y pulsos de luz viajando por ellos, con más movimiento
+  general.
+- Capa HUD compartida (scanline, esquinas, partículas — valores portados de `web/index.html`) en las 5
+  páginas públicas, como elemento decorativo de baja intensidad que rima con el branding real de la
+  interfaz sin competir con ella.
+- Nav con dropdown "Producto ▾" (Arquitectura/Capacidades/Roadmap) + link "El creador"; sub-barra de tabs
+  para moverse entre las 3 páginas de profundidad; pie de página con mapa de sitio persistente de 3
+  columnas en las 5 páginas.
+- Apartado nuevo del creador en la home (`#creador`) con placeholder honesto — sin biografía inventada, a
+  la espera de contenido real.
+- Imágenes de portada: `cover_image` nuevo en `snarf/telemetry/blog.py` (con tests nuevos) y en los
+  endpoints de creación/edición de artículos; CMS con subida de portada; mostrada en las tarjetas y en el
+  detalle del artículo. Las 3 páginas de sección ganan un ícono SVG propio con brillo pulsante en el
+  masthead, en vez de fotografía fabricada.
+- Reemplazo completo del diagrama de arquitectura: el SVG radial anterior (ilegible en desktop y mobile) se
+  reemplaza por un organigrama CSS/DOM responsive — hub central, chips de entrada, dos ramas con tarjetas
+  de nodo en grid, que colapsa a una columna en mobile.
+- Fix de las tarjetas de blog: el resumen y el título ahora llevan a destinos distintos (sección vs.
+  artículo puntual) y solo se subrayan al pasar el mouse.
+- 1472/1472 tests. Verificado con Playwright en las 5 páginas, desktop y mobile: cero errores de consola.
+  Ver ADR 0171.
+
+## [2026-08-17] Páginas de profundidad, mapa mental de arquitectura, y CMS del blog (ADR 0170)
+
+- Contenido profundo mudado de la home a 3 páginas propias: `GET /arquitectura` (mapa mental de la
+  arquitectura real + explicación de las tres capas), `GET /capacidades` (detalle completo hoy/en camino),
+  `GET /roadmap` (timeline completo) — la home queda con versiones cortas de cada una.
+- Sección nueva en la home, "Por qué sumarte a Snarf ahora" (`#invertir`), dirigida a inversores/socios.
+- `GET /vision/architecture` (nuevo, público): jerarquía real y estática de Orchestrator/Especialistas/
+  Capacidades, leída directo de `snarf/telemetry/brain.py` — el mapa mental de `/arquitectura` la consume
+  sin duplicar ninguna lista a mano.
+- Blog con URL real por artículo: `snarf/telemetry/blog.py` gana `slug` (derivado del título, único,
+  estable), `list_all`/`get`/`update`/`delete`. `GET /blog/{slug}` con routing por path real (ya no hash).
+- CMS del blog nuevo, `GET /blog/admin` (founder-gated): editor Markdown liviano hecho a mano con vista
+  previa en vivo, subida real de imágenes (`POST /blog/admin/images`, `data/blog_assets/` nuevo, gitignored),
+  publicar/despublicar/eliminar. CRUD vía `GET/POST/PATCH/DELETE /blog/articles*`.
+- Botones: `.btn-primary`/`.btn-aqua` nuevas — fondo oscuro + borde de acento en vez del fill sólido
+  violeta→magenta anterior, en las 6 páginas públicas.
+- 20 tests nuevos. 1470/1470 tests de la suite completa (1450 previos + 20 nuevos).
+- Server real de producción (puerto 8002) reiniciado al cierre de esta ronda — `/blog`, `/arquitectura`,
+  `/capacidades`, `/roadmap` y el resto de ADR 0168/0169/0170 recién quedan disponibles ahí desde ese
+  reinicio.
+
+## [2026-08-17] Fix de hero en mobile, home de blog propio, y copy público sin citas internas (ADR 0169)
+
+- Bug real corregido: el cerebro de fondo del hero no se veía en mobile (solo los orbes) porque su
+  posicionamiento estaba atado al alto total de `.hero` (enorme en mobile por el wrap del título) en vez
+  del viewport visible. Nuevo `.hero-stage` con `height: 100vh`/`100svh`, nodos más grandes/numerosos en
+  mobile, deriva rotacional lenta continua, y parallax con diferencial más marcado. Verificado en iPhone
+  SE/14 y Android chico.
+- Home de blog propio: `GET /blog` (`web/blog.html`, nuevo) con chips de categoría (tags reales), grid de
+  artículos y vista de detalle con routing por hash. La sección de blog en `/vision` pasa a ser un teaser
+  de 3 artículos que linkea a `/blog`.
+- Más elementos gráficos con movimiento en scroll: divisores de circuito animados (ámbar), campo de
+  partículas ambiental CSS detrás de Capacidades/Roadmap, pulso en las flechas de "Cómo funciona",
+  resplandor "que respira" en las capturas.
+- Copy público reescrito para no citar documentos internos literalmente (`FOUNDATION.md`, `COGNITION.md`,
+  `MASTER_MAP.md`, `PROJECT_CONTEXT.md`, "Principio N", "ADR NNNN", nombres de herramientas internas) —
+  redactado como texto terminado, derivado de esos documentos sin citarlos. Incluye un hallazgo real
+  detectado en la verificación: las tarjetas "Hoy"/"Norte del plan" del roadmap pintaban notas de trabajo
+  internas crudas (markdown sin renderizar, nombres de variables de entorno); se reemplazaron por prosa
+  fija — el panel "Estado en vivo" sigue mostrando datos crudos a propósito, con su propio encuadre de
+  transparencia.
+- Los 6 artículos del blog reescritos sin citas `(ADR NNNN)` inline en el cuerpo visible;
+  `data/blog_posts.jsonl` re-sembrado.
+- Sin cambios de backend/tests (100% frontend). Suite completa sin cambios: 1450/1450.
+
+## [2026-08-17] Rediseño de conversión de `GET /vision`, blog real y demo pública con Leads (ADR 0168)
+
+- Rediseño completo de `web/vision.html` orientado a emprendedores/freelancers: paleta violeta/magenta
+  reusada de `--brain-violet`/`--brain-magenta`/`--brain-aqua` (antes solo en el cerebro), hero con canvas
+  de nodos ambiental (declarado explícitamente decorativo, no telemetría en vivo) con parallax de scroll,
+  scroll-reveal en todas las secciones (reusa el lenguaje `hud-materialize` de `web/hud_design_tokens.css`),
+  nav mobile con hamburguesa.
+- Secciones nuevas: "Problema" (posicionamiento honesto), "Cómo funciona" (arquitectura real de tres capas),
+  "Capacidades" (grid "Disponible hoy" vs. "En camino", tomado de `MASTER_MAP.md`), "Roadmap" (timeline
+  visual, reemplaza a "Historias reales") con nodos dinámicos desde `/vision/status` sin duplicar prosa.
+- 6 primeros artículos reales del blog, publicados (`scripts/seed_vision_blog.py`, corrido una vez), cada
+  uno con `source_ref` a ADRs reales verificados.
+- Captación de leads real: "Hablar con Snarf" pide nombre+email (`POST /vision/lead`,
+  `snarf/telemetry/leads.py` nuevo) y habilita una demo de conversación (`POST /vision/demo`,
+  `snarf/runtime/vision_demo.py` nuevo) sin herramientas reales, con tope de turnos por lead. Nuevo rol de
+  ruteo `"vision_demo"` en `snarf/runtime/llm_routing.py`, default local (`mlx_local_fast`, gratis),
+  configurable desde el panel de Configuración del fundador. Cierre del flujo → login real (`/login`),
+  nunca una "descarga de app" inexistente. Panel "Leads" nuevo en Configuración (founder-gated).
+- `.gitignore`: agregados `data/blog_posts.jsonl` (faltaba desde ADR 0167) y `data/leads.jsonl` (PII real).
+- Verificado en navegador real con Playwright (desktop y mobile): cero errores de consola, flujo completo
+  de lead+demo probado en vivo contra el modelo local real.
+- 17 tests nuevos (`tests/test_leads.py`, `tests/test_vision_demo.py`, 7 casos nuevos en `tests/test_app.py`).
+  1450/1450 tests de la suite completa (1433 previos + 17 nuevos).
+
 ## [2026-08-17] Página pública de visión y estado, `GET /vision` (ADR 0167)
 
 - Primera superficie de cara afuera de Snarf: `GET /vision` sirve `web/vision.html` (sin gate de login,

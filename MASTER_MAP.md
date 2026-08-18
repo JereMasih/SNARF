@@ -152,6 +152,12 @@ Planificado, todavía sin construir: interfaz genérica de "fuente de conocimien
 
 Desde el 2026-08-17 (ADR 0167): primera superficie pública de Snarf, `GET /vision` (`web/vision.html`, sin gate de login) — visión/filosofía derivada de FOUNDATION.md/PROJECT_CONTEXT.md, capturas reales de la interfaz, y `GET /vision/status` (nuevo `snarf/runtime/vision_status.py`) leyendo en el momento del request el estado real del roadmap, CHANGELOG, ADR y tests — nunca hardcodeado. Nuevo modelo de datos `snarf/telemetry/blog.py` (JSONL, flag `public`) para el futuro blog de Snarf, sin ningún productor todavía: conectarlo a `snarf/specialists/research` queda pendiente.
 
+Desde el 2026-08-17 (ADR 0168, mismo día): rediseño de conversión de `GET /vision` (paleta violeta/magenta reusada del cerebro, hero con canvas ambiental + parallax, secciones nuevas de "Cómo funciona"/"Capacidades"/"Roadmap"), primeros 6 artículos reales del blog publicados, y primera superficie de escritura pública del proyecto: captación de Leads ("Hablar con Snarf", `snarf/telemetry/leads.py`) que habilita una demo de conversación sin herramientas reales (`snarf/runtime/vision_demo.py`, nuevo rol de ruteo `"vision_demo"`, default local/gratis y configurable desde Configuración) — cierra siempre hacia el login real, nunca una descarga de app inexistente.
+
+Desde el 2026-08-17 (ADR 0169, mismo día): fix real de un bug de mobile (el cerebro de fondo del hero quedaba invisible por estar atado al alto del contenido en vez del viewport), home de blog propio (`GET /blog`, `web/blog.html`, categorías por tags reales), más elementos gráficos con movimiento en scroll, y copy público reescrito para no citar documentos internos literalmente (incluye reemplazar dos tarjetas del roadmap que pintaban notas de trabajo internas crudas por prosa terminada).
+
+Desde el 2026-08-17 (ADR 0170, mismo día): contenido profundo mudado a 3 páginas propias (`GET /arquitectura` con mapa mental real de agentes/capacidades vía `GET /vision/architecture` nuevo, `GET /capacidades`, `GET /roadmap`), sección nueva "Por qué sumarte" para inversores/socios en la home, blog con URL real por artículo (`slug` en `snarf/telemetry/blog.py`) y CMS propio founder-gated (`GET /blog/admin`, editor Markdown + subida de imágenes), y botones rediseñados (fondo oscuro + borde de acento en vez de fill sólido).
+
 ## Business
 
 Unidades económicas, productos, servicios y empresas.
