@@ -1,4 +1,5 @@
 import os
+from typing import Iterator
 
 import requests
 
@@ -16,6 +17,54 @@ def _extract_title(result: dict) -> str:
         if prop.get("type") == "title":
             return "".join(t.get("plain_text", "") for t in prop.get("title", []))
     return result.get("id", "")
+
+
+def _property_value_text(prop: dict) -> str:
+    """Extrae el valor legible de una property tipada de Notion — cada tipo
+    guarda su valor bajo una key distinta (`prop["select"]`, `prop["date"]`,
+    etc.), sin esto una fila de database no tiene ningún texto plano posible
+    de indexar."""
+    prop_type = prop.get("type")
+    value = prop.get(prop_type)
+    if value in (None, [], {}):
+        return ""
+    if prop_type in ("title", "rich_text"):
+        return "".join(t.get("plain_text", "") for t in value)
+    if prop_type in ("select", "status"):
+        return value.get("name", "")
+    if prop_type == "multi_select":
+        return ", ".join(v.get("name", "") for v in value)
+    if prop_type == "date":
+        start = value.get("start", "")
+        end = value.get("end")
+        return f"{start} - {end}" if end else start
+    if prop_type == "number":
+        return str(value)
+    if prop_type == "checkbox":
+        return "sí" if value else "no"
+    if prop_type in ("url", "email", "phone_number", "created_time", "last_edited_time"):
+        return str(value)
+    if prop_type == "people":
+        return ", ".join(p.get("name", "") for p in value if p.get("name"))
+    if prop_type == "relation":
+        return ", ".join(r.get("id", "") for r in value)
+    if prop_type == "formula":
+        inner_type = value.get("type")
+        inner = value.get(inner_type)
+        return str(inner) if inner is not None else ""
+    return ""
+
+
+def format_properties_text(properties: dict) -> str:
+    """Convierte el dict tipado de properties de una fila de database a texto
+    plano legible ('Título: X. Estado: Y...') — es donde vive el contenido
+    real de una fila (una nota, una tarea), no en el cuerpo de la página."""
+    parts = []
+    for name, prop in properties.items():
+        value = _property_value_text(prop)
+        if value:
+            parts.append(f"{name}: {value}")
+    return ". ".join(parts)
 
 
 def _paragraph_blocks(text: str) -> list[dict]:
@@ -147,6 +196,71 @@ class Notion(Capability):
         response.raise_for_status()
         data = response.json()
         return {"id": data.get("id"), "url": data.get("url")}
+
+    def _iter_search_results(self, object_type: str, page_size: int = 100) -> Iterator[dict]:
+        self._require_available()
+        cursor: str | None = None
+        while True:
+            body: dict = {"filter": {"property": "object", "value": object_type}, "page_size": page_size}
+            if cursor:
+                body["start_cursor"] = cursor
+            response = requests.post(f"{API_BASE}/search", headers=self._headers(), json=body, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            yield from data.get("results", [])
+            if not data.get("has_more"):
+                break
+            cursor = data.get("next_cursor")
+
+    def iter_all_pages(self) -> Iterator[dict]:
+        """Enumera TODAS las páginas compartidas con la integración, paginando
+        hasta agotarlas — a diferencia de `search` (pensada para un pedido
+        puntual del LLM, tope de 20), esto es para indexado semántico
+        completo (ver NotionSource en snarf/knowledge/)."""
+        for result in self._iter_search_results("page"):
+            yield {
+                "id": result.get("id"),
+                "title": _extract_title(result),
+                "url": result.get("url"),
+                "last_edited_time": result.get("last_edited_time"),
+            }
+
+    def iter_all_databases(self) -> Iterator[dict]:
+        """Igual que iter_all_pages pero para databases reales."""
+        for result in self._iter_search_results("database"):
+            yield {
+                "id": result.get("id"),
+                "title": "".join(t.get("plain_text", "") for t in result.get("title", [])),
+                "url": result.get("url"),
+                "last_edited_time": result.get("last_edited_time"),
+            }
+
+    def iter_database_rows(self, database_id: str, page_size: int = 100) -> Iterator[dict]:
+        """Todas las filas reales de una database, paginando hasta agotarlas
+        — a diferencia de query_database (pensada para un pedido puntual del
+        LLM, tope fijo sin cursor), esto es para indexado semántico
+        completo."""
+        self._require_available()
+        cursor: str | None = None
+        while True:
+            body: dict = {"page_size": page_size}
+            if cursor:
+                body["start_cursor"] = cursor
+            response = requests.post(
+                f"{API_BASE}/databases/{database_id}/query", headers=self._headers(), json=body, timeout=15
+            )
+            response.raise_for_status()
+            data = response.json()
+            for result in data.get("results", []):
+                yield {
+                    "id": result.get("id"),
+                    "url": result.get("url"),
+                    "last_edited_time": result.get("last_edited_time"),
+                    "properties": result.get("properties", {}),
+                }
+            if not data.get("has_more"):
+                break
+            cursor = data.get("next_cursor")
 
     def update_page_properties(self, page_id: str, properties: dict) -> dict:
         """Cambia properties tipadas de una página existente (típicamente un

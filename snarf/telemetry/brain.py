@@ -68,6 +68,11 @@ TOOL_TO_NODE: dict[str, str] = {
     "drive_index_status": "knowledge",
     "drive_index_stop": "knowledge",
     "drive_search_knowledge": "knowledge",
+    # NotionSource (ADR 0173): mismo nodo 'knowledge' que la indexación de
+    # Drive — son tools de indexación, no de interacción con contenido como
+    # el resto de notion_* (mapeadas al nodo 'notion' más abajo).
+    "notion_index_start": "knowledge",
+    "notion_index_status": "knowledge",
     # Knowledge Layer generalizada (ver KNOWLEDGE.md, ADR 0093): mismo nodo
     # 'knowledge' que ya representaba la indexación de Drive — domain='code'
     # es la misma capacidad real (buscar/indexar sobre conocimiento) sirviendo

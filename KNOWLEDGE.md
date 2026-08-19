@@ -23,20 +23,20 @@ class KnowledgeSource(ABC):
     def read_item(self, item: KnowledgeItem) -> bytes | str: ...
 ```
 
-Fuentes reales hoy: `GoogleDriveKnowledgeSource` (`domain="personal"`), `NotionKnowledgeSource` (`domain="personal"`, activa por primera vez la Capacidad Notion que ADR 0075 dejó construida pero inactiva), `LocalRepoKnowledgeSource` (`domain="code"`, recorre `snarf/**/*.py`, `adr/*.md`, `tests/**/*.py` y los `.md` de la raíz de este mismo repositorio). Las subidas manuales (`POST /files/upload`) no son una `KnowledgeSource` enumerable — son push-based, un archivo a la vez — y se indexan directo vía `KnowledgeIndexer.index_local_text`, igual que hoy.
+Fuentes reales hoy: el pipeline propio de `DriveIndexer` (`domain="personal"`, con extracción por mimetype — PDF, imagen, audio/video), `NotionSource` (`snarf/knowledge/notion_source.py`, `domain="personal"`, ADR 0173 — un ítem por página y un ítem por fila de cada database, con las properties tipadas convertidas a texto vía `format_properties_text`; escribe a la misma colección física que Drive, distinguible por `source="notion"` en la metadata), `LocalRepoKnowledgeSource` (`domain="code"`, recorre `snarf/**/*.py`, `adr/*.md`, `tests/**/*.py` y los `.md` de la raíz de este mismo repositorio). Las subidas manuales (`POST /files/upload`) no son una `KnowledgeSource` enumerable — son push-based, un archivo a la vez — y se indexan directo vía `KnowledgeIndexer.index_local_text`, igual que hoy.
 
 # Namespacing: dos mecanismos reales, cada uno con un trabajo distinto
 
 Chroma (el vector store real detrás de todo esto, local, sin servidor — ver ADR 0028) ofrece dos primitivas de namespacing, y cada una hace un trabajo distinto:
 
 - **`collection_name`** — uno por **dominio**. Dominios distintos tienen ciclos de vida de contenido distintos (reconstruir el índice de `code` nunca debe tocar `personal`).
-- **filtro `where`** — para sub-alcance **dentro** de un dominio. Es exactamente el mecanismo que la Capacidad Proyectos ya usa para `project_id` (ADR 0045) — se reusa sin cambios, con más claves de metadata (`source: "drive"|"notion"|"upload"` dentro de `personal`).
+- **filtro `where`** — para sub-alcance **dentro** de un dominio. Es exactamente el mecanismo que la Capacidad Proyectos ya usa para `project_id` (ADR 0045) — se reusa sin cambios. Dentro de `personal`, la key real es `location` (`"drive"|"local"|"notion"`, mismo valor que ya usaba `DriveIndexer` antes de que hubiera una segunda fuente) — `knowledge_search` expone esto como el parámetro `source` (ADR 0173).
 
 # Estado real por dominio
 
 | Dominio | Estado |
 |---|---|
-| `personal` | Real — Drive + Notion (una vez con `NOTION_API_KEY`) + subidas manuales + memoria episódica |
+| `personal` | Real — Drive + Notion (páginas y filas de databases, `NOTION_API_KEY` configurada, ADR 0173) + subidas manuales + memoria episódica |
 | `code` | Real — este mismo repositorio (código, ADRs, tests, docs de raíz) |
 | `business` | Reservado — se puebla en cuanto la rama Finance (transacciones vía Sheet/CSV + recibos por visión) esté construida |
 | `trading` | Reservado — sin fuente real todavía |
@@ -47,7 +47,7 @@ Un dominio reservado nunca devuelve resultados inventados — `knowledge_search`
 
 # Cómo un Skill consulta la Knowledge Layer
 
-Tools del Orchestrator: `knowledge_search(query, domain, top_k)`, `knowledge_index_start(domain, source, query=None)`, `knowledge_index_status(domain)`, y `codebase_search(query, top_k)` (wrapper fino, domain-locked a `code`). Un Specialist nuevo nunca abre un archivo directamente ni hace su propia llamada a un vector store — llama a estos tools, igual que cualquier otra Capacidad.
+Tools del Orchestrator: `knowledge_search(query, domain, top_k)`, `knowledge_index_start(domain, source, query=None)`, `knowledge_index_status(domain)`, y `codebase_search(query, top_k)` (wrapper fino, domain-locked a `code`). El dominio `personal` no pasa por `knowledge_index_start` — usa sus propios pares `drive_index_start`/`drive_index_status` y `notion_index_start`/`notion_index_status`, uno por fuente, porque cada una corre en su propio hilo de fondo con su propio manifiesto (ver ADR 0173). Un Specialist nuevo nunca abre un archivo directamente ni hace su propia llamada a un vector store — llama a estos tools, igual que cualquier otra Capacidad.
 
 # Reportes como insumo, no solo como entregable
 

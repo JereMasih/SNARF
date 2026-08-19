@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 from typing import Callable
 
@@ -15,11 +16,22 @@ from typing import Callable
 # (ver ADR de esta ronda) — esto es la última red de seguridad: si CUALQUIER
 # server mlx_lm real supera la cuota de memoria, se reinicia solo, sin
 # esperar a que alguien lo note.
+#
+# 2026-08-18: el mismo escenario (31GB) volvió a pasar con esta red de
+# seguridad ya desplegada, porque medía con `ps -o rss=` — que en procesos
+# MLX no ve la memoria unificada de Metal (GPU): `ps` reportaba 2.2GB
+# mientras `top`/Activity Monitor (phys_footprint real) marcaban 31GB, así
+# que el watchdog nunca detectó el problema. Ahora mide con
+# `top -l 1 -pid <pid> -stats pid,mem` (la misma cifra que Activity Monitor)
+# y avisa por notificación de macOS cuando reinicia algo.
 MAX_MEMORY_FRACTION = 0.25
 
 MLX_LAUNCH_AGENT_LABELS = ["com.snarf.mlx-fast", "com.snarf.mlx-heavy", "com.snarf.mlx-mid"]
 
 CommandRunner = Callable[[list[str]], str]
+
+_MEMORY_SIZE_RE = re.compile(r"^([\d.]+)([BKMGT]?)$", re.IGNORECASE)
+_MEMORY_UNIT_MULTIPLIER = {"": 1, "B": 1, "K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4}
 
 
 def _run(args: list[str]) -> str:
@@ -38,34 +50,58 @@ def pid_for_label(label: str, run: CommandRunner = _run) -> int | None:
     return None
 
 
-def rss_bytes(pid: int, run: CommandRunner = _run) -> int:
-    output = run(["ps", "-o", "rss=", "-p", str(pid)]).strip()
-    return int(output) * 1024 if output else 0
+def _parse_memory_size(text: str) -> int:
+    match = _MEMORY_SIZE_RE.match(text.strip())
+    if not match:
+        return 0
+    value, unit = match.groups()
+    return int(float(value) * _MEMORY_UNIT_MULTIPLIER[unit.upper()])
 
 
-def is_over_budget(rss: int, total_memory: int, max_fraction: float = MAX_MEMORY_FRACTION) -> bool:
-    return rss > total_memory * max_fraction
+def footprint_bytes(pid: int, run: CommandRunner = _run) -> int:
+    """Memoria física real del proceso (phys_footprint) — la misma cifra que
+    Activity Monitor, incluye la memoria unificada de Metal que
+    `ps -o rss=` no ve en procesos MLX."""
+    output = run(["top", "-l", "1", "-pid", str(pid), "-stats", "pid,mem"])
+    for line in reversed(output.splitlines()):
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] == str(pid):
+            return _parse_memory_size(parts[-1])
+    return 0
+
+
+def is_over_budget(footprint: int, total_memory: int, max_fraction: float = MAX_MEMORY_FRACTION) -> bool:
+    return footprint > total_memory * max_fraction
 
 
 def restart_label(label: str, run: CommandRunner = _run) -> None:
     run(["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{label}"])
 
 
+def _notify_restart(label: str, footprint: int, run: CommandRunner) -> None:
+    gb = footprint / (1024**3)
+    message = f"{label} superó la cuota de memoria ({gb:.1f} GB) y se reinició solo."
+    run(["osascript", "-e", f'display notification "{message}" with title "Snarf"'])
+
+
 def check_and_restart_over_budget_agents(
     labels: list[str] = MLX_LAUNCH_AGENT_LABELS, run: CommandRunner = _run
 ) -> list[str]:
-    """Revisa cada LaunchAgent MLX real por su uso de memoria y reinicia
-    (`launchctl kickstart -k`) el que supere la cuota — devuelve los labels
-    reiniciados en esta pasada (lista vacía si ninguno la superó, incluidos
-    los que ni siquiera están cargados)."""
+    """Revisa cada LaunchAgent MLX real por su memoria física (no RSS) y
+    reinicia (`launchctl kickstart -k`) el que supere la cuota, avisando por
+    notificación de macOS — devuelve los labels reiniciados en esta pasada
+    (lista vacía si ninguno la superó, incluidos los que ni siquiera están
+    cargados)."""
     total_memory = total_memory_bytes(run)
     restarted = []
     for label in labels:
         pid = pid_for_label(label, run)
         if pid is None:
             continue
-        if is_over_budget(rss_bytes(pid, run), total_memory):
+        footprint = footprint_bytes(pid, run)
+        if is_over_budget(footprint, total_memory):
             restart_label(label, run)
+            _notify_restart(label, footprint, run)
             restarted.append(label)
     return restarted
 

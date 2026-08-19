@@ -2,6 +2,39 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-18] Watchdog de memoria MLX medía RSS, no Metal; ahora avisa al reiniciar (ADR 0174)
+
+- El mismo incidente de ADR 0128 (`com.snarf.mlx-fast` fugando hasta ~31GB) volvió a pasar con el watchdog
+  ya desplegado: medía memoria con `ps -o rss=`, que en procesos MLX no ve la memoria unificada de Metal
+  (GPU) — `ps` reportaba 2.2GB mientras el proceso real usaba 31GB, así que el tope del 25% nunca se
+  evaluó contra un número real.
+- `footprint_bytes()` (`snarf/runtime/mlx_memory_watchdog.py`) reemplaza esa medición por
+  `top -l 1 -pid <pid> -stats pid,mem`, la misma cifra que Activity Monitor. Cada reinicio por cuota superada
+  ahora dispara una notificación de macOS con el label y los GB reales.
+- 1485/1485 tests. Ver ADR 0174.
+
+## [2026-08-18] Indexado semántico real de Notion (ADR 0173)
+
+- `NotionSource` (`snarf/knowledge/notion_source.py`) nuevo: un ítem indexado por página real y otro por
+  cada fila de cada database real del fundador, sobre el motor genérico `KnowledgeIndexer` que ya existía
+  sin usarse para esto — `KNOWLEDGE.md` mencionaba una `NotionKnowledgeSource` desde antes, pero no había
+  código real detrás hasta ahora.
+- `format_properties_text` (nuevo, `snarf/capabilities/notion.py`) convierte las properties tipadas de una
+  fila de database (select, multi-select, date, checkbox, relation, etc.) a texto plano legible — ahí vive
+  el contenido real de una nota o tarea, no en el cuerpo de la página. Se suma paginación real
+  (`iter_all_pages`, `iter_all_databases`, `iter_database_rows`) donde antes solo había tope fijo sin
+  cursor.
+- Notion comparte la misma colección física que Drive (dominio `personal`). Dos tools nuevas,
+  `notion_index_start`/`notion_index_status`, mismo patrón que sus equivalentes de Drive.
+- Verificado real de punta a punta contra el Notion real del fundador (566 ítems indexados, incluidas sus
+  4 databases reales de PARA — Areas y Recursos, Proyectos, Notas, Tareas) — y ahí se encontró un bug real:
+  `KNOWLEDGE.md` documentaba la key de sub-acotado como `source`, pero `DriveIndexer` real siempre usó
+  `location` — `NotionSource` había copiado la key equivocada de la documentación, así que ningún filtro
+  por fuente cruzaba entre Drive y Notion. Corregido (`NotionSource` ahora escribe `location: "notion"`) y
+  `knowledge_search` gana un parámetro `source` (`"drive"`/`"notion"`) para acotar explícitamente.
+  `KNOWLEDGE.md` corregido para documentar `location`, no `source`.
+- 1486/1486 tests. Ver ADR 0173.
+
 ## [2026-08-18] Reorganización del home: Nosotros e Inversores como páginas propias (ADR 0172)
 
 - El home (`GET /vision`) pasa de 13 secciones + hero a 6 + hero: Problema, Cómo funciona (teaser),

@@ -1653,6 +1653,21 @@ def test_knowledge_search_with_domain_personal_delegates_to_the_drive_indexer(or
     assert result == [{"text": "resultado real"}]
 
 
+def test_knowledge_search_with_source_filter_builds_a_location_where_clause(orchestrator, monkeypatch):
+    # Bug real (2026-08-18): sin este filtro, no había forma de acotar una
+    # búsqueda a solo Notion — 'location' es la key real que ya usa
+    # DriveIndexer (no 'source', que KNOWLEDGE.md documentaba sin código
+    # real detrás). Ver ADR 0173.
+    fake = _FakeDomainIndexer()
+    monkeypatch.setattr(orchestrator, "_drive_indexer", fake)
+
+    orchestrator._handle_tool(
+        "knowledge_search", {"query": "áreas activas", "domain": "personal", "source": "notion"}
+    )
+
+    assert fake.search_calls == [("áreas activas", 5, {"location": "notion"})]
+
+
 def test_knowledge_search_with_domain_code_delegates_to_the_code_indexer(orchestrator, monkeypatch):
     fake = _FakeDomainIndexer()
     monkeypatch.setattr(orchestrator, "_code_indexer", fake)

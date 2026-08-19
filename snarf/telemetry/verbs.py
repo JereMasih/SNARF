@@ -60,6 +60,8 @@ VERB_BY_SKILL: dict[str, str] = {
     "knowledge_search": "buscando en lo indexado",
     "knowledge_index_start": "indexando el conocimiento",
     "knowledge_index_status": "revisando el progreso",
+    "notion_index_start": "indexando Notion",
+    "notion_index_status": "revisando el progreso",
     # documents
     "drive_create_document": "redactando el documento",
     "drive_create_spreadsheet": "armando la planilla",

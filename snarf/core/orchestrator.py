@@ -42,6 +42,7 @@ from snarf.knowledge.extraction import VISION_SYSTEM_PROMPT, ContentExtractor
 from snarf.specialists.dashboard_curator import DASHBOARD_CURATOR_SYSTEM_PROMPT
 from snarf.knowledge.indexer import KnowledgeIndexer
 from snarf.knowledge.local_repo_source import LocalRepoKnowledgeSource
+from snarf.knowledge.notion_source import NotionSource
 from snarf.knowledge.vector_store import VectorStore
 from snarf.memory.episodic import EpisodicMemory
 from snarf.mcp.tools import MCP_EXPOSED_TOOLS
@@ -358,7 +359,10 @@ SYSTEM_PREFIX = (
     "tipos de properties), notion_query_database (buscar/filtrar registros existentes) y "
     "notion_create_database_item/notion_update_page_properties (crear o modificar un registro, "
     "con las properties ya en la forma tipada exacta que exige esa database). "
-    "Reversibles desde el propio Notion — no llevan protocolo de confirmed.\n\n"
+    "Reversibles desde el propio Notion — no llevan protocolo de confirmed. "
+    "notion_index_start/notion_index_status vectorizan ese Notion (páginas y filas de databases) "
+    "al dominio 'personal' de la Knowledge Layer, mismo criterio que drive_index_start — usalos "
+    "solo cuando el fundador lo pida explícitamente.\n\n"
     "executive_board_consult convoca al board asesor de Inteligencia Ejecutiva (7 roles: cto, "
     "coo, research, ceo, cfo, cmo, creative) — nunca la llames por tu cuenta, solo cuando el "
     "fundador pida explícitamente una consulta al board. Elegí solo los roles relevantes a la "
@@ -1038,12 +1042,15 @@ TOOLS = [
         "name": "knowledge_search",
         "description": (
             "Búsqueda semántica sobre un dominio real de la Knowledge Layer (ver KNOWLEDGE.md). "
-            "domain='personal' busca sobre Drive ya indexado (mismo motor que drive_search_knowledge); "
-            "domain='code' busca sobre el propio repositorio de Snarf; domain='conversations' busca "
-            "sobre el propio historial de conversaciones (mismo motor que conversations_search, sin "
-            "filtro por proyecto acá — usar conversations_search si hace falta filtrar). Los demás "
-            "dominios (business/trading/marketing/finance) todavía no tienen fuente real conectada — "
-            "devuelve eso explícito en vez de inventar resultados."
+            "domain='personal' busca sobre Drive Y Notion ya indexados juntos (mismo motor que "
+            "drive_search_knowledge) — usá el parámetro opcional 'source' ('drive' o 'notion') para "
+            "acotar a uno solo cuando el fundador pregunte puntualmente por su Notion (áreas, "
+            "proyectos, notas, tareas) o puntualmente por Drive; domain='code' busca sobre el propio "
+            "repositorio de Snarf; domain='conversations' busca sobre el propio historial de "
+            "conversaciones (mismo motor que conversations_search, sin filtro por proyecto acá — usar "
+            "conversations_search si hace falta filtrar). Los demás dominios "
+            "(business/trading/marketing/finance) todavía no tienen fuente real conectada — devuelve "
+            "eso explícito en vez de inventar resultados."
         ),
         "input_schema": {
             "type": "object",
@@ -1054,6 +1061,11 @@ TOOLS = [
                     "enum": ["personal", "code", "conversations", "business", "trading", "marketing", "finance"],
                 },
                 "top_k": {"type": "integer"},
+                "source": {
+                    "type": "string",
+                    "enum": ["drive", "notion"],
+                    "description": "Solo tiene efecto con domain='personal' — acota a una sola fuente.",
+                },
             },
             "required": ["query", "domain"],
         },
@@ -1607,6 +1619,21 @@ TOOLS = [
         },
     },
     {
+        "name": "notion_index_start",
+        "description": (
+            "Arranca (o reanuda) en segundo plano la vectorización semántica del Notion del fundador "
+            "(páginas y filas de databases, dominio 'personal' — ver ADR 0173). Requiere NOTION_API_KEY "
+            "configurada y páginas compartidas con la integración. Tiene costo real (Voyage). Usala solo "
+            "cuando el fundador lo pida explícitamente."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "notion_index_status",
+        "description": "Progreso de la indexación de Notion en curso (o de la última corrida): procesados, indexados, saltados, errores.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "personality_set_sarcasm",
         "description": (
             "Ajusta el nivel de ingenio seco/sarcasmo de Snarf (0-10, en pasos de 0.5) a pedido "
@@ -1884,6 +1911,21 @@ class Orchestrator:
             vector_store=VectorStore(persist_directory=str(user_index_dir / "chroma")),
             manifest_path=user_index_dir / "manifest.json",
         )
+        # Notion, mismo dominio 'personal' que Drive (ADR 0173): motor
+        # genérico KnowledgeIndexer (pensado para fuentes sin la complejidad
+        # de extracción por mimetype que Drive sí tiene) sobre NotionSource,
+        # escribiendo al MISMO persist_directory que self._drive_indexer —
+        # así conviven en la misma colección física sin tocar
+        # _tool_knowledge_search, que ya busca ahí para domain='personal'.
+        # Manifiesto propio para que el tracking de qué ya se indexó no se
+        # pise con el de Drive (mismos IDs no garantizados entre las dos
+        # fuentes).
+        self._notion_indexer = KnowledgeIndexer(
+            source=NotionSource(self._notion),
+            embeddings=VoyageEmbeddings(),
+            vector_store=VectorStore(persist_directory=str(user_index_dir / "chroma")),
+            manifest_path=user_index_dir / "notion_manifest.json",
+        )
         # Knowledge Layer generalizada (ver KNOWLEDGE.md, ADR 0093): dominio
         # 'code' indexa el propio repositorio de Snarf — costo cero más allá
         # de embeddings, sin la complejidad de extracción por mimetype que
@@ -2139,6 +2181,8 @@ class Orchestrator:
             "notion_update_page_properties": lambda i: self._notion.update_page_properties(
                 i["page_id"], i["properties"]
             ),
+            "notion_index_start": lambda i: self._notion_indexer.start(),
+            "notion_index_status": lambda i: self._notion_indexer.status(),
         }
 
     @property
@@ -2233,7 +2277,9 @@ class Orchestrator:
         query = i["query"]
         top_k = i.get("top_k", 5)
         if domain == "personal":
-            return self._drive_indexer.search(query, top_k=top_k)
+            source = i.get("source")
+            where = {"location": source} if source else None
+            return self._drive_indexer.search(query, top_k=top_k, where=where)
         if domain == "code":
             return self._code_indexer.search(query, top_k=top_k)
         if domain == "conversations":

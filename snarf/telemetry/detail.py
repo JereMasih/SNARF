@@ -501,6 +501,8 @@ DETAIL_EXTRACTORS = {
     "knowledge_search": _from_input("query", prefix="buscando en lo indexado:"),
     "knowledge_index_start": _knowledge_index_start,
     "knowledge_index_status": _knowledge_index_status,
+    "notion_index_start": _drive_index_start,
+    "notion_index_status": _drive_index_status,
     # documents
     "drive_create_document": _from_input("title", prefix="redactando"),
     "drive_create_spreadsheet": _from_input("title", prefix="armando la planilla"),
