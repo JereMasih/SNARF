@@ -2,6 +2,26 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-19] Análisis de una conversación real: fricción de confirmed evitable y una afirmación falsa de "completo" (ADR 0177)
+
+- Analizando una conversación real del fundador (carta a su abuela, 7 turnos) se encontraron tres problemas
+  distintos: (1) Snarf afirmó "texto completo" en un Google Doc que en realidad solo tenía el fragmento
+  que él mismo había mostrado en el chat, sin volver a leer la nota real de Notion — viola el Principio VI
+  de FOUNDATION.md; (2) el error real de Google (API de Docs deshabilitada en el proyecto) llegaba como un
+  blob de varios KB sin traducir; (3) sabiendo desde un turno anterior que la edición iba a fallar, Snarf
+  igual gastó una ronda completa de confirmación repitiendo la misma acción condenada.
+- `read_document_text`/`replace_document_body` (`snarf/capabilities/google_drive.py`) ahora traducen el
+  error real `SERVICE_DISABLED` a un mensaje corto con la URL de activación real — cualquier otro
+  `HttpError` sigue pasando intacto.
+- Dos agregados al system prompt (`snarf/core/orchestrator.py`): no reusar un fragmento propio de un turno
+  anterior como si fuera la fuente completa de un entregable, y no repetir ciegamente una acción de alto
+  impacto ya sabida como imposible en esta misma conversación sin recordar el motivo primero.
+- El protocolo de `confirmed` en sí no se tocó — de los 7 turnos, solo 2 confirmaciones eran necesarias
+  por diseño; el resto de la fricción venía de los dos bugs de arriba, no del protocolo.
+- Fix real pendiente del fundador (no de código): habilitar la API de Google Docs en
+  console.developers.google.com (link real con su project id, ver ADR 0177).
+- 1505/1505 tests. Ver ADR 0177.
+
 ## [2026-08-19] Edición real de celdas de tabla en Notion (ADR 0176)
 
 - Cierra el límite conocido que había quedado anotado en ADR 0175: `notion_update_block` no servía para

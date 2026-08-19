@@ -225,3 +225,78 @@ def test_replace_document_body_skips_delete_when_document_is_already_empty():
     drive.replace_document_body("doc-1", "primer contenido")
     requests = docs_service._documents.batch_update_calls[0]["body"]["requests"]
     assert requests == [{"insertText": {"location": {"index": 1}, "text": "primer contenido"}}]
+
+
+class RaisingExecutable:
+    def __init__(self, exc):
+        self._exc = exc
+
+    def execute(self):
+        raise self._exc
+
+
+def _service_disabled_http_error(project="516998840048"):
+    """Mismo shape real que devuelve Google cuando la API de Docs está
+    deshabilitada en el proyecto (ver activity_log.jsonl, bug real de
+    producción del 2026-08-19) — reason SERVICE_DISABLED y una
+    activationUrl real adentro del mensaje."""
+    import json
+    from types import SimpleNamespace
+
+    from googleapiclient.errors import HttpError
+
+    url = f"https://console.developers.google.com/apis/api/docs.googleapis.com/overview?project={project}"
+    message = (
+        f"Google Docs API has not been used in project {project} before or it is disabled. "
+        f"Enable it by visiting {url} then retry."
+    )
+    content = json.dumps(
+        {"error": {"message": message, "status": "PERMISSION_DENIED", "details": [{"reason": "SERVICE_DISABLED"}]}}
+    ).encode("utf-8")
+    return HttpError(SimpleNamespace(status=403, reason="Forbidden"), content, uri="https://docs.googleapis.com/v1/documents/doc-1")
+
+
+def test_read_document_text_raises_a_clean_error_when_docs_api_is_disabled():
+    import pytest
+
+    drive = GoogleDrive.__new__(GoogleDrive)
+    docs_service = FakeDocsService(None)
+    docs_service._documents.get = lambda documentId: RaisingExecutable(_service_disabled_http_error())
+    drive._docs_client = lambda: docs_service
+
+    with pytest.raises(RuntimeError) as exc_info:
+        drive.read_document_text("doc-1")
+    assert "deshabilitada" in str(exc_info.value)
+    assert "console.developers.google.com/apis/api/docs.googleapis.com" in str(exc_info.value)
+
+
+def test_replace_document_body_raises_a_clean_error_when_docs_api_is_disabled():
+    import pytest
+
+    drive = GoogleDrive.__new__(GoogleDrive)
+    docs_service = FakeDocsService(None)
+    docs_service._documents.get = lambda documentId: RaisingExecutable(_service_disabled_http_error())
+    drive._docs_client = lambda: docs_service
+
+    with pytest.raises(RuntimeError) as exc_info:
+        drive.replace_document_body("doc-1", "texto nuevo")
+    assert "deshabilitada" in str(exc_info.value)
+
+
+def test_read_document_text_lets_unrelated_http_errors_through_unchanged():
+    import json
+    import pytest
+    from types import SimpleNamespace
+
+    from googleapiclient.errors import HttpError
+
+    content = json.dumps({"error": {"message": "Document not found"}}).encode("utf-8")
+    not_found = HttpError(SimpleNamespace(status=404, reason="Not Found"), content, uri="u")
+
+    drive = GoogleDrive.__new__(GoogleDrive)
+    docs_service = FakeDocsService(None)
+    docs_service._documents.get = lambda documentId: RaisingExecutable(not_found)
+    drive._docs_client = lambda: docs_service
+
+    with pytest.raises(HttpError):
+        drive.read_document_text("doc-1")

@@ -3,6 +3,7 @@ import re
 import threading
 
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseUpload
 
 from snarf.capabilities.base import Capability
@@ -26,6 +27,30 @@ GOOGLE_DOCS_EXPORT_MIME = {
 # vez de fallar. Una query construida internamente en este mismo archivo
 # (ver get_or_create_folder, con `=`/`in`) sigue pasando intacta.
 _DRIVE_QUERY_OPERATOR_RE = re.compile(r"\b(?:contains|in)\b|[=<>]")
+
+# Bug real encontrado en producción (2026-08-19, ver activity_log.jsonl y ADR
+# de esta ronda): la API de Google Docs puede estar deshabilitada en el
+# proyecto de Google Cloud del fundador (distinto de tener el scope OAuth
+# correcto — son dos cosas separadas) sin que nada lo avise hasta el primer
+# intento real de leer/editar un documento. El HttpError crudo de Google es
+# varios KB de JSON anidado repetido en cada intento — sin esto, Snarf (y
+# cualquiera leyendo activity_log después) tiene que releer ese blob entero
+# cada vez para encontrar la URL real de activación, en vez de un mensaje
+# corto y accionable.
+_ACTIVATION_URL_RE = re.compile(r"https://console\.developers\.google\.com/apis/api/[^\s'\"]+")
+
+
+def _raise_clean_docs_api_error(exc: HttpError) -> None:
+    message = str(exc)
+    if "SERVICE_DISABLED" not in message:
+        raise exc
+    match = _ACTIVATION_URL_RE.search(message)
+    url = match.group(0) if match else "https://console.cloud.google.com/apis/library/docs.googleapis.com"
+    raise RuntimeError(
+        "La API de Google Docs está deshabilitada en el proyecto de Google Cloud del fundador "
+        f"(distinto del scope OAuth, ya autorizado) — hay que habilitarla acá: {url}. Puede tardar "
+        "unos minutos en propagarse después de habilitarla."
+    ) from exc
 
 
 def _looks_like_drive_query_syntax(query: str) -> bool:
@@ -223,7 +248,10 @@ class GoogleDrive(Capability):
         export de Drive) — es lo que hace falta para poder mostrarle al
         fundador una vista previa de qué se va a reemplazar antes de tocar
         nada (ver replace_document_body)."""
-        doc = self._docs_client().documents().get(documentId=file_id).execute()
+        try:
+            doc = self._docs_client().documents().get(documentId=file_id).execute()
+        except HttpError as exc:
+            _raise_clean_docs_api_error(exc)
         return "".join(
             run.get("textRun", {}).get("content", "")
             for element in doc.get("body", {}).get("content", [])
@@ -236,13 +264,16 @@ class GoogleDrive(Capability):
         — el protocolo de confirmed vive en el handler del Orchestrator, no
         acá adentro, mismo criterio que delete_file/share_file."""
         docs = self._docs_client()
-        doc = docs.documents().get(documentId=file_id).execute()
-        end_index = doc["body"]["content"][-1]["endIndex"]
-        requests = []
-        if end_index > 1:
-            requests.append({"deleteContentRange": {"range": {"startIndex": 1, "endIndex": end_index - 1}}})
-        if new_text:
-            requests.append({"insertText": {"location": {"index": 1}, "text": new_text}})
-        if requests:
-            docs.documents().batchUpdate(documentId=file_id, body={"requests": requests}).execute()
+        try:
+            doc = docs.documents().get(documentId=file_id).execute()
+            end_index = doc["body"]["content"][-1]["endIndex"]
+            requests = []
+            if end_index > 1:
+                requests.append({"deleteContentRange": {"range": {"startIndex": 1, "endIndex": end_index - 1}}})
+            if new_text:
+                requests.append({"insertText": {"location": {"index": 1}, "text": new_text}})
+            if requests:
+                docs.documents().batchUpdate(documentId=file_id, body={"requests": requests}).execute()
+        except HttpError as exc:
+            _raise_clean_docs_api_error(exc)
         return {"documentId": file_id, "status": "updated"}
