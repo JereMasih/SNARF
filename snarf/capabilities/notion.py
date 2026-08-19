@@ -246,6 +246,47 @@ class Notion(Capability):
         response.raise_for_status()
         return {"id": block_id, "status": "updated"}
 
+    def get_table_row(self, block_id: str) -> dict:
+        """Una fila de tabla (`table_row`) completa, con el texto real de
+        CADA columna por separado — a diferencia de `get_block`/`list_blocks`
+        (que la aplanan a un solo string 'Col A | Col B'), esto conserva el
+        índice de columna real, necesario para no perder las demás celdas al
+        editar una sola con `update_table_cell`."""
+        self._require_available()
+        response = requests.get(f"{API_BASE}/blocks/{block_id}", headers=self._headers(), timeout=15)
+        response.raise_for_status()
+        block = response.json()
+        cells = block.get("table_row", {}).get("cells", [])
+        return {
+            "id": block.get("id"),
+            "cells": ["".join(t.get("plain_text", "") for t in cell) for cell in cells],
+        }
+
+    def update_table_cell(self, block_id: str, column_index: int, content: str) -> dict:
+        """Reemplaza el texto de UNA celda de una fila de tabla ya
+        existente, dado el índice de columna (0-based, mismo orden que
+        muestra 'Col A | Col B | ...' en read_page_text/list_blocks). La API
+        de Notion exige mandar TODAS las celdas de la fila en cada PATCH —
+        por eso primero trae la fila real completa y solo reemplaza la
+        celda pedida, para no borrar el resto de las columnas."""
+        self._require_available()
+        response = requests.get(f"{API_BASE}/blocks/{block_id}", headers=self._headers(), timeout=15)
+        response.raise_for_status()
+        row = response.json()
+        cells = row.get("table_row", {}).get("cells", [])
+        if column_index < 0 or column_index >= len(cells):
+            raise ValueError(f"column_index {column_index} fuera de rango — la fila tiene {len(cells)} columnas")
+        new_cells = list(cells)
+        new_cells[column_index] = [{"type": "text", "text": {"content": content}}]
+        response = requests.patch(
+            f"{API_BASE}/blocks/{block_id}",
+            headers=self._headers(),
+            json={"table_row": {"cells": new_cells}},
+            timeout=15,
+        )
+        response.raise_for_status()
+        return {"id": block_id, "status": "updated", "column_index": column_index}
+
     def delete_block(self, block_id: str) -> dict:
         """Borra (envía a la papelera de Notion, recuperable ahí — mismo
         criterio de reversibilidad que drive_delete_file) un bloque real."""

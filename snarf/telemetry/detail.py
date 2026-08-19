@@ -478,6 +478,11 @@ def _notion_delete_block(i, r):
     return _from_input_id("block_id", "borrando bloque:")(i, r)
 
 
+def _notion_update_table_cell(i, r):
+    column = i.get("column_index") if isinstance(i, dict) else None
+    return _from_input_id("block_id", f"editando columna {column} de:")(i, r)
+
+
 DETAIL_EXTRACTORS = {
     # utility
     "get_current_datetime": _get_current_datetime,
@@ -598,6 +603,7 @@ DETAIL_EXTRACTORS = {
     "notion_update_page_properties": _notion_update_page_properties,
     "notion_list_blocks": _notion_list_blocks,
     "notion_update_block": _notion_update_block,
+    "notion_update_table_cell": _notion_update_table_cell,
     "notion_delete_block": _notion_delete_block,
     # specialist_executive_board
     "executive_board_consult": _executive_board_consult,

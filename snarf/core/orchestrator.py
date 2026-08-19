@@ -158,6 +158,7 @@ HIGH_IMPACT_TOOLS = frozenset({
     # drive_update_document/drive_delete_file.
     "notion_update_block",
     "notion_delete_block",
+    "notion_update_table_cell",
 })
 BULK_READ_GATED_TOOLS = frozenset({
     "drive_list_files",
@@ -374,7 +375,11 @@ SYSTEM_PREFIX = (
     "agregar al final): notion_list_blocks trae cada fragmento real con su block_id y su type "
     "— llamala siempre antes de tocar nada, nunca inventes un block_id. notion_update_block "
     "reemplaza el texto de un bloque puntual (protocolo de confirmed una vez por bloque por "
-    "conversación, igual que drive_update_document); notion_delete_block lo borra (protocolo "
+    "conversación, igual que drive_update_document); para una celda de tabla real (type='table_row' "
+    "en notion_list_blocks) usá notion_update_table_cell en vez de notion_update_block — una fila "
+    "de tabla no tiene texto único, tiene columnas, y esta tool arma el payload correcto sin perder "
+    "las demás columnas (mismo protocolo de confirmed que notion_update_block). notion_delete_block "
+    "borra un bloque (protocolo "
     "de confirmed obligatorio SIEMPRE, cada vez, igual que drive_delete_file — nunca lo trates "
     "como ya confirmado por una edición anterior en la misma nota). "
     "notion_index_start/notion_index_status vectorizan ese Notion (páginas y filas de databases) "
@@ -1590,6 +1595,28 @@ TOOLS = [
         },
     },
     {
+        "name": "notion_update_table_cell",
+        "description": (
+            "Reemplaza el texto de UNA celda puntual de una fila de tabla (table_row) real dentro de una "
+            "página de Notion — notion_update_block NO sirve para esto (una fila de tabla no tiene "
+            "rich_text propio, tiene columnas). block_id es el id de la FILA (viene de notion_list_blocks, "
+            "type='table_row'); column_index es 0-based, mismo orden que el texto 'Col A | Col B | ...' que "
+            "ya viste en notion_read_page/notion_list_blocks para esa fila. Trae internamente las demás "
+            "columnas antes de escribir, para no perderlas. Herramienta de alto impacto: mismo protocolo de "
+            "confirmed que notion_update_block (una vez por bloque por conversación)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "block_id": {"type": "string"},
+                "column_index": {"type": "integer"},
+                "content": {"type": "string"},
+                "confirmed": {"type": "boolean"},
+            },
+            "required": ["block_id", "column_index", "content"],
+        },
+    },
+    {
         "name": "notion_delete_block",
         "description": (
             "Borra un bloque puntual de una página de Notion (queda en la papelera de Notion, "
@@ -2247,6 +2274,7 @@ class Orchestrator:
             "notion_read_page": lambda i: self._notion.read_page_text(i["page_id"]),
             "notion_list_blocks": lambda i: self._notion.list_blocks(i["page_id"]),
             "notion_update_block": self._tool_notion_update_block,
+            "notion_update_table_cell": self._tool_notion_update_table_cell,
             "notion_delete_block": self._tool_notion_delete_block,
             "notion_create_page": lambda i: self._notion.create_page(
                 i["parent_page_id"], i["title"], i.get("content", "")
@@ -2599,6 +2627,21 @@ class Orchestrator:
                 pass
             return self._pending(preview)
         return self._notion.update_block(i["block_id"], i["block_type"], i["content"])
+
+    def _tool_notion_update_table_cell(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            preview = {
+                "block_id": i.get("block_id"),
+                "column_index": i.get("column_index"),
+                "new_content": i.get("content"),
+            }
+            try:
+                row = self._notion.get_table_row(i["block_id"])
+                preview["current_cells"] = row["cells"]
+            except Exception:
+                pass
+            return self._pending(preview)
+        return self._notion.update_table_cell(i["block_id"], i["column_index"], i["content"])
 
     def _tool_notion_delete_block(self, i: dict) -> dict:
         if not i.get("confirmed"):

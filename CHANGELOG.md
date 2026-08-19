@@ -2,6 +2,17 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-19] Edición real de celdas de tabla en Notion (ADR 0176)
+
+- Cierra el límite conocido que había quedado anotado en ADR 0175: `notion_update_block` no servía para
+  filas de tabla (`table_row`) — la API de Notion las representa distinto (un array `cells` por columna,
+  no un `rich_text` único), y exige mandar TODAS las columnas en cada PATCH, no solo la que cambia.
+- `get_table_row`/`update_table_cell` (nuevos, `snarf/capabilities/notion.py`) traen la fila real completa
+  antes de escribir, para no perder las demás columnas al editar una sola celda. Tool nueva
+  `notion_update_table_cell` (alto impacto, mismo protocolo de `confirmed` que `notion_update_block`).
+- Verificado contra la tabla real de la nota de Sócrates (5 filas, columnas separadas correctamente).
+- 1502/1502 tests. Ver ADR 0176.
+
 ## [2026-08-19] Lectura y edición real del cuerpo de una nota de Notion (ADR 0175)
 
 - Verificando en vivo que Snarf entiende bien el Notion real del fundador (nota sobre Sócrates, proyecto

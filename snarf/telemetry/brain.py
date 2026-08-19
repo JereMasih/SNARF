@@ -185,6 +185,7 @@ TOOL_TO_NODE: dict[str, str] = {
     # 0175) — mismo criterio de CRUD sobre el nodo "notion" ya existente.
     "notion_list_blocks": "notion",
     "notion_update_block": "notion",
+    "notion_update_table_cell": "notion",
     "notion_delete_block": "notion",
     # Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094/0098): Especialista
     # Cognitivo nuevo (capa distinta de una Capacidad cruda, ver ADR 0003) —

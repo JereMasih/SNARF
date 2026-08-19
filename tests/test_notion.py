@@ -212,6 +212,52 @@ def test_update_block_sends_a_patch_with_the_block_type_as_key(monkeypatch):
     assert calls[0]["json"] == {"paragraph": {"rich_text": [{"type": "text", "text": {"content": "texto nuevo"}}]}}
 
 
+def test_get_table_row_returns_text_per_column(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    payload = {
+        "id": "row-1",
+        "table_row": {"cells": [[{"plain_text": "Col A"}], [{"plain_text": "Col B"}]]},
+    }
+    monkeypatch.setattr(module.requests, "get", lambda *a, **k: fake_response(payload))
+    assert make_notion().get_table_row("row-1") == {"id": "row-1", "cells": ["Col A", "Col B"]}
+
+
+def test_update_table_cell_replaces_only_the_target_column(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    get_payload = {
+        "id": "row-1",
+        "table_row": {"cells": [[{"plain_text": "Col A"}], [{"plain_text": "Col B"}]]},
+    }
+    monkeypatch.setattr(module.requests, "get", lambda *a, **k: fake_response(get_payload))
+
+    calls = []
+
+    def fake_patch(url, headers, json, timeout):
+        calls.append({"url": url, "json": json})
+        return fake_response({})
+
+    monkeypatch.setattr(module.requests, "patch", fake_patch)
+    result = make_notion().update_table_cell("row-1", 1, "Col B nueva")
+
+    assert result == {"id": "row-1", "status": "updated", "column_index": 1}
+    assert calls[0]["url"] == "https://api.notion.com/v1/blocks/row-1"
+    sent_cells = calls[0]["json"]["table_row"]["cells"]
+    assert sent_cells[0] == [{"plain_text": "Col A"}]
+    assert sent_cells[1] == [{"type": "text", "text": {"content": "Col B nueva"}}]
+
+
+def test_update_table_cell_rejects_an_out_of_range_column(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    payload = {"id": "row-1", "table_row": {"cells": [[{"plain_text": "Col A"}]]}}
+    monkeypatch.setattr(module.requests, "get", lambda *a, **k: fake_response(payload))
+
+    with pytest.raises(ValueError):
+        make_notion().update_table_cell("row-1", 5, "algo")
+
+
 def test_delete_block_sends_a_real_delete(monkeypatch):
     from snarf.capabilities import notion as module
 
