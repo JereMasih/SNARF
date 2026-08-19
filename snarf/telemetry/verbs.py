@@ -143,6 +143,9 @@ VERB_BY_SKILL: dict[str, str] = {
     "notion_query_database": "buscando en la database",
     "notion_create_database_item": "creando el registro",
     "notion_update_page_properties": "actualizando propiedades",
+    "notion_list_blocks": "leyendo los bloques de la página",
+    "notion_update_block": "editando un bloque de la página",
+    "notion_delete_block": "borrando un bloque de la página",
     # specialist_executive_board
     "executive_board_consult": "convocando al board",
     # specialist_skill_factory

@@ -181,6 +181,11 @@ TOOL_TO_NODE: dict[str, str] = {
     "notion_query_database": "notion",
     "notion_create_database_item": "notion",
     "notion_update_page_properties": "notion",
+    # Lectura/escritura real del cuerpo de una nota, bloque por bloque (ADR
+    # 0175) — mismo criterio de CRUD sobre el nodo "notion" ya existente.
+    "notion_list_blocks": "notion",
+    "notion_update_block": "notion",
+    "notion_delete_block": "notion",
     # Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094/0098): Especialista
     # Cognitivo nuevo (capa distinta de una Capacidad cruda, ver ADR 0003) —
     # va al tier "specialist" aunque tenga una sola tool, mismo criterio ya

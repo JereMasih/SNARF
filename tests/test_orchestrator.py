@@ -928,6 +928,8 @@ HIGH_IMPACT_TOOLS = [
     ),
     ("gmail_delete_label", "_gmail", "delete_label", {"label_id": "lbl-1"}),
     ("drive_delete_file", "_drive", "delete_file", {"file_id": "f-1"}),
+    ("notion_update_block", "_notion", "update_block", {"block_id": "b-1", "block_type": "paragraph", "content": "texto nuevo"}),
+    ("notion_delete_block", "_notion", "delete_block", {"block_id": "b-1"}),
 ]
 
 

@@ -55,6 +55,26 @@ def _property_value_text(prop: dict) -> str:
     return ""
 
 
+def _block_plain_text(block: dict) -> str:
+    """Extrae el texto plano real de un bloque de Notion — la mayoría lo
+    guarda bajo `block[type]["rich_text"]`, pero una fila de tabla
+    (`table_row`) lo guarda como una lista de celdas (`["cells"]`), cada una
+    su propia lista de rich_text; sin este caso especial una tabla se
+    recorre pero no aporta ningún texto legible."""
+    btype = block.get("type")
+    inner = block.get(btype)
+    if not isinstance(inner, dict):
+        return ""
+    if btype == "table_row":
+        return " | ".join(
+            "".join(t.get("plain_text", "") for t in cell) for cell in inner.get("cells", [])
+        )
+    rich_text = inner.get("rich_text")
+    if rich_text:
+        return "".join(t.get("plain_text", "") for t in rich_text)
+    return ""
+
+
 def format_properties_text(properties: dict) -> str:
     """Convierte el dict tipado de properties de una fila de database a texto
     plano legible ('Título: X. Estado: Y...') — es donde vive el contenido
@@ -137,18 +157,102 @@ class Notion(Capability):
         response.raise_for_status()
         return {"status": "appended", "page_id": page_id}
 
-    def read_page_text(self, page_id: str) -> str:
+    def _iter_page_blocks(self, block_id: str, _seen: set[str] | None = None) -> Iterator[dict]:
+        """Recorre TODO el contenido real de una página, no solo el nivel
+        superior — sin esto, una nota armada con toggles (acordeones) o con
+        el bloque especial `transcription` que arma el transcriptor de
+        reuniones de Notion (pestañas Resumen/Notas/Transcripción) se ve
+        vacía, aunque tenga contenido real adentro (ver ADR 0175). Devuelve
+        un dict por cada fragmento de texto real: `{id, type, text}` — id
+        es `None` para las etiquetas sintéticas que marcan cada pestaña de
+        una transcripción, nunca bloques editables de verdad."""
         self._require_available()
-        response = requests.get(f"{API_BASE}/blocks/{page_id}/children", headers=self._headers(), timeout=15)
+        if _seen is None:
+            _seen = set()
+        if block_id in _seen:
+            return
+        _seen.add(block_id)
+        response = requests.get(
+            f"{API_BASE}/blocks/{block_id}/children", headers=self._headers(), params={"page_size": 100}, timeout=15
+        )
         response.raise_for_status()
-        lines = []
         for block in response.json().get("results", []):
             block_type = block.get("type")
-            rich_text = block.get(block_type, {}).get("rich_text", [])
-            text = "".join(rt.get("plain_text", "") for rt in rich_text)
+            if block_type == "transcription":
+                title = "".join(t.get("plain_text", "") for t in block["transcription"].get("title", []))
+                yield {
+                    "id": None,
+                    "type": "transcription_title",
+                    "text": f"Transcripción de reunión: {title}" if title else "Transcripción de reunión",
+                }
+                children_map = block["transcription"].get("children", {})
+                for label, key in (
+                    ("Resumen", "summary_block_id"),
+                    ("Notas", "notes_block_id"),
+                    ("Transcripción", "transcript_block_id"),
+                ):
+                    child_id = children_map.get(key)
+                    if not child_id:
+                        continue
+                    section_items = list(self._iter_page_blocks(child_id, _seen))
+                    if not section_items:
+                        continue
+                    yield {"id": None, "type": "transcription_section", "text": f"[{label}]"}
+                    yield from section_items
+                continue
+            text = _block_plain_text(block)
             if text:
-                lines.append(text)
-        return "\n\n".join(lines)
+                yield {"id": block["id"], "type": block_type, "text": text}
+            if block.get("has_children"):
+                yield from self._iter_page_blocks(block["id"], _seen)
+
+    def read_page_text(self, page_id: str) -> str:
+        """Texto plano completo de una página, recorriendo toggles, tablas y
+        transcripciones de reunión (ver `_iter_page_blocks`) — no solo el
+        primer nivel de bloques."""
+        return "\n\n".join(item["text"] for item in self._iter_page_blocks(page_id) if item["text"])
+
+    def list_blocks(self, page_id: str) -> list[dict]:
+        """Igual que `read_page_text`, pero sin aplanar a un solo string —
+        cada fragmento real conserva su `id` de bloque y su `type`, para
+        poder pasarle un `block_id` concreto a `update_block`/`delete_block`
+        en vez de tener que adivinarlo."""
+        return list(self._iter_page_blocks(page_id))
+
+    def get_block(self, block_id: str) -> dict:
+        """Un solo bloque real, tal cual está hoy — pensado para mostrar una
+        vista previa de 'esto es lo que hay ahora' antes de update_block o
+        delete_block."""
+        self._require_available()
+        response = requests.get(f"{API_BASE}/blocks/{block_id}", headers=self._headers(), timeout=15)
+        response.raise_for_status()
+        block = response.json()
+        return {"id": block.get("id"), "type": block.get("type"), "text": _block_plain_text(block)}
+
+    def update_block(self, block_id: str, block_type: str, content: str) -> dict:
+        """Reemplaza el texto real de un bloque existente (paragraph,
+        heading_1/2/3, quote, callout, bulleted_list_item,
+        numbered_list_item, to_do, toggle — cualquier tipo con `rich_text`
+        propio). `block_type` tiene que coincidir con el tipo real del
+        bloque (ver `list_blocks`) — la API de Notion lo exige como key del
+        body, no lo adivina."""
+        self._require_available()
+        response = requests.patch(
+            f"{API_BASE}/blocks/{block_id}",
+            headers=self._headers(),
+            json={block_type: {"rich_text": [{"type": "text", "text": {"content": content}}]}},
+            timeout=15,
+        )
+        response.raise_for_status()
+        return {"id": block_id, "status": "updated"}
+
+    def delete_block(self, block_id: str) -> dict:
+        """Borra (envía a la papelera de Notion, recuperable ahí — mismo
+        criterio de reversibilidad que drive_delete_file) un bloque real."""
+        self._require_available()
+        response = requests.delete(f"{API_BASE}/blocks/{block_id}", headers=self._headers(), timeout=15)
+        response.raise_for_status()
+        return {"id": block_id, "status": "deleted"}
 
     def get_database(self, database_id: str) -> dict:
         """Schema real de una database (nombre + properties tipadas: select,

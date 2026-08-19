@@ -466,6 +466,18 @@ def _notion_update_page_properties(i, r):
     return _from_input_id("page_id", "actualizando propiedades de:")(i, r)
 
 
+def _notion_list_blocks(i, r):
+    return _from_input_id("page_id", "leyendo bloques de:")(i, r)
+
+
+def _notion_update_block(i, r):
+    return _from_input_id("block_id", "editando bloque:")(i, r)
+
+
+def _notion_delete_block(i, r):
+    return _from_input_id("block_id", "borrando bloque:")(i, r)
+
+
 DETAIL_EXTRACTORS = {
     # utility
     "get_current_datetime": _get_current_datetime,
@@ -584,6 +596,9 @@ DETAIL_EXTRACTORS = {
     "notion_query_database": _notion_query_database,
     "notion_create_database_item": _notion_create_database_item,
     "notion_update_page_properties": _notion_update_page_properties,
+    "notion_list_blocks": _notion_list_blocks,
+    "notion_update_block": _notion_update_block,
+    "notion_delete_block": _notion_delete_block,
     # specialist_executive_board
     "executive_board_consult": _executive_board_consult,
     # specialist_skill_factory

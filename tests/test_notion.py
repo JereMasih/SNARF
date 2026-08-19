@@ -70,12 +70,162 @@ def test_read_page_text_joins_paragraph_blocks(monkeypatch):
 
     payload = {
         "results": [
-            {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "primer párrafo"}]}},
-            {"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "segundo párrafo"}]}},
+            {"id": "p-1", "type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "primer párrafo"}]}},
+            {"id": "p-2", "type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "segundo párrafo"}]}},
         ]
     }
     monkeypatch.setattr(module.requests, "get", lambda *a, **k: fake_response(payload))
     assert make_notion().read_page_text("page-1") == "primer párrafo\n\nsegundo párrafo"
+
+
+def test_read_page_text_recurses_into_toggle_children(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    responses = {
+        "https://api.notion.com/v1/blocks/page-1/children": {
+            "results": [
+                {
+                    "id": "toggle-1",
+                    "type": "toggle",
+                    "has_children": True,
+                    "toggle": {"rich_text": [{"plain_text": "Sección oculta"}]},
+                }
+            ]
+        },
+        "https://api.notion.com/v1/blocks/toggle-1/children": {
+            "results": [
+                {
+                    "id": "p-1",
+                    "type": "paragraph",
+                    "has_children": False,
+                    "paragraph": {"rich_text": [{"plain_text": "contenido escondido"}]},
+                }
+            ]
+        },
+    }
+    monkeypatch.setattr(module.requests, "get", lambda url, **k: fake_response(responses[url]))
+    assert make_notion().read_page_text("page-1") == "Sección oculta\n\ncontenido escondido"
+
+
+def test_read_page_text_reads_meeting_transcription_summary_and_transcript(monkeypatch):
+    """Bloque especial `transcription` (transcriptor de reuniones de Notion,
+    ver ADR 0175): el contenido real de las pestañas Resumen/Notas/
+    Transcripción vive en tres bloques hijo referenciados por id, no en el
+    bloque `transcription` en sí — sin recorrerlos por separado, esa nota se
+    ve vacía."""
+    from snarf.capabilities import notion as module
+
+    responses = {
+        "https://api.notion.com/v1/blocks/page-1/children": {
+            "results": [
+                {
+                    "id": "transcription-1",
+                    "type": "transcription",
+                    "has_children": True,
+                    "transcription": {
+                        "title": [{"plain_text": "Reunión X"}],
+                        "children": {
+                            "summary_block_id": "summary-1",
+                            "notes_block_id": "notes-1",
+                            "transcript_block_id": "transcript-1",
+                        },
+                    },
+                }
+            ]
+        },
+        "https://api.notion.com/v1/blocks/summary-1/children": {
+            "results": [
+                {"id": "s-1", "type": "paragraph", "has_children": False, "paragraph": {"rich_text": [{"plain_text": "resumen real"}]}}
+            ]
+        },
+        "https://api.notion.com/v1/blocks/notes-1/children": {"results": []},
+        "https://api.notion.com/v1/blocks/transcript-1/children": {
+            "results": [
+                {"id": "t-1", "type": "paragraph", "has_children": False, "paragraph": {"rich_text": [{"plain_text": "texto transcripto"}]}}
+            ]
+        },
+    }
+    monkeypatch.setattr(module.requests, "get", lambda url, **k: fake_response(responses[url]))
+    text = make_notion().read_page_text("page-1")
+    assert "Transcripción de reunión: Reunión X" in text
+    assert "[Resumen]" in text
+    assert "resumen real" in text
+    assert "[Transcripción]" in text
+    assert "texto transcripto" in text
+    assert "[Notas]" not in text
+
+
+def test_read_page_text_extracts_table_row_cells(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    responses = {
+        "https://api.notion.com/v1/blocks/page-1/children": {
+            "results": [{"id": "table-1", "type": "table", "has_children": True, "table": {"table_width": 2}}]
+        },
+        "https://api.notion.com/v1/blocks/table-1/children": {
+            "results": [
+                {
+                    "id": "row-1",
+                    "type": "table_row",
+                    "has_children": False,
+                    "table_row": {"cells": [[{"plain_text": "Col A"}], [{"plain_text": "Col B"}]]},
+                }
+            ]
+        },
+    }
+    monkeypatch.setattr(module.requests, "get", lambda url, **k: fake_response(responses[url]))
+    assert make_notion().read_page_text("page-1") == "Col A | Col B"
+
+
+def test_list_blocks_keeps_ids_and_types(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    payload = {
+        "results": [{"id": "p-1", "type": "paragraph", "has_children": False, "paragraph": {"rich_text": [{"plain_text": "texto"}]}}]
+    }
+    monkeypatch.setattr(module.requests, "get", lambda *a, **k: fake_response(payload))
+    assert make_notion().list_blocks("page-1") == [{"id": "p-1", "type": "paragraph", "text": "texto"}]
+
+
+def test_get_block_returns_id_type_and_text(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    payload = {"id": "p-1", "type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "texto actual"}]}}
+    monkeypatch.setattr(module.requests, "get", lambda *a, **k: fake_response(payload))
+    assert make_notion().get_block("p-1") == {"id": "p-1", "type": "paragraph", "text": "texto actual"}
+
+
+def test_update_block_sends_a_patch_with_the_block_type_as_key(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+
+    def fake_patch(url, headers, json, timeout):
+        calls.append({"url": url, "json": json})
+        return fake_response({})
+
+    monkeypatch.setattr(module.requests, "patch", fake_patch)
+    result = make_notion().update_block("block-1", "paragraph", "texto nuevo")
+
+    assert result == {"id": "block-1", "status": "updated"}
+    assert calls[0]["url"] == "https://api.notion.com/v1/blocks/block-1"
+    assert calls[0]["json"] == {"paragraph": {"rich_text": [{"type": "text", "text": {"content": "texto nuevo"}}]}}
+
+
+def test_delete_block_sends_a_real_delete(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+
+    def fake_delete(url, headers, timeout):
+        calls.append(url)
+        return fake_response({})
+
+    monkeypatch.setattr(module.requests, "delete", fake_delete)
+    result = make_notion().delete_block("block-1")
+
+    assert result == {"id": "block-1", "status": "deleted"}
+    assert calls[0] == "https://api.notion.com/v1/blocks/block-1"
 
 
 def test_append_to_page_returns_status(monkeypatch):

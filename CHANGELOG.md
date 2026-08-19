@@ -2,6 +2,24 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-19] Lectura y edición real del cuerpo de una nota de Notion (ADR 0175)
+
+- Verificando en vivo que Snarf entiende bien el Notion real del fundador (nota sobre Sócrates, proyecto
+  "Mente Filosófica"), se encontró que `read_page_text` solo leía el primer nivel de bloques de una
+  página — una nota armada con toggles o con el bloque especial de transcripción de reuniones de Notion
+  (pestañas Resumen/Notas/Transcripción) se veía casi vacía, aunque tuviera contenido real adentro.
+- `Notion._iter_page_blocks` (nuevo, `snarf/capabilities/notion.py`) recorre recursivamente cualquier
+  bloque con hijos, con un caso especial para el bloque `transcription` (su contenido real vive en tres
+  bloques hijo referenciados por id, no documentados como "children" normales). Verificado contra la nota
+  real: pasó de un resumen casi vacío a 64.192 caracteres reales en 212 fragmentos.
+- `list_blocks`/`get_block` (nuevos) exponen ese mismo recorrido sin aplanar, con `block_id` y `type` por
+  fragmento. `update_block`/`delete_block` (nuevos) permiten editar o borrar un bloque puntual del cuerpo
+  de una nota — antes solo existía `append_to_page` (agregar al final). Tools nuevas
+  `notion_list_blocks`/`notion_update_block`/`notion_delete_block`, las dos últimas de alto impacto
+  (protocolo de `confirmed`, borrar siempre pide confirmación, editar solo la primera vez por bloque en la
+  conversación).
+- 1497/1497 tests. Ver ADR 0175.
+
 ## [2026-08-18] Watchdog de memoria MLX medía RSS, no Metal; ahora avisa al reiniciar (ADR 0174)
 
 - El mismo incidente de ADR 0128 (`com.snarf.mlx-fast` fugando hasta ~31GB) volvió a pasar con el watchdog

@@ -152,6 +152,12 @@ HIGH_IMPACT_TOOLS = frozenset({
     # Cockpit del fundador (Fase 9.1 adelantada, ADR 0137/0138): reinicia
     # infraestructura real de esta Mac.
     "ops_process_restart",
+    # Lectura/escritura real del cuerpo de una nota de Notion (ADR 0175):
+    # update_block reemplaza el texto de un bloque existente, delete_block
+    # lo borra — ambos tocan contenido real ya escrito, mismo criterio que
+    # drive_update_document/drive_delete_file.
+    "notion_update_block",
+    "notion_delete_block",
 })
 BULK_READ_GATED_TOOLS = frozenset({
     "drive_list_files",
@@ -350,8 +356,10 @@ SYSTEM_PREFIX = (
     "configurada — si no lo está, vas a recibir un error explícito de la herramienta, no "
     "lo disimules, decile al fundador que falta configurar la integración): "
     "notion_search (buscar páginas/bases de datos por texto), notion_read_page (leer el "
-    "texto de una página), notion_create_page (crear una subpágina nueva con título y "
-    "contenido) y notion_append_to_page (agregar contenido al final de una ya existente). "
+    "texto COMPLETO de una página — recorre toggles, tablas y el bloque especial de "
+    "transcripción de reuniones de Notion, ver ADR 0175), notion_create_page (crear una "
+    "subpágina nueva con título y contenido) y notion_append_to_page (agregar contenido al "
+    "final de una ya existente). "
     "Para trabajar con databases (bases de datos) reales del fundador: notion_get_database "
     "(trae el schema real de properties de esa database — SIEMPRE llamala primero antes de "
     "crear o actualizar un registro, para saber qué properties existen y de qué tipo es cada "
@@ -359,7 +367,16 @@ SYSTEM_PREFIX = (
     "tipos de properties), notion_query_database (buscar/filtrar registros existentes) y "
     "notion_create_database_item/notion_update_page_properties (crear o modificar un registro, "
     "con las properties ya en la forma tipada exacta que exige esa database). "
-    "Reversibles desde el propio Notion — no llevan protocolo de confirmed. "
+    "notion_search/notion_read_page/notion_create_page/notion_append_to_page/notion_get_database/"
+    "notion_query_database/notion_create_database_item/notion_update_page_properties son "
+    "reversibles desde el propio Notion — no llevan protocolo de confirmed. "
+    "Para editar o borrar contenido YA EXISTENTE dentro del cuerpo de una página (no solo "
+    "agregar al final): notion_list_blocks trae cada fragmento real con su block_id y su type "
+    "— llamala siempre antes de tocar nada, nunca inventes un block_id. notion_update_block "
+    "reemplaza el texto de un bloque puntual (protocolo de confirmed una vez por bloque por "
+    "conversación, igual que drive_update_document); notion_delete_block lo borra (protocolo "
+    "de confirmed obligatorio SIEMPRE, cada vez, igual que drive_delete_file — nunca lo trates "
+    "como ya confirmado por una edición anterior en la misma nota). "
     "notion_index_start/notion_index_status vectorizan ese Notion (páginas y filas de databases) "
     "al dominio 'personal' de la Knowledge Layer, mismo criterio que drive_index_start — usalos "
     "solo cuando el fundador lo pida explícitamente.\n\n"
@@ -1519,11 +1536,72 @@ TOOLS = [
     },
     {
         "name": "notion_read_page",
-        "description": "Lee el texto plano de una página de Notion, dado su page_id (obtenido con notion_search).",
+        "description": (
+            "Lee el texto plano COMPLETO de una página de Notion, dado su page_id (obtenido con "
+            "notion_search o de un registro de notion_query_database). Recorre todo el contenido real, "
+            "no solo el primer nivel — incluye lo que hay adentro de toggles (acordeones), tablas, y del "
+            "bloque especial de transcripción de reuniones de Notion (pestañas Resumen/Notas/"
+            "Transcripción, etiquetadas así en el texto que devuelve). Ver ADR 0175."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {"page_id": {"type": "string"}},
             "required": ["page_id"],
+        },
+    },
+    {
+        "name": "notion_list_blocks",
+        "description": (
+            "Igual que notion_read_page, pero sin aplanar a un solo texto — devuelve una lista de "
+            "fragmentos, cada uno con su block_id, su type (paragraph, heading_1/2/3, quote, callout, "
+            "bulleted_list_item, numbered_list_item, to_do, toggle, table_row, etc.) y su texto actual. "
+            "Usala ANTES de notion_update_block o notion_delete_block para identificar el block_id y el "
+            "type reales del fragmento puntual que el fundador quiere cambiar — nunca los inventes. Los "
+            "fragmentos con id=null son etiquetas sintéticas (secciones de una transcripción), no "
+            "bloques reales, no se pueden editar ni borrar."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"page_id": {"type": "string"}},
+            "required": ["page_id"],
+        },
+    },
+    {
+        "name": "notion_update_block",
+        "description": (
+            "Reemplaza el texto real de UN bloque puntual ya existente dentro de una página de Notion "
+            "(no toda la página) — block_id y block_type vienen de notion_list_blocks, tienen que "
+            "coincidir con el bloque real o la API de Notion lo rechaza. Solo sirve para tipos con texto "
+            "propio (paragraph, heading_1/2/3, quote, callout, bulleted_list_item, numbered_list_item, "
+            "to_do, toggle) — no para table_row ni para los bloques de transcripción en sí. Herramienta "
+            "de alto impacto: protocolo de confirmed obligatorio la primera vez que se edita CADA bloque "
+            "en una conversación; volver a editar el MISMO block_id más adelante en la misma conversación "
+            "no requiere pedir confirmación de nuevo (mismo criterio que drive_update_document)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "block_id": {"type": "string"},
+                "block_type": {"type": "string"},
+                "content": {"type": "string"},
+                "confirmed": {"type": "boolean"},
+            },
+            "required": ["block_id", "block_type", "content"],
+        },
+    },
+    {
+        "name": "notion_delete_block",
+        "description": (
+            "Borra un bloque puntual de una página de Notion (queda en la papelera de Notion, "
+            "recuperable ahí — mismo criterio de reversibilidad que drive_delete_file). Herramienta de "
+            "alto impacto: protocolo de confirmed obligatorio SIEMPRE, cada vez, sin excepción — a "
+            "diferencia de notion_update_block, borrar no se recuerda de una confirmación anterior en la "
+            "misma conversación."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"block_id": {"type": "string"}, "confirmed": {"type": "boolean"}},
+            "required": ["block_id"],
         },
     },
     {
@@ -2167,6 +2245,9 @@ class Orchestrator:
             "profile_set_name": self._tool_profile_set_name,
             "notion_search": lambda i: self._notion.search(i["query"]),
             "notion_read_page": lambda i: self._notion.read_page_text(i["page_id"]),
+            "notion_list_blocks": lambda i: self._notion.list_blocks(i["page_id"]),
+            "notion_update_block": self._tool_notion_update_block,
+            "notion_delete_block": self._tool_notion_delete_block,
             "notion_create_page": lambda i: self._notion.create_page(
                 i["parent_page_id"], i["title"], i.get("content", "")
             ),
@@ -2504,6 +2585,30 @@ class Orchestrator:
                 }
             )
         return self._drive.replace_document_body(i["file_id"], i["new_content"])
+
+    def _tool_notion_update_block(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            preview = {
+                "block_id": i.get("block_id"),
+                "block_type": i.get("block_type"),
+                "new_content": i.get("content"),
+            }
+            try:
+                preview["current_content"] = self._notion.get_block(i["block_id"])["text"]
+            except Exception:
+                pass
+            return self._pending(preview)
+        return self._notion.update_block(i["block_id"], i["block_type"], i["content"])
+
+    def _tool_notion_delete_block(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            preview = {"block_id": i.get("block_id")}
+            try:
+                preview["current_content"] = self._notion.get_block(i["block_id"])["text"]
+            except Exception:
+                pass
+            return self._pending(preview)
+        return self._notion.delete_block(i["block_id"])
 
     def _tool_project_delete(self, i: dict) -> dict:
         # A propósito solo borra el registro local de Snarf — ProjectManager.
