@@ -197,6 +197,14 @@ TOOL_TO_NODE: dict[str, str] = {
     "skill_factory_build": "specialist_skill_factory",
     "skill_factory_activate": "specialist_skill_factory",
     "skill_factory_status": "specialist_skill_factory",
+    # Reportes de bugs del fundador (ver snarf/specialists/bug_reports.py,
+    # ADR de esta ronda) — un solo nodo, mismo criterio que
+    # specialist_skill_factory (CRUD acotado, no amerita split como
+    # specialist_projects_*).
+    "bug_report_create": "specialist_bug_reports",
+    "bug_report_list": "specialist_bug_reports",
+    "bug_report_get": "specialist_bug_reports",
+    "bug_report_update_status": "specialist_bug_reports",
 }
 
 # Fase 9.2 del plan de observabilidad/n8n (ver ROADMAP_OBSERVABILIDAD_MULTIUSUARIO_N8N.md, ADR 0147):
@@ -291,6 +299,7 @@ NODE_TIER: dict[str, str] = {
     "specialist_executive_board_cmo": "specialist",
     "specialist_executive_board_creative": "specialist",
     "specialist_skill_factory": "specialist",
+    "specialist_bug_reports": "specialist",
     "memory": "capability",
     "drive": "capability",
     "knowledge": "capability",

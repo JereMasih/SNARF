@@ -226,6 +226,27 @@
     z-index: 7; opacity: 0; pointer-events: none; transition: opacity 0.28s ease;
   }
   .sidebar-overlay.open { opacity: 1; pointer-events: auto; }
+  .bug-report-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    z-index: 60; opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .bug-report-overlay.open { opacity: 1; pointer-events: auto; }
+  .bug-report-modal {
+    width: min(420px, 90vw);
+    background: rgba(8,14,16,0.97);
+    border: 1px solid rgba(79,216,232,0.3);
+    border-radius: 14px;
+    padding: 1.2rem;
+    color: var(--text-dim);
+  }
+  .bug-report-modal h3 { margin: 0 0 0.7rem; color: var(--glow); font-size: 1rem; font-weight: 500; }
+  .bug-report-modal textarea {
+    width: 100%; min-height: 120px; resize: vertical; box-sizing: border-box;
+    background: rgba(5,10,12,0.6); border: 1px solid rgba(79,216,232,0.25);
+    border-radius: 8px; color: var(--text); padding: 0.6rem; font: inherit; line-height: 1.4;
+  }
+  .bug-report-modal-actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.6rem; margin-top: 0.8rem; }
   .new-conv-btn {
     margin: 0 14px 14px;
     padding: 0.6rem 0.8rem;
@@ -1368,13 +1389,17 @@
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
   }
-  /* right:16px, arriba a la derecha — solo se muestra cuando hay una
+  /* right:16px, inmediatamente a la derecha de dashBtn (pedido explícito
+     del fundador, 2026-08-19) — .project-home-btn se corre un slot más
+     afuera (right:100px) para no superponerse cuando ambos están visibles. */
+  .bug-report-btn-mobile { right: 16px; }
+  /* right:100px, arriba a la derecha — solo se muestra cuando hay una
      conversación de proyecto cargada, nunca mientras se mira el propio home. */
   .project-home-btn {
     display: none;
     position: fixed;
     top: calc(env(safe-area-inset-top, 0px) + 14px);
-    right: 16px;
+    right: 100px;
     z-index: 6;
     width: 34px; height: 34px;
     border-radius: 50%;
@@ -2002,17 +2027,30 @@
       <button type="button" class="top-chrome-view-btn" id="topChromeViewHud" role="tab" aria-selected="false" title="Vista HUD" aria-label="Vista HUD"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="3.2"/><circle cx="10" cy="10" r="0.9" fill="currentColor" stroke="none"/></svg></button>
     </div>
     <div class="top-chrome-right">
+      <button class="chat-dock-icon-btn" id="topChromeReportBugBtn" title="reportar un problema">🐞</button>
       <span class="top-chrome-status" id="topChromeStatus"></span>
       <span class="top-chrome-model" id="topChromeModel"></span>
     </div>
   </div>
   <button class="dash-btn" id="dashBtn" title="Dashboard"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg></button>
+  <button class="dash-btn bug-report-btn-mobile" id="bugReportBtn" title="reportar un problema">🐞</button>
   <button class="project-home-btn" id="projectHomeBtn" title="home del proyecto">🏠</button>
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <div class="bug-report-overlay" id="bugReportOverlay">
+    <div class="bug-report-modal">
+      <h3>Reportar un problema</h3>
+      <textarea id="bugReportText" placeholder="¿Qué pasó? Contanos con el detalle que quieras — la conversación actual queda guardada como contexto, no hace falta que la repitas."></textarea>
+      <div class="bug-report-modal-actions">
+        <button class="chat-dock-icon-btn" id="bugReportCancelBtn" title="cancelar">✕</button>
+        <button class="new-conv-btn" id="bugReportSubmitBtn">Enviar reporte</button>
+      </div>
+    </div>
+  </div>
   <div class="sidebar" id="sidebar">
     <div class="sidebar-tabs">
       <button class="sidebar-tab active" data-tab="conversations">Conversaciones</button>
       <button class="sidebar-tab" data-tab="projects">Proyectos</button>
+      <button class="sidebar-tab" data-tab="bug_reports">Mis reportes</button>
     </div>
     <div class="sidebar-tab-panel active" data-tab-panel="conversations">
       <button class="new-conv-btn" id="newConvBtn">+ nueva conversación</button>
@@ -2022,6 +2060,9 @@
     <div class="sidebar-tab-panel" data-tab-panel="projects">
       <div class="project-panel-header" id="projectPanelHeader"></div>
       <div class="conv-list" id="projectList"></div>
+    </div>
+    <div class="sidebar-tab-panel" data-tab-panel="bug_reports">
+      <div class="conv-list" id="bugReportList"></div>
     </div>
     <div class="user-menu" id="userMenu">
       <button class="user-menu-btn" id="userMenuBtn">
@@ -2172,7 +2213,11 @@
           <button class="record-cancel-btn" id="recordCancelBtn" title="cancelar grabación" hidden>🗑</button>
         </div>
         <button class="icon-btn" id="micBtn" title="Tocá para grabar" disabled><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0"/><line x1="10" y1="15" x2="10" y2="17.5"/><line x1="7" y1="17.5" x2="13" y2="17.5"/></svg></button>
-        <button class="icon-btn" id="continuousModeBtn" title="Conversación continua (manos libres)" disabled><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M6.3 6.3a5.2 5.2 0 0 0 0 7.4M13.7 6.3a5.2 5.2 0 0 1 0 7.4"/><path d="M3.6 3.6a9.2 9.2 0 0 0 0 12.8M16.4 3.6a9.2 9.2 0 0 1 0 12.8" opacity="0.55"/></svg></button>
+        <!-- Inhabilitado a pedido del fundador (2026-08-19, ver ADR de esta ronda): no funcionaba
+             bien. `hidden` a propósito, no se borra el botón ni el bloque de soporte de ADR 0151
+             (más abajo) — mismo criterio que RunAtLoad en los LaunchAgents (CLAUDE.md), instalado
+             pero inerte, listo para reactivar quitando `hidden` cuando se retome. -->
+        <button class="icon-btn" id="continuousModeBtn" title="Conversación continua (manos libres)" disabled hidden><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M6.3 6.3a5.2 5.2 0 0 0 0 7.4M13.7 6.3a5.2 5.2 0 0 1 0 7.4"/><path d="M3.6 3.6a9.2 9.2 0 0 0 0 12.8M16.4 3.6a9.2 9.2 0 0 1 0 12.8" opacity="0.55"/></svg></button>
         <button class="icon-btn" id="textSendBtn" title="Enviar" disabled><svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="16" x2="10" y2="4"/><path d="M5 9l5-5 5 5"/></svg></button>
       </div>
       <div class="orb-wrap" id="orbWrap">
@@ -2226,6 +2271,7 @@
       <button class="chat-dock-icon-btn" id="chatDockDrawerBtn" title="conversaciones y proyectos">☰</button>
       <span class="chat-dock-title" id="chatDockTitle"></span>
       <button class="chat-dock-icon-btn" id="chatDockFocusBtn" title="modo enfoque">⤢</button>
+      <button class="chat-dock-icon-btn" id="chatDockReportBugBtn" title="reportar un problema">🐞</button>
     </div>
     <div class="chat-dock-body" id="chatDockBody"></div>
   </div>
@@ -2254,6 +2300,7 @@
     <div class="sidebar-tabs">
       <button class="sidebar-tab active" data-tab="conversations">Conversaciones</button>
       <button class="sidebar-tab" data-tab="projects">Proyectos</button>
+      <button class="sidebar-tab" data-tab="bug_reports">Mis reportes</button>
     </div>
     <div class="sidebar-tab-panel active" data-tab-panel="conversations">
       <button class="new-conv-btn" id="dashNewConvBtn">+ nueva conversación</button>
@@ -2263,6 +2310,9 @@
     <div class="sidebar-tab-panel" data-tab-panel="projects">
       <div class="project-panel-header" id="dashProjectPanelHeader"></div>
       <div class="conv-list" id="dashProjectList"></div>
+    </div>
+    <div class="sidebar-tab-panel" data-tab-panel="bug_reports">
+      <div class="conv-list" id="dashBugReportList"></div>
     </div>
   </div>
 
@@ -2449,6 +2499,8 @@ const projectList = document.getElementById("projectList");
 const dashProjectList = document.getElementById("dashProjectList");
 const projectPanelHeader = document.getElementById("projectPanelHeader");
 const dashProjectPanelHeader = document.getElementById("dashProjectPanelHeader");
+const bugReportList = document.getElementById("bugReportList");
+const dashBugReportList = document.getElementById("dashBugReportList");
 const logoutBtn = document.getElementById("logoutBtn");
 const textRow = document.getElementById("textRow");
 const textInput = document.getElementById("textInput");
@@ -3702,6 +3754,42 @@ async function refreshProjectList() {
   }
 }
 
+const BUG_REPORT_STATUS_LABEL = {
+  nuevo: "nuevo", clasificado: "clasificado", planificado: "planificado",
+  en_progreso: "en progreso", resuelto: "resuelto", descartado: "descartado",
+};
+
+function renderBugReportListInto(container, reports) {
+  container.innerHTML = "";
+  if (!reports.length) {
+    container.innerHTML = '<div class="conv-empty">sin reportes todavía</div>';
+    return;
+  }
+  reports.forEach((r) => {
+    const div = document.createElement("div");
+    div.className = "conv-item";
+    const statusLabel = BUG_REPORT_STATUS_LABEL[r.status] || r.status;
+    const extra = r.severity ? ` · ${r.severity}` : "";
+    div.innerHTML = `${escapeHtml(r.description.slice(0, 80))}<span class="conv-date">${statusLabel}${extra} · ${relativeTime(r.created_at)}</span>`;
+    container.appendChild(div);
+  });
+}
+
+// Sin cache stale-while-revalidate (a diferencia de refreshProjectList) a
+// propósito — reportar un bug no es frecuente, no amerita esa complejidad
+// extra todavía. Trae fresco cada vez que se abre la pestaña.
+async function refreshBugReportList() {
+  const targets = [bugReportList, dashBugReportList].filter((t) => t && t.isConnected);
+  if (!targets.length) return;
+  try {
+    const res = await apiFetch("/bug_reports");
+    const reports = await res.json();
+    targets.forEach((t) => renderBugReportListInto(t, reports));
+  } catch (e) {
+    targets.forEach((t) => { t.innerHTML = '<div class="conv-empty">error cargando reportes</div>'; });
+  }
+}
+
 function renderProjectHomeTasks(tasks) {
   const list = document.getElementById("projectHomeTaskList");
   if (!list) return;
@@ -3967,6 +4055,7 @@ document.querySelectorAll(".sidebar-tab").forEach((tab) => {
       .querySelectorAll(".sidebar-tab-panel")
       .forEach((p) => p.classList.toggle("active", p.dataset.tabPanel === tab.dataset.tab));
     if (tab.dataset.tab === "projects") refreshProjectList();
+    if (tab.dataset.tab === "bug_reports") refreshBugReportList();
   });
 });
 
@@ -4550,7 +4639,7 @@ const BRAIN_SPECIALIST_ORDER = [
   "specialist_gmail", "specialist_calendar", "specialist_morning_routine",
   "specialist_research", "specialist_content", "specialist_sales", "specialist_finance", "specialist_community", "specialist_agency",
   "specialist_projects_manage", "specialist_projects_tasks", "specialist_projects_conversations",
-  "specialist_executive_board", "specialist_skill_factory",
+  "specialist_executive_board", "specialist_skill_factory", "specialist_bug_reports",
 ];
 const BRAIN_CAPABILITY_ORDER = ["memory", "drive", "knowledge", "documents", "gmail_read", "gmail_manage", "gmail_send", "calendar_view", "calendar_edit", "youtube", "notion", "llm", "stt", "tts", "personality", "utility"];
 // Fase 9.2 (ADR 0147): los 7 roles reales del board ejecutivo
@@ -4604,6 +4693,7 @@ const BRAIN_NODE_LABELS = {
   specialist_executive_board_cmo: "Board: CMO",
   specialist_executive_board_creative: "Board: Creative",
   specialist_skill_factory: "Skill Factory",
+  specialist_bug_reports: "Reportes de bugs",
   memory: "Memoria",
   drive: "Drive",
   knowledge: "Conocimiento",
@@ -4660,6 +4750,7 @@ const BRAIN_NODE_ICON_PATHS = {
   specialist_executive_board_cmo: '<circle cx="10" cy="10" r="3.4"/>',
   specialist_executive_board_creative: '<circle cx="10" cy="10" r="3.4"/>',
   specialist_skill_factory: '<path d="M13.5 3a3.5 3.5 0 0 0-4.8 4.4L3 13.1a1.6 1.6 0 0 0 2.3 2.3l5.7-5.7A3.5 3.5 0 0 0 15.5 5.5l-2 2-1.5-1.5 2-2Z"/>',
+  specialist_bug_reports: '<circle cx="10" cy="10" r="7"/><line x1="10" y1="6.3" x2="10" y2="10.6"/><circle cx="10" cy="13.4" r="0.6" fill="currentColor" stroke="none"/>',
   memory: '<ellipse cx="10" cy="5.2" rx="6.3" ry="2.1"/><path d="M3.7 5.2v9.6c0 1.16 2.82 2.1 6.3 2.1s6.3-.94 6.3-2.1V5.2"/><path d="M3.7 10c0 1.16 2.82 2.1 6.3 2.1s6.3-.94 6.3-2.1"/>',
   drive: '<path d="M2.5 6a1 1 0 0 1 1-1h3.6l1.4 1.8H16.5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V6Z"/>',
   knowledge: '<path d="M10 5.6c-1.3-1-3.2-1.5-5.5-1.5-.55 0-1 .45-1 1v9c0 .55.45 1 1 1 2.3 0 4.2.5 5.5 1.5 1.3-1 3.2-1.5 5.5-1.5.55 0 1-.45 1-1v-9c0-.55-.45-1-1-1-2.3 0-4.2.5-5.5 1.5Z"/><line x1="10" y1="5.6" x2="10" y2="16.6"/>',
@@ -4726,6 +4817,7 @@ const BRAIN_NODE_COLOR_CLASS = {
   specialist_executive_board_cmo: "brain-color-magenta",
   specialist_executive_board_creative: "brain-color-magenta",
   specialist_skill_factory: "brain-color-magenta",
+  specialist_bug_reports: "brain-color-magenta",
 };
 // Categoría real de archivo (categorize_mime, snarf/knowledge/extraction.py)
 // → color del pulso puntual cuando ese archivo específico entra — la
@@ -5138,6 +5230,7 @@ const HUD_MINI_NODE_META = {
   specialist_projects_conversations: { label: "proy·chat", icon: "PRC" },
   specialist_executive_board: { label: "board ejecutivo", icon: "EXB" },
   specialist_skill_factory: { label: "skill factory", icon: "SKF" },
+  specialist_bug_reports: { label: "reportes de bugs", icon: "BUG" },
   memory: { label: "memoria", icon: "MEM" },
   drive: { label: "drive", icon: "DRV" },
   knowledge: { label: "knowledge", icon: "KNW" },
@@ -5169,6 +5262,7 @@ const HUD_BUBBLE_FAMILY = {
   stt: "voice", tts: "voice",
   llm: "think", specialist_executive_board: "think",
   personality: "admin", utility: "admin", specialist_finance: "admin", specialist_skill_factory: "admin", specialist_morning_routine: "admin",
+  specialist_bug_reports: "admin",
   specialist_projects_manage: "admin", specialist_projects_tasks: "admin", specialist_projects_conversations: "admin",
   orchestrator: "system", cost: "system",
   input_text: "input", input_voice: "input", input_file: "input"
@@ -6810,6 +6904,56 @@ function reparentChatOutOfDock() {
   updateChatTitleDisplays();
 }
 chatDockFocusBtn.addEventListener("click", openChatFocus);
+
+// Reporte de bugs (ver ADR de esta ronda): captura en silencio la
+// conversationId activa y qué vista está abierta — el fundador solo
+// escribe qué pasó, nada más. POST directo (no vía /send) para que
+// reportar sea instantáneo y no dependa de un turno de LLM.
+const bugReportOverlay = document.getElementById("bugReportOverlay");
+const bugReportText = document.getElementById("bugReportText");
+const bugReportSubmitBtn = document.getElementById("bugReportSubmitBtn");
+const bugReportCancelBtn = document.getElementById("bugReportCancelBtn");
+
+function openBugReportModal() {
+  bugReportText.value = "";
+  bugReportOverlay.classList.add("open");
+  bugReportSubmitBtn.textContent = "Enviar reporte";
+  bugReportSubmitBtn.disabled = false;
+  setTimeout(() => bugReportText.focus(), 50);
+}
+
+function closeBugReportModal() {
+  bugReportOverlay.classList.remove("open");
+}
+
+async function submitBugReport() {
+  const description = bugReportText.value.trim();
+  if (!description) return;
+  bugReportSubmitBtn.disabled = true;
+  bugReportSubmitBtn.textContent = "Enviando...";
+  try {
+    const res = await apiFetch("/bug_reports", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description, conversation_id: conversationId, view: currentView }),
+    });
+    if (!res.ok) throw new Error("bug_reports HTTP " + res.status);
+    bugReportSubmitBtn.textContent = "¡Reportado!";
+    refreshBugReportList();
+    setTimeout(closeBugReportModal, 700);
+  } catch (e) {
+    bugReportSubmitBtn.textContent = "Enviar reporte";
+    bugReportSubmitBtn.disabled = false;
+    bugReportText.placeholder = "No se pudo enviar el reporte — probá de nuevo en un momento.";
+  }
+}
+
+document.getElementById("chatDockReportBugBtn").addEventListener("click", openBugReportModal);
+document.getElementById("topChromeReportBugBtn").addEventListener("click", openBugReportModal);
+document.getElementById("bugReportBtn").addEventListener("click", openBugReportModal);
+bugReportCancelBtn.addEventListener("click", closeBugReportModal);
+bugReportOverlay.addEventListener("click", (e) => { if (e.target === bugReportOverlay) closeBugReportModal(); });
+bugReportSubmitBtn.addEventListener("click", submitBugReport);
 
 // Drawer lateral de conversaciones/proyectos (Decisión 8, solo Vista HUD) —
 // reparenta el #sidebar real (nunca lo clona), igual criterio que

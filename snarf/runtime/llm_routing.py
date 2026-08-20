@@ -89,6 +89,11 @@ ROLES = (
     # (mlx_local_fast, gratis) hasta nuevo aviso, y tiene que quedar
     # elegible desde Configuración como cualquier otro rol, no hardcodeado.
     "vision_demo",
+    # Clasificación automática de reportes de bugs del fundador (categoría/
+    # severidad/plan corto, ver snarf/specialists/bug_reports.py y ADR de
+    # esta ronda) — tarea acotada, mismo criterio que project_summary/
+    # dashboard_curator: modelo barato por default, elegible aparte.
+    "bug_triage",
 )
 
 # Definida acá arriba (no junto a MLX_LOCAL_FAST_BASE_URL más abajo, donde
@@ -134,6 +139,7 @@ DEFAULT_ROUTING = {
     "client_status": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
     "skill_factory_writer": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
     "vision_demo": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
+    "bug_triage": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
 }
 
 # Cada proveedor mapea a una de las 3 Capacidades reales. xai/groq_llama

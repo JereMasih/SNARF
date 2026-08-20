@@ -67,6 +67,7 @@ from snarf.runtime import vision_status
 from snarf.runtime import vision_demo
 from snarf.knowledge.extraction import categorize_mime
 from snarf.specialists import dashboard_curator as dashboard_curator_module
+from snarf.specialists.bug_reports import TRIAGE_SYSTEM_PROMPT as BUG_TRIAGE_SYSTEM_PROMPT
 from snarf.specialists.dashboard_curator import DashboardCuratorSpecialist
 from snarf.telemetry import (
     activity_log,
@@ -240,6 +241,51 @@ async def _periodic_dashboard_curation_loop():
         last_signal = signal
 
 
+# Clasificación automática de reportes de bugs (ver snarf/specialists/
+# bug_reports.py y ADR de esta ronda): cada corrida clasifica (categoría/
+# severidad/plan) los reportes todavía en estado 'nuevo' y los mueve a
+# 'planificado' — nunca ejecuta un fix por sí sola (eso es Fase 2, ronda
+# aparte, con guardrails reales de nunca pushear/reiniciar sin confirmación
+# del fundador). Mismo criterio de cadencia que el curador del dashboard:
+# no correr en cada request, solo este loop de fondo.
+BUG_TRIAGE_INTERVAL_SECONDS = 15 * 60
+
+
+def _classify_bug_report(report: dict) -> dict | None:
+    llm = llm_routing.build_resilient_llm("bug_triage")
+    if not llm.available:
+        return None
+    context_lines = [f"Reporte del fundador: {report['description']}"]
+    recent_turns = report["context"]["recent_turns"]
+    if recent_turns:
+        context_lines.append("Contexto real de la conversación donde pasó:")
+        for turn in recent_turns:
+            context_lines.append(f"- Usuario: {turn['input']}")
+            context_lines.append(f"  Snarf: {turn['response']}")
+    try:
+        response = llm.generate(
+            system=BUG_TRIAGE_SYSTEM_PROMPT, messages=[{"role": "user", "content": "\n".join(context_lines)}]
+        )
+        parsed = json.loads(response.text)
+    except Exception:
+        return None
+    if not isinstance(parsed, dict) or not all(k in parsed for k in ("category", "severity", "plan")):
+        return None
+    return parsed
+
+
+async def _periodic_bug_triage_loop():
+    while True:
+        await asyncio.sleep(BUG_TRIAGE_INTERVAL_SECONDS)
+        for report in orchestrator.bug_reports.list_reports(status="nuevo"):
+            classification = _classify_bug_report(report)
+            if classification is None:
+                continue
+            orchestrator.bug_reports.apply_classification(
+                report["id"], classification["category"], classification["severity"], classification["plan"]
+            )
+
+
 @app.on_event("startup")
 async def warmup():
     orchestrator.warmup()
@@ -266,6 +312,7 @@ async def warmup():
         audio_store.purge_older_than(AUDIO_PURGE_MAX_AGE_SECONDS)
         asyncio.create_task(_periodic_audio_purge_loop())
         asyncio.create_task(_periodic_dashboard_curation_loop())
+        asyncio.create_task(_periodic_bug_triage_loop())
 
 
 @app.on_event("shutdown")
@@ -354,6 +401,17 @@ class ProjectPromptRequest(BaseModel):
 
 class ProjectTextRequest(BaseModel):
     text: str
+
+
+class BugReportCreateRequest(BaseModel):
+    description: str
+    conversation_id: str | None = None
+    view: str | None = None
+
+
+class BugReportStatusRequest(BaseModel):
+    status: str
+    note: str = ""
 
 
 class ConversationProjectRequest(BaseModel):
@@ -1885,6 +1943,44 @@ def delete_project(project_id: str, confirmed: bool = False, user_id: str = Depe
     if orch.projects.get(project_id) is None:
         raise HTTPException(404, "proyecto no encontrado")
     return orch.projects.delete(project_id)
+
+
+@app.post("/bug_reports")
+def create_bug_report(payload: BugReportCreateRequest, user_id: str = Depends(require_user)):
+    # Endpoint REST directo, no vía /send: reportar un bug tiene que ser
+    # instantáneo y funcionar incluso si el LLM está lento/caído — no
+    # depende de un turno de conversación. El frontend manda conversation_id
+    # explícito (la contextvar de snarf.telemetry.context solo existe
+    # DENTRO de un turno real de Orchestrator.handle(), no acá).
+    orch = get_orchestrator(user_id)
+    return orch.bug_reports.create(payload.description, conversation_id=payload.conversation_id, view=payload.view)
+
+
+@app.get("/bug_reports")
+def list_bug_reports(status: str | None = None, user_id: str = Depends(require_user)):
+    orch = get_orchestrator(user_id)
+    return orch.bug_reports.list_reports(status=status)
+
+
+@app.get("/bug_reports/{report_id}")
+def get_bug_report(report_id: str, user_id: str = Depends(require_user)):
+    orch = get_orchestrator(user_id)
+    report = orch.bug_reports.get(report_id)
+    if report is None:
+        raise HTTPException(404, "reporte no encontrado")
+    return report
+
+
+@app.patch("/bug_reports/{report_id}/status")
+def update_bug_report_status(report_id: str, payload: BugReportStatusRequest, user_id: str = Depends(require_user)):
+    orch = get_orchestrator(user_id)
+    try:
+        report = orch.bug_reports.update_status(report_id, payload.status, note=payload.note)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if report is None:
+        raise HTTPException(404, "reporte no encontrado")
+    return report
 
 
 def _lan_ip() -> str:

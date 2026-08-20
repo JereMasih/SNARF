@@ -61,6 +61,8 @@ from snarf.runtime import (
 from snarf.executive.roles import ROLE_CONFIGS as EXECUTIVE_ROLE_CONFIGS
 from snarf.executive.specialist import ExecutiveBoardSpecialist
 from snarf.specialists.gmail_digest import SYSTEM_PROMPT as GMAIL_DIGEST_SYSTEM_PROMPT, GmailDigestSpecialist
+from snarf.specialists.bug_reports import STATUSES as BUG_REPORT_STATUSES
+from snarf.specialists.bug_reports import TRIAGE_SYSTEM_PROMPT, BugReports
 from snarf.specialists.project_manager import (
     SUBFOLDER_SUGGESTION_SYSTEM_PROMPT,
     SUMMARY_SYSTEM_PROMPT as PROJECT_SUMMARY_SYSTEM_PROMPT,
@@ -408,6 +410,14 @@ SYSTEM_PREFIX = (
     "notion_index_start/notion_index_status vectorizan ese Notion (páginas y filas de databases) "
     "al dominio 'personal' de la Knowledge Layer, mismo criterio que drive_index_start — usalos "
     "solo cuando el fundador lo pida explícitamente.\n\n"
+    "Reportes de bugs (bug_report_create/bug_report_list/bug_report_get/bug_report_update_status): el "
+    "fundador reporta un problema normalmente desde un botón dedicado de la interfaz, no en el chat — "
+    "pero si te pregunta por un bug reportado (en ESTA conversación o en cualquier otra), usá "
+    "bug_report_list/bug_report_get para traer el contexto real (conversación original, últimas turnos, "
+    "categoría/severidad/plan si ya fue clasificado) ANTES de responder — nunca asumas que te acordás "
+    "solo de un reporte viejo, y nunca inventes su estado o su plan. Un reporte clasificado automáticamente "
+    "trae `plan` con lo que habría que investigar/corregir — mostráselo tal cual si el fundador pregunta "
+    "qué se va a hacer, no lo repitas distinto.\n\n"
     "executive_board_consult convoca al board asesor de Inteligencia Ejecutiva (7 roles: cto, "
     "coo, research, ceo, cfo, cmo, creative) — nunca la llames por tu cuenta, solo cuando el "
     "fundador pida explícitamente una consulta al board. Elegí solo los roles relevantes a la "
@@ -1551,6 +1561,66 @@ TOOLS = [
         },
     },
     {
+        "name": "bug_report_create",
+        "description": (
+            "Crea un reporte de bug real, con la conversación activa capturada como contexto — reversible "
+            "(se puede descartar con bug_report_update_status), no lleva protocolo de confirmed. Usala "
+            "solo cuando el fundador te pida explícitamente reportar/anotar un problema en la "
+            "conversación (el flujo normal es el botón dedicado de la interfaz, esto es para cuando lo "
+            "pide en el chat en su lugar)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"description": {"type": "string"}},
+            "required": ["description"],
+        },
+    },
+    {
+        "name": "bug_report_list",
+        "description": (
+            "Lista los reportes de bugs del fundador (id, descripción, estado, categoría, severidad, "
+            "fecha) — opcionalmente filtrados por status ('nuevo', 'clasificado', 'planificado', "
+            "'en_progreso', 'resuelto', 'descartado'). Los reporta el fundador desde el botón de reporte "
+            "de la interfaz, no algo que vos crees por tu cuenta salvo pedido explícito."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"status": {"type": "string", "enum": list(BUG_REPORT_STATUSES)}},
+        },
+    },
+    {
+        "name": "bug_report_get",
+        "description": (
+            "Trae el detalle completo de un reporte de bug puntual, incluido el contexto real capturado "
+            "al momento de reportarlo (conversation_id y las últimas turnos de esa conversación) — usala "
+            "SIEMPRE que el fundador pregunte por un bug reportado, para traer el contexto original en "
+            "vez de asumir que te acordás solo, aunque sea una conversación distinta a esta."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"report_id": {"type": "string"}},
+            "required": ["report_id"],
+        },
+    },
+    {
+        "name": "bug_report_update_status",
+        "description": (
+            "Cambia el estado de un reporte de bug (con una nota corta de qué pasó) — reversible, sin "
+            "protocolo de confirmed, mismo criterio que project_add_note. Usala cuando el fundador pida "
+            "explícitamente marcar un bug como resuelto/descartado/en progreso, o para dejar constancia "
+            "real de que ya lo estás mirando."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "report_id": {"type": "string"},
+                "status": {"type": "string", "enum": list(BUG_REPORT_STATUSES)},
+                "note": {"type": "string"},
+            },
+            "required": ["report_id", "status"],
+        },
+    },
+    {
         "name": "notion_search",
         "description": (
             "Busca páginas y bases de datos en el Notion del fundador por texto. Requiere NOTION_API_KEY "
@@ -2134,6 +2204,7 @@ class Orchestrator:
             ),
             lambda: prompt_registry.get_active_text("project_manager_summary", PROJECT_SUMMARY_SYSTEM_PROMPT),
         )
+        self._bug_reports = BugReports(lambda: self._memory, user_id)
         # Fase I, rama Agency — único código genuinamente nuevo (el resto
         # ya está cubierto por conversación + drive_create_document, mismo
         # criterio que Proposal Drafts en la rama Sales).
@@ -2291,6 +2362,14 @@ class Orchestrator:
             "project_assign_conversation": lambda i: self._memory.assign_conversation(i["conversation_id"], i["project_id"]),
             "project_unassign_conversation": lambda i: self._memory.unassign_conversation(i["conversation_id"]),
             "project_list_conversations": lambda i: self._memory.list_conversations(project_id=i["project_id"]),
+            "bug_report_create": lambda i: self._bug_reports.create(
+                i["description"], conversation_id=context.get_conversation_id(), view="chat"
+            ),
+            "bug_report_list": lambda i: self._bug_reports.list_reports(status=i.get("status")),
+            "bug_report_get": lambda i: self._bug_reports.get(i["report_id"]),
+            "bug_report_update_status": lambda i: self._bug_reports.update_status(
+                i["report_id"], i["status"], note=i.get("note", "")
+            ),
             "personality_set_sarcasm": self._tool_personality_set_sarcasm,
             "profile_set_name": self._tool_profile_set_name,
             "notion_search": lambda i: self._notion.search(i["query"]),
@@ -2380,6 +2459,10 @@ class Orchestrator:
     @property
     def projects(self) -> ProjectManager:
         return self._projects
+
+    @property
+    def bug_reports(self) -> BugReports:
+        return self._bug_reports
 
     def warmup(self) -> None:
         self._llm.warmup()

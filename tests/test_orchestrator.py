@@ -908,6 +908,41 @@ def test_handle_tool_records_unknown_tool_calls_in_the_activity_log(orchestrator
     assert entries[-1]["status"] == "unknown_tool"
 
 
+def test_bug_report_tools_create_list_get_and_update_status_end_to_end(orchestrator):
+    created = orchestrator._handle_tool("bug_report_create", {"description": "el documento quedó incompleto"})
+    assert created["description"] == "el documento quedó incompleto"
+    assert created["status"] == "nuevo"
+
+    listed = orchestrator._handle_tool("bug_report_list", {})
+    assert [r["id"] for r in listed] == [created["id"]]
+
+    fetched = orchestrator._handle_tool("bug_report_get", {"report_id": created["id"]})
+    assert fetched["id"] == created["id"]
+
+    updated = orchestrator._handle_tool(
+        "bug_report_update_status", {"report_id": created["id"], "status": "resuelto", "note": "corregido"}
+    )
+    assert updated["status"] == "resuelto"
+
+    filtered = orchestrator._handle_tool("bug_report_list", {"status": "resuelto"})
+    assert [r["id"] for r in filtered] == [created["id"]]
+
+
+def test_bug_report_create_captures_the_active_conversation_id_from_context(orchestrator):
+    from snarf.telemetry import context
+
+    orchestrator.memory.append("visual", "hola snarf", "hola Jere", conversation_id="c1")
+    token_before = context.get_conversation_id()
+    context.set_conversation_id("c1")
+    try:
+        created = orchestrator._handle_tool("bug_report_create", {"description": "algo salió mal"})
+    finally:
+        context.set_conversation_id(token_before)
+    assert created["context"]["conversation_id"] == "c1"
+    assert created["context"]["view"] == "chat"
+    assert created["context"]["recent_turns"][0]["input"] == "hola snarf"
+
+
 # (nombre de la tool, atributo de capacidad en Orchestrator, método real, input base)
 HIGH_IMPACT_TOOLS = [
     ("gmail_send_message", "_gmail", "send_message", {"to": "a@b.com", "subject": "s", "body": "b"}),

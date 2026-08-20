@@ -343,6 +343,19 @@ def _skill_factory_activate(i, r):
     return _quoted("activando", _input_get(i, "proposal_id"))
 
 
+# --- specialist_bug_reports ---------------------------------------------
+
+
+def _bug_report_create(i, r):
+    return _quoted("reportando:", _input_get(i, "description"))
+
+
+def _bug_report_update_status(i, r):
+    report_id = _short_id(_input_get(i, "report_id"))
+    status = _input_get(i, "status")
+    return _truncate(f"reporte {report_id} -> {status}") if report_id else None
+
+
 # --- specialist_projects_manage ---------------------------------------
 
 
@@ -611,6 +624,11 @@ DETAIL_EXTRACTORS = {
     "skill_factory_build": _skill_factory_build,
     "skill_factory_activate": _skill_factory_activate,
     "skill_factory_status": _from_input("proposal_id", prefix="revisando"),
+    # specialist_bug_reports
+    "bug_report_create": _bug_report_create,
+    "bug_report_list": _from_input("status", prefix="filtrando por estado:"),
+    "bug_report_get": _from_input_id("report_id", "abriendo reporte:"),
+    "bug_report_update_status": _bug_report_update_status,
 }
 
 

@@ -1689,6 +1689,118 @@ def test_upload_with_project_id_uploads_to_the_project_folder_and_tags_the_index
     assert index_calls[0] == {"project_id": project_id}
 
 
+@pytest.fixture
+def bug_reports_fixture(tmp_path, monkeypatch):
+    from snarf.specialists import bug_reports as module
+
+    monkeypatch.setattr(module, "BUG_REPORTS_DIR", tmp_path / "bug_reports")
+
+
+def test_list_bug_reports_is_empty_before_any_creation(client, bug_reports_fixture):
+    res = client.get("/bug_reports")
+    assert res.status_code == 200
+    assert res.json() == []
+
+
+def test_create_and_get_bug_report_roundtrip(client, bug_reports_fixture):
+    create_res = client.post("/bug_reports", json={"description": "el documento quedó incompleto"})
+    assert create_res.status_code == 200
+    report_id = create_res.json()["id"]
+    assert create_res.json()["status"] == "nuevo"
+
+    get_res = client.get(f"/bug_reports/{report_id}")
+    assert get_res.status_code == 200
+    assert get_res.json()["description"] == "el documento quedó incompleto"
+
+    list_res = client.get("/bug_reports")
+    assert list_res.json()[0]["id"] == report_id
+
+
+def test_create_bug_report_captures_conversation_id_and_view_sent_by_the_frontend(client, bug_reports_fixture):
+    client.post("/send", json={"text": "hola", "conversation_id": "conv-1"})
+    report_id = client.post(
+        "/bug_reports", json={"description": "algo salió mal", "conversation_id": "conv-1", "view": "chat"}
+    ).json()["id"]
+    report = client.get(f"/bug_reports/{report_id}").json()
+    assert report["context"]["conversation_id"] == "conv-1"
+    assert report["context"]["view"] == "chat"
+    assert report["context"]["recent_turns"][0]["input"] == "hola"
+
+
+def test_get_bug_report_returns_404_for_a_missing_report(client, bug_reports_fixture):
+    res = client.get("/bug_reports/no-existe")
+    assert res.status_code == 404
+
+
+def test_list_bug_reports_filters_by_status(client, bug_reports_fixture):
+    report_id = client.post("/bug_reports", json={"description": "a"}).json()["id"]
+    client.post("/bug_reports", json={"description": "b"})
+    client.patch(f"/bug_reports/{report_id}/status", json={"status": "descartado"})
+
+    open_reports = client.get("/bug_reports?status=nuevo").json()
+    assert len(open_reports) == 1
+    assert open_reports[0]["description"] == "b"
+
+
+def test_update_bug_report_status_appends_history_and_persists(client, bug_reports_fixture):
+    report_id = client.post("/bug_reports", json={"description": "bug"}).json()["id"]
+    res = client.patch(f"/bug_reports/{report_id}/status", json={"status": "en_progreso", "note": "lo estoy mirando"})
+    assert res.status_code == 200
+    assert res.json()["status"] == "en_progreso"
+    assert res.json()["history"][-1]["note"] == "lo estoy mirando"
+
+
+def test_update_bug_report_status_rejects_an_invalid_status(client, bug_reports_fixture):
+    report_id = client.post("/bug_reports", json={"description": "bug"}).json()["id"]
+    res = client.patch(f"/bug_reports/{report_id}/status", json={"status": "no_es_un_estado_real"})
+    assert res.status_code == 400
+
+
+def test_update_bug_report_status_returns_404_for_a_missing_report(client, bug_reports_fixture):
+    res = client.patch("/bug_reports/no-existe/status", json={"status": "resuelto"})
+    assert res.status_code == 404
+
+
+def test_classify_bug_report_returns_none_when_the_llm_is_unavailable(client, bug_reports_fixture):
+    # client ya neutraliza llm_routing.build_resilient_llm a _UnavailableLLM
+    # para TODOS los roles (incluido bug_triage) — mismo criterio de
+    # hermeticidad que el resto de los Specialists.
+    report = client.post("/bug_reports", json={"description": "bug"}).json()
+    assert app_module._classify_bug_report(report) is None
+
+
+def test_classify_bug_report_parses_the_llm_json_response(client, bug_reports_fixture, monkeypatch):
+    from snarf.capabilities.anthropic_llm import LLMResponse
+
+    class FakeLLM:
+        available = True
+
+        def generate(self, system, messages):
+            return LLMResponse(
+                text='{"category": "ui", "severity": "media", "plan": "revisar el botón X"}',
+                speech="",
+            )
+
+    monkeypatch.setattr(app_module.llm_routing, "build_resilient_llm", lambda role: FakeLLM())
+    report = client.post("/bug_reports", json={"description": "bug"}).json()
+    classification = app_module._classify_bug_report(report)
+    assert classification == {"category": "ui", "severity": "media", "plan": "revisar el botón X"}
+
+
+def test_classify_bug_report_returns_none_on_malformed_json(client, bug_reports_fixture, monkeypatch):
+    from snarf.capabilities.anthropic_llm import LLMResponse
+
+    class FakeLLM:
+        available = True
+
+        def generate(self, system, messages):
+            return LLMResponse(text="no es json", speech="")
+
+    monkeypatch.setattr(app_module.llm_routing, "build_resilient_llm", lambda role: FakeLLM())
+    report = client.post("/bug_reports", json={"description": "bug"}).json()
+    assert app_module._classify_bug_report(report) is None
+
+
 def test_dashboard_executive_board_widget_is_none_before_any_consult(client):
     res = client.get("/dashboard/widgets/executive_board")
     assert res.status_code == 200

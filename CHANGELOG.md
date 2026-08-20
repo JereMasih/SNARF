@@ -2,6 +2,27 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-19] Protocolo de reporte de bugs con contexto real, y baja de conversación continua (ADR 0178)
+
+- Botón de reporte de bugs (🐞) nuevo en tres lugares: chat-dock desktop, barra superior de la vista
+  clásica, y mobile (inmediatamente a la derecha del switch chat/dashboard). Abre un modal liviano que
+  captura en silencio la conversación activa — el fundador solo escribe qué pasó.
+- `snarf/specialists/bug_reports.py` (nuevo): un reporte guarda su `conversation_id` y las últimas 4
+  turnos reales de esa conversación al momento de reportar — así Snarf, en cualquier conversación futura,
+  reconstruye el contexto real en vez de asumir que se acuerda solo. 4 tools nuevas
+  (`bug_report_create/list/get/update_status`), endpoints REST directos (`POST/GET /bug_reports`, no vía
+  `/send`, para que reportar sea instantáneo), y un loop periódico (`_periodic_bug_triage_loop`) que
+  clasifica automáticamente categoría/severidad/plan de cada reporte nuevo (rol de ruteo nuevo
+  `bug_triage`). Nueva pestaña "Mis reportes" en el panel de conversaciones/proyectos.
+- La ejecución automática de un fix en sí (severidad baja/media resuelta sola, críticos con confirmación)
+  queda para una ronda aparte — el sandboxing de código desatendido merece su propia verificación en vivo.
+- Inhabilitado `#continuousModeBtn` ("Conversación continua, manos libres") a pedido del fundador — no
+  funcionaba bien. Queda `hidden`, no borrado (mismo criterio que `RunAtLoad` en los LaunchAgents),
+  listo para reactivar cuando se retome.
+- Verificado con Playwright real (mobile + desktop, cero errores de consola) contra un server de prueba,
+  nunca el de producción.
+- 1531/1531 tests. Ver ADR 0178.
+
 ## [2026-08-19] Análisis de una conversación real: fricción de confirmed evitable y una afirmación falsa de "completo" (ADR 0177)
 
 - Analizando una conversación real del fundador (carta a su abuela, 7 turnos) se encontraron tres problemas

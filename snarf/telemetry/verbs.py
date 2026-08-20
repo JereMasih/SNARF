@@ -153,6 +153,11 @@ VERB_BY_SKILL: dict[str, str] = {
     "skill_factory_build": "construyendo la skill",
     "skill_factory_activate": "activando la skill",
     "skill_factory_status": "revisando la construcción",
+    # specialist_bug_reports
+    "bug_report_create": "anotando el reporte",
+    "bug_report_list": "revisando tus reportes",
+    "bug_report_get": "abriendo el reporte",
+    "bug_report_update_status": "actualizando el reporte",
 }
 
 VERB_BY_NODE: dict[str, str] = {
@@ -171,6 +176,7 @@ VERB_BY_NODE: dict[str, str] = {
     "specialist_projects_conversations": "enlazando",
     "specialist_executive_board": "consultando al board",
     "specialist_skill_factory": "fabricando la skill",
+    "specialist_bug_reports": "revisando reportes de bugs",
     "memory": "rebobinando",
     "drive": "hojeando",
     "knowledge": "rastreando",
