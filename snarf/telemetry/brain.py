@@ -147,6 +147,9 @@ TOOL_TO_NODE: dict[str, str] = {
     "project_delete": "specialist_projects_manage",
     "project_set_prompt": "specialist_projects_manage",
     "project_search": "specialist_projects_manage",
+    # Espejo Snarf↔Notion (ADR 0184) — mutación del registro de Proyecto,
+    # mismo nodo que el resto del CRUD de projects_manage.
+    "second_brain_link_project": "specialist_projects_manage",
     "project_add_task": "specialist_projects_tasks",
     "project_complete_task": "specialist_projects_tasks",
     "project_delete_task": "specialist_projects_tasks",
@@ -187,6 +190,17 @@ TOOL_TO_NODE: dict[str, str] = {
     "notion_update_block": "notion",
     "notion_update_table_cell": "notion",
     "notion_delete_block": "notion",
+    # Gaps de capability cerrados en ADR 0180 (Second Brain de Notion) —
+    # mismo criterio de CRUD sobre el nodo "notion" ya existente, ninguna
+    # merece nodo propio (mismo recurso, operaciones parecidas).
+    "notion_move_page": "notion",
+    "notion_create_database": "notion",
+    "notion_update_page_cover": "notion",
+    "notion_update_page_icon": "notion",
+    "notion_update_database_cover": "notion",
+    "notion_update_database_icon": "notion",
+    "notion_archive_page": "notion",
+    "notion_restore_page": "notion",
     # Inteligencia Ejecutiva (ver COGNITION.md, ADR 0094/0098): Especialista
     # Cognitivo nuevo (capa distinta de una Capacidad cruda, ver ADR 0003) —
     # va al tier "specialist" aunque tenga una sola tool, mismo criterio ya
@@ -205,6 +219,55 @@ TOOL_TO_NODE: dict[str, str] = {
     "bug_report_list": "specialist_bug_reports",
     "bug_report_get": "specialist_bug_reports",
     "bug_report_update_status": "specialist_bug_reports",
+    # Second Brain de Notion (ver ROADMAP_SECOND_BRAIN_NOTION.md, ADR 0182):
+    # Especialista Cognitivo nuevo — compone la Capacidad Notion con la
+    # jerarquía Área/Proyecto/Recursos/Archivo, un nodo único (CRUD acotado,
+    # mismo criterio que specialist_skill_factory/specialist_bug_reports,
+    # no amerita split como specialist_projects_*).
+    "second_brain_status": "specialist_second_brain",
+    "second_brain_list_areas": "specialist_second_brain",
+    "second_brain_get_area": "specialist_second_brain",
+    "second_brain_list_projects": "specialist_second_brain",
+    "second_brain_get_project": "specialist_second_brain",
+    "second_brain_list_resources": "specialist_second_brain",
+    "second_brain_list_archive": "specialist_second_brain",
+    # Split real (ADR 0185, mismo criterio que specialist_projects_*/ADR
+    # 0054): con el nodo de arriba ya en 7 tools, sumar el rollup+reporte de
+    # Área acá lo hubiera llevado a 9, por encima del techo real de 8
+    # (test_no_specialist_node_absorbs_too_many_tools) — separado en un nodo
+    # propio, distinto por naturaleza (genera un análisis con LLM, no solo
+    # lee CRUD crudo de Notion).
+    "second_brain_get_area_home": "specialist_second_brain_reports",
+    "second_brain_area_report_refresh": "specialist_second_brain_reports",
+    # Onboarding del Second Brain (ADR 0190) — nodo propio, mismo criterio
+    # que el split de reports: distinto por naturaleza (construye/mapea
+    # estructura real, no lee ni genera un análisis).
+    "second_brain_onboarding_auto_build": "specialist_second_brain_onboarding",
+    "second_brain_onboarding_suggest_mapping": "specialist_second_brain_onboarding",
+    "second_brain_onboarding_apply_mapping": "specialist_second_brain_onboarding",
+    # Supervisores periódicos (ADR 0197, Track D) — Especialistas Cognitivos
+    # nuevos, mismo criterio que specialist_bug_reports (CRUD acotado, un
+    # nodo cada uno, no comparten porque son dos dominios sin relación
+    # entre sí — financiero vs. FOUNDER_MODEL).
+    "finance_supervisor_get_snapshot": "specialist_finance_supervisor",
+    "finance_supervisor_set_sheet": "specialist_finance_supervisor",
+    "founder_mood_get_snapshot": "specialist_founder_mood",
+    # Mecanismo de equipo multi-agente (ADR 0198, snarf/executive/team.py) —
+    # nodo propio, distinto de specialist_executive_board pese a reusar su
+    # misma infraestructura de proceso (consult_role): el board es una sola
+    # ronda de solo-opiniones sin visibilidad entre roles; un equipo itera
+    # con crítica cruzada, converge a aprobación interna, y puede producir un
+    # artefacto real — mecanismo distinto por naturaleza, mismo criterio que
+    # ya separó specialist_second_brain_reports de specialist_second_brain.
+    "executive_team_run": "specialist_executive_team",
+    # Escritura confiable de documentos largos (ADR 0199, Fase D4) — nodo
+    # propio, compone la Capacidad notion pero es un mecanismo distinto
+    # (generación por sección + verificación + estado reanudable), mismo
+    # criterio que separó specialist_second_brain_reports de
+    # specialist_second_brain.
+    "document_write_start": "specialist_document_writer",
+    "document_write_continue": "specialist_document_writer",
+    "document_write_status": "specialist_document_writer",
 }
 
 # Fase 9.2 del plan de observabilidad/n8n (ver ROADMAP_OBSERVABILIDAD_MULTIUSUARIO_N8N.md, ADR 0147):
@@ -300,6 +363,13 @@ NODE_TIER: dict[str, str] = {
     "specialist_executive_board_creative": "specialist",
     "specialist_skill_factory": "specialist",
     "specialist_bug_reports": "specialist",
+    "specialist_second_brain": "specialist",
+    "specialist_second_brain_reports": "specialist",
+    "specialist_second_brain_onboarding": "specialist",
+    "specialist_finance_supervisor": "specialist",
+    "specialist_founder_mood": "specialist",
+    "specialist_executive_team": "specialist",
+    "specialist_document_writer": "specialist",
     "memory": "capability",
     "drive": "capability",
     "knowledge": "capability",

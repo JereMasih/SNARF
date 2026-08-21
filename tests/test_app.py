@@ -1479,9 +1479,11 @@ def test_gmail_digest_refresh_degrades_gracefully_on_error(client, connected_goo
 
 @pytest.fixture
 def projects_fixture(tmp_path, monkeypatch, connected_google_token):
-    from snarf.specialists import project_manager as module
-
-    monkeypatch.setattr(module, "PROJECTS_DIR", tmp_path / "projects")
+    # ADR 0183: projects_dir se resuelve una sola vez al construir el
+    # ProjectManager (namespaced por user_id) — monkeypatchear la constante
+    # de módulo PROJECTS_DIR ya no alcanza para el singleton `orchestrator`
+    # ya construido por app.py, hay que tocar la instancia real.
+    monkeypatch.setattr(app_module.orchestrator.projects, "_projects_dir", tmp_path / "projects")
     monkeypatch.setattr(app_module.orchestrator.drive, "get_or_create_folder", lambda name, parent_id=None: f"folder-{name}")
     # cached_summary()/file_count() de GET /projects/{id} llaman a Drive real
     # si no se mockea esto — sin costo/llamada real en tests.
@@ -1504,9 +1506,7 @@ def test_create_project_requires_google_connected(client, no_google_token):
 
 
 def test_create_project_degrades_gracefully_on_drive_error(client, tmp_path, monkeypatch, connected_google_token):
-    from snarf.specialists import project_manager as module
-
-    monkeypatch.setattr(module, "PROJECTS_DIR", tmp_path / "projects")
+    monkeypatch.setattr(app_module.orchestrator.projects, "_projects_dir", tmp_path / "projects")
 
     def boom(name, parent_id=None):
         raise RuntimeError("Drive no disponible")
@@ -1534,6 +1534,94 @@ def test_get_project_returns_404_for_a_missing_project(client, projects_fixture)
     assert res.status_code == 404
 
 
+def test_second_brain_status_reflects_is_connected(client, monkeypatch):
+    monkeypatch.setattr(app_module.orchestrator.second_brain, "is_connected", lambda: True)
+    assert client.get("/second-brain/status").json() == {"connected": True}
+    monkeypatch.setattr(app_module.orchestrator.second_brain, "is_connected", lambda: False)
+    assert client.get("/second-brain/status").json() == {"connected": False}
+
+
+def test_second_brain_list_areas_returns_real_data(client, monkeypatch):
+    areas = [{"id": "area-1", "url": "u", "name": "Salud", "properties_text": ""}]
+    monkeypatch.setattr(app_module.orchestrator.second_brain, "list_areas", lambda: areas)
+    res = client.get("/second-brain/areas")
+    assert res.status_code == 200
+    assert res.json() == areas
+
+
+def test_second_brain_area_projects_marks_linked_snarf_project(client, projects_fixture):
+    linked = client.post("/projects", json={"name": "Vinculado"}).json()
+    app_module.orchestrator.projects.set_notion_link(linked["id"], "notion-proj-1")
+
+    rows = [
+        {"id": "notion-proj-1", "url": "u1", "name": "Campaña Q3", "properties_text": ""},
+        {"id": "notion-proj-2", "url": "u2", "name": "Sin vincular", "properties_text": ""},
+    ]
+
+    def fake_list_projects(area_id=None):
+        assert area_id == "area-1"
+        return rows
+
+    app_module.orchestrator.second_brain.list_projects = fake_list_projects
+    res = client.get("/second-brain/areas/area-1/projects")
+    assert res.status_code == 200
+    body = res.json()
+    assert body[0]["snarf_project_id"] == linked["id"]
+    assert body[1]["snarf_project_id"] is None
+
+
+def test_second_brain_area_projects_returns_409_without_relation_mapping(client, monkeypatch):
+    def raise_value_error(area_id=None):
+        raise ValueError("No hay mapeo de la property que relaciona Proyectos con Área")
+
+    monkeypatch.setattr(app_module.orchestrator.second_brain, "list_projects", raise_value_error)
+    res = client.get("/second-brain/areas/area-1/projects")
+    assert res.status_code == 409
+
+
+def test_second_brain_area_home_returns_404_for_missing_area(client, monkeypatch):
+    monkeypatch.setattr(app_module.orchestrator.second_brain, "cached_area_report", lambda area_id: None)
+    res = client.get("/second-brain/areas/no-existe")
+    assert res.status_code == 404
+
+
+def test_second_brain_area_home_marks_linked_projects(client, projects_fixture):
+    linked = client.post("/projects", json={"name": "Vinculado"}).json()
+    app_module.orchestrator.projects.set_notion_link(linked["id"], "notion-proj-1")
+
+    home = {
+        "area": {"id": "area-1", "url": "u", "name": "Salud", "properties_text": ""},
+        "projects": [{"id": "notion-proj-1", "url": "u1", "name": "Campaña Q3", "properties_text": ""}],
+        "resources": [], "resources_mapped": False,
+        "archive": [], "archive_mapped": False,
+        "report": "Análisis real.", "report_generated_at": 123.0,
+    }
+    app_module.orchestrator.second_brain.cached_area_report = lambda area_id: home
+    res = client.get("/second-brain/areas/area-1")
+    assert res.status_code == 200
+    assert res.json()["projects"][0]["snarf_project_id"] == linked["id"]
+
+
+def test_second_brain_area_report_refresh_returns_404_for_missing_area(client, monkeypatch):
+    monkeypatch.setattr(app_module.orchestrator.second_brain, "generate_area_report", lambda area_id: None)
+    res = client.post("/second-brain/areas/no-existe/report/refresh")
+    assert res.status_code == 404
+
+
+def test_second_brain_area_report_refresh_returns_fresh_report(client, monkeypatch):
+    home = {
+        "area": {"id": "area-1", "url": "u", "name": "Salud", "properties_text": ""},
+        "projects": [],
+        "resources": [], "resources_mapped": False,
+        "archive": [], "archive_mapped": False,
+        "report": "Reporte nuevo.", "report_generated_at": 456.0,
+    }
+    monkeypatch.setattr(app_module.orchestrator.second_brain, "generate_area_report", lambda area_id: home)
+    res = client.post("/second-brain/areas/area-1/report/refresh")
+    assert res.status_code == 200
+    assert res.json()["report"] == "Reporte nuevo."
+
+
 def test_set_project_prompt(client, projects_fixture):
     project_id = client.post("/projects", json={"name": "Newsletter"}).json()["id"]
     res = client.put(f"/projects/{project_id}/prompt", json={"prompt": "sos el asistente de este proyecto"})
@@ -1551,6 +1639,61 @@ def test_project_task_roundtrip(client, projects_fixture):
 
     deleted = client.delete(f"/projects/{project_id}/tasks/{task_id}")
     assert deleted.json()["tasks"] == []
+
+
+def test_link_project_to_notion_requires_a_real_page(client, projects_fixture, monkeypatch):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    monkeypatch.setattr(app_module.orchestrator.second_brain, "get_project", lambda page_id: None)
+    res = client.put(f"/projects/{project_id}/notion-link", json={"notion_page_id": "no-existe"})
+    assert res.status_code == 404
+
+
+def test_link_project_to_notion_saves_the_link(client, projects_fixture, monkeypatch):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    monkeypatch.setattr(
+        app_module.orchestrator.second_brain, "get_project",
+        lambda page_id: {"id": page_id, "url": "u", "name": "Campaña Q3", "properties_text": ""},
+    )
+    res = client.put(f"/projects/{project_id}/notion-link", json={"notion_page_id": "notion-page-1"})
+    assert res.status_code == 200
+    assert res.json()["notion_project_page_id"] == "notion-page-1"
+
+
+def test_link_project_to_notion_returns_404_for_missing_project(client, monkeypatch):
+    monkeypatch.setattr(
+        app_module.orchestrator.second_brain, "get_project",
+        lambda page_id: {"id": page_id, "url": "u", "name": "X", "properties_text": ""},
+    )
+    res = client.put("/projects/no-existe/notion-link", json={"notion_page_id": "notion-page-1"})
+    assert res.status_code == 404
+
+
+def test_project_notion_resources_unmapped_when_not_linked(client, projects_fixture):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    res = client.get(f"/projects/{project_id}/notion-resources")
+    assert res.status_code == 200
+    assert res.json() == {"resources": [], "mapped": False}
+
+
+def test_project_notion_resources_returns_real_data_when_mapped(client, projects_fixture, monkeypatch):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    app_module.orchestrator.projects.set_notion_link(project_id, "notion-page-1")
+    resources = [{"id": "res-1", "url": "u", "name": "Imagen de referencia", "properties_text": ""}]
+    monkeypatch.setattr(app_module.orchestrator.second_brain, "list_resources", lambda page_id: resources)
+    res = client.get(f"/projects/{project_id}/notion-resources")
+    assert res.json() == {"resources": resources, "mapped": True}
+
+
+def test_project_notion_resources_degrades_when_relation_not_mapped(client, projects_fixture, monkeypatch):
+    project_id = client.post("/projects", json={"name": "Proyecto"}).json()["id"]
+    app_module.orchestrator.projects.set_notion_link(project_id, "notion-page-1")
+
+    def raise_value_error(page_id):
+        raise ValueError("sin mapear")
+
+    monkeypatch.setattr(app_module.orchestrator.second_brain, "list_resources", raise_value_error)
+    res = client.get(f"/projects/{project_id}/notion-resources")
+    assert res.json() == {"resources": [], "mapped": False}
 
 
 def test_project_note_roundtrip(client, projects_fixture):
@@ -1947,6 +2090,68 @@ def test_full_login_via_google_mints_a_session_for_a_brand_new_isolated_user(cli
     # test_get_orchestrator_returns_distinct_instances_for_distinct_users.
     assert google_auth.token_path(new_user_id).exists()
     assert not google_auth.token_path(app_module.DEFAULT_USER_ID).exists()
+
+
+# --- Second Brain: OAuth de Notion por usuario (ADR 0186) -----------------
+
+
+def test_notion_connect_requires_authentication():
+    from fastapi.testclient import TestClient
+
+    with TestClient(app_module.app, base_url="https://testserver") as anonymous_client:
+        res = anonymous_client.get("/auth/notion/start", follow_redirects=False)
+    assert res.status_code == 401
+
+
+def test_notion_connect_requires_client_credentials(client, monkeypatch):
+    from snarf.capabilities import notion_auth
+
+    monkeypatch.delenv("NOTION_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("NOTION_OAUTH_CLIENT_SECRET", raising=False)
+    res = client.get("/auth/notion/start", follow_redirects=False)
+    assert res.status_code == 503
+
+
+def test_notion_oauth_callback_rejects_a_missing_state_cookie(client):
+    res = client.get("/auth/notion/callback", params={"code": "abc", "state": "s1"})
+    assert res.status_code == 400
+
+
+def test_notion_oauth_callback_rejects_a_tampered_state(client):
+    client.cookies.set("snarf_notion_oauth_state", "esto-no-es-un-token-firmado-real")
+    res = client.get("/auth/notion/callback", params={"code": "abc", "state": "s1"})
+    assert res.status_code == 400
+
+
+def test_notion_oauth_callback_redirects_home_on_a_real_notion_error(client):
+    res = client.get("/auth/notion/callback", params={"error": "access_denied"}, follow_redirects=False)
+    assert res.status_code in (302, 307)
+    assert res.headers["location"].startswith("/?notion_error=")
+
+
+def test_full_connect_flow_saves_notion_token_for_the_authenticated_user(client, monkeypatch, tmp_path):
+    from snarf.capabilities import notion_auth
+
+    monkeypatch.setenv("NOTION_OAUTH_CLIENT_ID", "client-1")
+    monkeypatch.setenv("NOTION_OAUTH_CLIENT_SECRET", "secret-1")
+    monkeypatch.setattr(notion_auth, "TOKENS_DIR", tmp_path / "notion_tokens")
+
+    start_res = client.get("/auth/notion/start", follow_redirects=False)
+    assert start_res.status_code in (302, 307)
+    state = start_res.headers["location"].split("state=")[1].split("&")[0]
+
+    monkeypatch.setattr(
+        notion_auth, "exchange_code",
+        lambda *a, **k: {"access_token": "token-real", "workspace_name": "Mi Workspace"},
+    )
+    callback_res = client.get(
+        "/auth/notion/callback", params={"code": "real-code", "state": state}, follow_redirects=False
+    )
+    assert callback_res.status_code in (302, 307)
+    assert notion_auth.load_token(app_module.DEFAULT_USER_ID) == {
+        "access_token": "token-real",
+        "workspace_name": "Mi Workspace",
+    }
 
 
 # --- Fase 4: integración con n8n (observa y propone, ADR 0139) ------------

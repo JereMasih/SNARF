@@ -49,6 +49,22 @@ def _no_real_credentials(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    # NOTION_API_KEY (encontrado real durante ADR 0180): mismo riesgo que
+    # arriba — al correr la suite completa, test_app.py importa app.py, que
+    # llama load_dotenv() a nivel de módulo, dejando el .env real cargado en
+    # os.environ para el resto de la sesión de pytest. Sin este delenv,
+    # cualquier handler de Orchestrator que arme un preview de alto impacto
+    # llamando a un método NO mockeado de self._notion (ej. get_block/
+    # get_database dentro de _tool_notion_update_block/_tool_notion_move_page)
+    # dispararía una llamada HTTP real a la API de Notion en medio de un test.
+    monkeypatch.delenv("NOTION_API_KEY", raising=False)
+    # NOTION_OAUTH_CLIENT_ID/SECRET (ADR 0186): mismo riesgo — una vez que el
+    # fundador registre la integración pública y los cargue en .env, tests
+    # que verifican el camino "sin configurar" (503 real) empezarían a fallar
+    # en falso sin este delenv, con el mismo mecanismo de fuga ya descripto
+    # arriba para NOTION_API_KEY.
+    monkeypatch.delenv("NOTION_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("NOTION_OAUTH_CLIENT_SECRET", raising=False)
     # SNARF_REDIS_URL (Fase 2 del plan de observabilidad, snarf/telemetry/
     # redis_sink.py): sin esto, un .env real con Redis configurado haría que
     # cada test instale de verdad un subscriber que intenta hablarle a un

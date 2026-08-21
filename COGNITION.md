@@ -42,6 +42,20 @@ El contrato de un Especialista Cognitivo (razona sobre un dominio acotado, con m
 
 Los roles ejecutivos tienen cero autoridad inherente — su única competencia es lectura vía el allowlist MCP (garantía estructural: las herramientas mutantes ni existen en su proceso, no una instrucción de prompt). Ningún rol tiene autoridad sobre otro; Snarf es el único sintetizador, nunca un rol "preside" a los demás. Toda afirmación de un rol lleva una etiqueta de base real (`hecho`/`inferencia`/`hipótesis`/`estimación`/`opinión`), verificada en código — una afirmación etiquetada `hecho` sin una fuente real citable se degrada mecánicamente a `inferencia`, nunca confiada al self-report del modelo. Mismo principio que ya rige a `DashboardCuratorSpecialist`: nunca inventar un dato que no esté ahí.
 
+## Equipos de agentes (planificado, 2026-08-20, ver ADR 0179 y `ROADMAP_SECOND_BRAIN_NOTION.md` Fase D3)
+
+Extensión planificada del board de la sección anterior, todavía sin código. La diferencia real con el board asesor:
+
+- El board consulta una sola ronda, en paralelo, sin visibilidad entre roles, y nunca decide nada — siempre vuelve a Snarf como opinión etiquetada. Un **equipo** convoca un subconjunto de roles con un objetivo compartido y corre varias rondas: ronda 1 produce un borrador, las siguientes son crítica cruzada (mismo formato `basis` del board) más una revisión que incorpora esa crítica, con un tope real de rondas (nunca infinito, mismo criterio que el límite de continuaciones automáticas de `AnthropicLLM`, ADR 0113).
+- El board nunca decide nada por sí solo. Un equipo sí converge a una **aprobación interna** — cuando ningún rol marca una objeción bloqueante en la ronda de crítica, o al agotar el tope de rondas (declarado explícito como "aprobado por agotamiento, no por consenso real" cuando corresponda — mismo estándar de honestidad de la sección anterior).
+- El board solo produce opiniones etiquetadas. Un equipo puede producir un **artefacto real** (un plan, el esqueleto de un documento) — pero nunca ejecuta directamente una herramienta mutante: el artefacto vuelve a Snarf como resultado de herramienta, igual que cualquier Especialista, y cualquier acción real que se tome a partir de él (ej. escribirlo en Notion) pasa por las tools mutantes normales con su propio gate de alto impacto.
+
+Reusa la primitiva de stages ya real de `snarf/executive/` (`agent_graph_registry`, `consult_role(upstream_context=...)`, ADR 0157/0158) para la secuenciación y el paso de contexto entre roles, en vez de duplicar infraestructura — es una extensión del mismo mecanismo, no una cuarta capa nueva.
+
+## Slot `FOUNDER_MODEL` (activado conceptualmente, 2026-08-20, ver ADR 0179)
+
+Hasta hoy era solo un nombre reservado, sin documento ni código. Pasa a describir un supervisor periódico planificado (`snarf/specialists/founder_mood.py`, todavía sin construir, ver Fase D2 del roadmap citado) que interpreta señales de ánimo/estado del fundador a partir de la única fuente honesta disponible — la memoria episódica reciente, nunca una fuente inventada. Sigue la misma disciplina de honestidad que ya rige a la Inteligencia Ejecutiva: cada señal lleva su etiqueta `basis`, y `hecho` exige evidencia textual citable — es fácil que un modelo de lenguaje "invente" un estado de ánimo sin evidencia real, así que acá la disciplina de la sección anterior importa más que en cualquier otro Especialista existente. Nunca ejecuta una acción mutante por sí solo; su resultado queda disponible como contexto para Snarf y para los "Equipos de agentes" de arriba.
+
 # Memoria
 
 La memoria episódica es un registro append-only (`data/episodic_memory.jsonl`). Nunca se edita ni se borra una entrada existente; solo se agregan nuevas. Esto implementa directamente el Principio VIII de Foundation (Continuidad: preservar evidencia y evolución, no versiones idealizadas) y el Artículo VIII de Constitution (trazabilidad e irreversibilidad).

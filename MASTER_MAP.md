@@ -78,11 +78,22 @@ Documentos previstos, sin crear todavía:
 
 **Capacidad de automodificación acotada, reabierta el 2026-08-04 (ver ADR 0095, supera a este mismo párrafo tal como constaba hasta hoy):** el 2026-07-25 (ADR 0010) el fundador pospuso explícitamente que Snarf pudiera conversar para automodificar su propio código o documentos a través de una herramienta tipo Claude Code — "se prioriza terminar interfaz y funcionamiento base primero." Con más de 90 ADRs y el producto en producción, el fundador reabrió esa postergación. Implementación real, acotada: la Skill Factory (ver Capabilities/Skills y ADR 0095) — Snarf puede invocar a Claude Code para construir y activar una skill nueva, siempre con confirmación explícita del fundador en dos pasos (construir, luego activar). Nunca editar FOUNDATION/CONSTITUTION/CHARACTER/COGNITION/MASTER_MAP por esta vía, y cada construcción quema su propia confirmación — no hay delegación general.
 
+**Slot `FOUNDER_MODEL` activado conceptualmente (2026-08-20, ver ADR 0179 y `ROADMAP_SECOND_BRAIN_NOTION.md`, Track D):** hasta hoy era un nombre reservado en la lista de abajo, sin documento ni código. Pasa a describir un supervisor periódico real, planificado, que interpreta señales de ánimo/estado del fundador desde la memoria episódica reciente — con la misma disciplina de honestidad que ya usa la Inteligencia Ejecutiva (etiqueta `basis`, nunca `hecho` sin evidencia textual citable). Sigue sin tener código; el slot deja de estar vacío en cuanto exista `snarf/specialists/founder_mood.py` (Fase D2 del roadmap citado).
+
+**"Equipos de agentes" reservado como extensión de la Inteligencia Ejecutiva (2026-08-20, ver ADR 0179):** además del board asesor de 7 roles (párrafo de arriba, siempre de una sola ronda, solo lectura, sin visibilidad entre roles, nunca decide nada), se planifica un mecanismo nuevo de "equipo" — un subconjunto de roles con un objetivo compartido, que itera con crítica cruzada sobre un borrador y converge a una aprobación interna, pudiendo producir un artefacto real (no solo opiniones etiquetadas). Reusa la primitiva de stages ya real de `snarf/executive/` (`agent_graph_registry`, `consult_role(upstream_context=...)`, ADR 0157/0158) en vez de duplicar infraestructura. Ver COGNITION.md, sección "Equipos de agentes", y Fase D3 del roadmap citado — sin código todavía.
+
 ## Knowledge
 
 Todo el conocimiento operativo (negocios, trading, marketing, tecnología, filosofía, etc.).
 
-Documentos: **KNOWLEDGE.md** (nuevo, ver Roadmaps Fase 2 de vectorización — generalización del pipeline). Describe el contrato `KnowledgeSource`, el modelo de namespacing (dominio = colección real de Chroma, sub-alcance = filtro `where`, mismo mecanismo que ya usa Proyectos vía `project_id`, ver ADR 0045), y el estado real por dominio: **Personal** (Drive + memoria episódica) y **Código** (este mismo repositorio) tienen contenido real; **Negocio/Trading/Marketing/Finanzas** son namespaces reservados — Finanzas deja de estar vacío en cuanto la Capacidad de Finance (ver Capabilities/Skills) esté construida y conectada a una fuente real.
+Documentos: **KNOWLEDGE.md** (nuevo, ver Roadmaps Fase 2 de vectorización — generalización del pipeline). Describe el contrato `KnowledgeSource`, el modelo de namespacing (dominio = colección real de Chroma, sub-alcance = filtro `where`, mismo mecanismo que ya usa Proyectos vía `project_id`, ver ADR 0045), y el estado real por dominio: **Personal** (Drive + memoria episódica) y **Código** (este mismo repositorio) tienen contenido real; **Negocio/Trading/Marketing/Finanzas** son namespaces reservados — Finanzas deja de estar vacío en cuanto la Capacidad de Finance (ver Capabilities/Skills) esté construida y conectada a una fuente real. Notion ya indexa contenido real desde ADR 0173, dentro del mismo dominio `personal` (comparte colección física con Drive).
+
+**Second Brain de Notion (planificado, 2026-08-20, ver ADR 0179 en adelante y `ROADMAP_SECOND_BRAIN_NOTION.md`):** dentro del contenido ya indexado de Notion (namespace `personal`, fuente `notion`), se planifica organizar el conocimiento con la jerarquía real que el fundador ya mantiene en su propio Notion, método PARA — **Área → Proyecto → Recursos/Archivo**. Es un nivel de organización *dentro* de Knowledge (qué Proyecto/Área pertenece cada nota o recurso), no un dominio nuevo de Chroma ni una colección física distinta — sigue siendo la misma colección `personal` de siempre, con más metadata de ubicación.
+
+**Colisión de nombre "Área" — documentada a propósito, no resuelta renombrando nada (ADR 0179):** la palabra "Área" nombra dos conceptos de Snarf sin ninguna relación entre sí. Cualquier sesión que la encuentre en código o docs debe distinguir cuál es, usando el archivo como señal:
+- **Área de ruteo** (`snarf/runtime/areas.py`, ADR 0165): 4 categorías internas fijas (Operaciones/Administración/I+D/Marketing) que agrupan los 7 dominios de Specialists como etapa intermedia del pipeline Orchestrator→Board→Project Manager→**área**→Specialist, para telemetría y el canvas de n8n. Invisible al fundador, nunca una jerarquía de conocimiento.
+- **Área de Notion / Second Brain** (`snarf/specialists/second_brain.py`, planificado): nivel jerárquico superior de organización de conocimiento personal descrito arriba — visible y editado por el fundador, cantidad arbitraria, vive como database real en su Notion, Notion es la única fuente de verdad (Snarf la refleja en vivo, nunca la duplica).
+El fundador decidió explícitamente reusar el nombre en vez de introducir uno nuevo — se acepta la colisión conceptual, se documenta acá para que no se confunda en el futuro.
 
 ## Canon
 
@@ -160,6 +171,8 @@ Desde el 2026-08-17 (ADR 0170, mismo día): contenido profundo mudado a 3 págin
 
 Desde el 2026-08-18 (ADR 0172): el home (`GET /vision`) se poda de 13 secciones a 6 + hero. Dos páginas públicas nuevas y separadas: `GET /nosotros` (principios + el creador) y `GET /inversores` (pitch inversores/socios, fuera del nav principal a propósito). Capturas de interfaz mudadas a `GET /capacidades`; panel de Estado en vivo mudado a `GET /roadmap`, reemplazando el stub que ya apuntaba ahí desde ADR 0170. 7 páginas públicas en total: vision, arquitectura, capacidades, roadmap, blog, nosotros, inversores.
 
+Planificado, sin construir (2026-08-20, ver ADR 0179 en adelante y `ROADMAP_SECOND_BRAIN_NOTION.md`, Track D): generalizar `DocumentBuilder`/`DocumentPublisher` (ADR 0030) hacia una escritura confiable e incremental de documentos largos, más allá de Drive — sección por sección, cada una escrita y verificada leyendo de vuelta antes de generar la siguiente, con estado persistido y reanudable en disco. Objetivo explícito del fundador: que un documento largo nunca se corte por límite de tokens del modelo, caída del proceso, o falla transitoria de la API del destino (Notion primero).
+
 ## Business
 
 Unidades económicas, productos, servicios y empresas.
@@ -199,6 +212,16 @@ cognitiva digital". Vive en el repo (no en `~/.claude/plans/`) a propósito, ind
 CLAUDE.md — tiene su propia sección "Estado actual" al tope para retomar sin releer todo. No contradice
 ni reemplaza los roadmaps de abajo (dashboard/vectorización, 2026-07-27/28): los continúa — esos ítems
 ya construidos siguen siendo la base real sobre la que corre este plan nuevo.
+
+**Segundo plan vivo en curso, en paralelo (desde 2026-08-20, ver ADR 0179 en adelante):**
+`ROADMAP_SECOND_BRAIN_NOTION.md` — Notion como "second brain" del fundador (CRUD completo, indexado
+proactivo, jerarquía Área→Proyecto→Recursos/Archivo espejada en Snarf, onboarding multi-usuario,
+widgets estilo Jarvis en el HUD) más confiabilidad del Orchestrator (supervisores periódicos, equipo
+multi-agente con iteración/aprobación interna, escritura confiable de documentos largos). Mismo patrón
+que el roadmap de arriba: vive en el repo, indexado desde CLAUDE.md, sección "Estado actual" al tope.
+No contradice ni reemplaza el roadmap de observabilidad/multi-usuario — lo complementa, y su Fase B
+(OAuth de Notion por usuario, namespacing de Proyectos) se apoya directamente en el multi-usuario real
+que ese roadmap ya construyó (login Google, Orchestrator por `user_id`).
 
 **Dashboard, plan por fases (2026-07-27, ver ADR 0022 y ADR 0023):**
 

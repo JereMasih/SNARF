@@ -50,6 +50,8 @@ class ProjectManager:
         user_id: str,
         subfolder_system_prompt_provider=None,
         summary_system_prompt_provider=None,
+        projects_dir: Path = PROJECTS_DIR,
+        second_brain=None,
     ):
         # llm_factory: callable sin argumentos, ver el mismo criterio
         # documentado en GmailDigestSpecialist.__init__ — nunca una
@@ -61,6 +63,19 @@ class ProjectManager:
         self._indexer = indexer
         self._llm_factory = llm_factory
         self._user_id = user_id
+        # Bug real corregido en ADR 0183 (mismo patrón que ADR 0137 ya
+        # aplicó a EpisodicMemory): sin este parámetro, dos Orchestrator de
+        # dos usuarios distintos habrían compartido los mismos archivos de
+        # proyecto — PROJECTS_DIR era una constante de módulo fija, sin
+        # relación con qué user_id la usaba. DEFAULT_USER_ID sigue en
+        # PROJECTS_DIR a propósito (compatibilidad con datos reales ya en
+        # disco); cualquier otro user_id recibe su propia carpeta.
+        self._projects_dir = projects_dir
+        # SecondBrainManager (ver ADR 0184), opcional — un Proyecto de Snarf
+        # siempre se puede crear sin Notion. Cuando está presente Y el
+        # fundador ya tiene el Second Brain conectado, create() también crea
+        # la fila real en su database de Proyectos y guarda el vínculo.
+        self._second_brain = second_brain
         self._root_folder_id: str | None = None
         self._subfolder_system_prompt_provider = subfolder_system_prompt_provider or (
             lambda: SUBFOLDER_SUGGESTION_SYSTEM_PROMPT
@@ -77,7 +92,7 @@ class ProjectManager:
         return self._root_folder_id
 
     def _path(self, project_id: str) -> Path:
-        return PROJECTS_DIR / f"{project_id}.json"
+        return self._projects_dir / f"{project_id}.json"
 
     def _normalize(self, raw: dict, project_id: str) -> dict:
         # Misma disciplina que dashboard_prefs.py: nunca confiar en lo que
@@ -92,6 +107,13 @@ class ProjectManager:
             "summary": str(raw.get("summary", "")),
             "summary_generated_at": summary_generated_at,
             "drive_folder_id": raw.get("drive_folder_id"),
+            # Espejo Snarf↔Notion (ADR 0184) — id de página real de Notion
+            # dentro de la database de Proyectos mapeada del Second Brain, o
+            # None si este Proyecto nunca se vinculó (proyectos viejos, o
+            # Second Brain no conectado al crearlo).
+            "notion_project_page_id": raw.get("notion_project_page_id")
+            if isinstance(raw.get("notion_project_page_id"), str)
+            else None,
             "subfolders": {
                 str(k): str(v) for k, v in (raw.get("subfolders") or {}).items() if isinstance(v, str)
             },
@@ -115,15 +137,15 @@ class ProjectManager:
         return self._normalize(json.loads(path.read_text(encoding="utf-8")), project_id)
 
     def _save(self, record: dict) -> dict:
-        PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+        self._projects_dir.mkdir(parents=True, exist_ok=True)
         self._path(record["id"]).write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
         return record
 
     def list_projects(self) -> list[dict]:
-        if not PROJECTS_DIR.exists():
+        if not self._projects_dir.exists():
             return []
         summaries = []
-        for path in sorted(PROJECTS_DIR.glob("*.json")):
+        for path in sorted(self._projects_dir.glob("*.json")):
             record = self._normalize(json.loads(path.read_text(encoding="utf-8")), path.stem)
             summaries.append(
                 {
@@ -166,6 +188,8 @@ class ProjectManager:
         subfolders = self._suggest_subfolders(name)
         subfolder_ids = {sub: self._drive.get_or_create_folder(sub, parent_id=drive_folder_id) for sub in subfolders}
 
+        notion_project_page_id = self._second_brain.create_project_row(name) if self._second_brain else None
+
         record = self._normalize(
             {
                 "name": name,
@@ -175,9 +199,38 @@ class ProjectManager:
                 "created_at": time.time(),
                 "tasks": [],
                 "notes": [],
+                "notion_project_page_id": notion_project_page_id,
             },
             project_id,
         )
+        return self._save(record)
+
+    def find_by_notion_page_id(self, notion_page_id: str) -> dict | None:
+        """Busca el Proyecto de Snarf vinculado a una página real de Notion
+        (ver ADR 0187 — usado por la UI del Second Brain para saber, al
+        mostrar los Proyectos de un Área, cuál de ellos ya tiene su
+        'hermano' en Snarf con conversaciones/tareas/notas propias). Recorre
+        los proyectos locales de este usuario — la cantidad real es chica,
+        no amerita un índice aparte todavía."""
+        if not self._projects_dir.exists():
+            return None
+        for path in sorted(self._projects_dir.glob("*.json")):
+            record = self._normalize(json.loads(path.read_text(encoding="utf-8")), path.stem)
+            if record["notion_project_page_id"] == notion_page_id:
+                return record
+        return None
+
+    def set_notion_link(self, project_id: str, notion_page_id: str | None) -> dict | None:
+        """Vincula (o desvincula, con notion_page_id=None) un Proyecto ya
+        existente a una página real de Notion — usado tanto por el camino
+        explícito (second_brain_link_project, validado antes de llamar acá)
+        como potencialmente para desvincular. No valida nada por su cuenta:
+        quien llama (el handler del Orchestrator) ya confirmó que la página
+        existe."""
+        record = self.get(project_id)
+        if record is None:
+            return None
+        record["notion_project_page_id"] = notion_page_id
         return self._save(record)
 
     def set_prompt(self, project_id: str, prompt: str) -> dict | None:

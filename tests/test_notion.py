@@ -4,14 +4,19 @@ from types import SimpleNamespace
 from snarf.capabilities.notion import Notion, format_properties_text
 
 
-def make_notion(api_key="fake-token"):
+def make_notion(api_key="fake-token", notion_auth=None):
     notion = Notion.__new__(Notion)
     notion._api_key = api_key
+    notion._notion_auth = notion_auth
     return notion
 
 
-def fake_response(json_data):
-    return SimpleNamespace(raise_for_status=lambda: None, json=lambda: json_data)
+def fake_response(json_data, status_code=200):
+    def raise_for_status():
+        if status_code >= 400:
+            raise RuntimeError(f"HTTP {status_code}")
+
+    return SimpleNamespace(raise_for_status=raise_for_status, json=lambda: json_data, status_code=status_code)
 
 
 def test_available_is_false_without_api_key():
@@ -20,6 +25,34 @@ def test_available_is_false_without_api_key():
 
 def test_available_is_true_with_api_key():
     assert make_notion().available is True
+
+
+def test_available_uses_oauth_token_when_notion_auth_has_one(monkeypatch):
+    class FakeNotionAuth:
+        def access_token(self):
+            return "oauth-token-real"
+
+    notion = make_notion(api_key=None, notion_auth=FakeNotionAuth())
+    assert notion.available is True
+    assert notion._headers()["Authorization"] == "Bearer oauth-token-real"
+
+
+def test_available_falls_back_to_global_api_key_when_notion_auth_has_no_token():
+    class FakeNotionAuth:
+        def access_token(self):
+            return None
+
+    notion = make_notion(api_key="global-key", notion_auth=FakeNotionAuth())
+    assert notion.available is True
+    assert notion._headers()["Authorization"] == "Bearer global-key"
+
+
+def test_available_is_false_when_neither_oauth_nor_global_key_exist():
+    class FakeNotionAuth:
+        def access_token(self):
+            return None
+
+    assert make_notion(api_key=None, notion_auth=FakeNotionAuth()).available is False
 
 
 def test_search_raises_when_not_configured():
@@ -501,6 +534,298 @@ def test_iter_database_rows_paginates_with_start_cursor(monkeypatch):
     assert calls[0]["url"] == "https://api.notion.com/v1/databases/db-1/query"
     assert "start_cursor" not in calls[0]["json"]
     assert calls[1]["json"]["start_cursor"] == "cursor-a"
+
+
+def test_find_child_databases_returns_empty_when_none_embedded(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    payload = {"results": [{"id": "p-1", "type": "paragraph", "has_children": False}]}
+    monkeypatch.setattr(module.requests, "get", lambda *a, **k: fake_response(payload))
+    assert make_notion().find_child_databases("page-1") == []
+
+
+def test_find_child_databases_finds_a_top_level_embedded_database(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    payload = {
+        "results": [
+            {
+                "id": "db-1",
+                "type": "child_database",
+                "has_children": True,
+                "child_database": {"title": "Recursos"},
+            }
+        ]
+    }
+    monkeypatch.setattr(module.requests, "get", lambda *a, **k: fake_response(payload))
+    assert make_notion().find_child_databases("page-1") == [{"id": "db-1", "title": "Recursos"}]
+
+
+def test_find_child_databases_recurses_into_a_toggle(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    responses = {
+        "https://api.notion.com/v1/blocks/page-1/children": {
+            "results": [{"id": "toggle-1", "type": "toggle", "has_children": True}]
+        },
+        "https://api.notion.com/v1/blocks/toggle-1/children": {
+            "results": [
+                {
+                    "id": "db-1",
+                    "type": "child_database",
+                    "has_children": True,
+                    "child_database": {"title": "Archivo"},
+                }
+            ]
+        },
+    }
+    monkeypatch.setattr(module.requests, "get", lambda url, **k: fake_response(responses[url]))
+    assert make_notion().find_child_databases("page-1") == [{"id": "db-1", "title": "Archivo"}]
+
+
+def test_find_child_databases_does_not_recurse_into_the_database_itself(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+
+    def fake_get(url, headers, params, timeout):
+        calls.append(url)
+        return fake_response(
+            {
+                "results": [
+                    {
+                        "id": "db-1",
+                        "type": "child_database",
+                        "has_children": True,
+                        "child_database": {"title": "Recursos"},
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(module.requests, "get", fake_get)
+    make_notion().find_child_databases("page-1")
+    # Un solo request real (a la página) — nunca uno de más tratando de
+    # "recursar adentro" de la database incrustada como si fuera un bloque.
+    assert calls == ["https://api.notion.com/v1/blocks/page-1/children"]
+
+
+def test_get_page_returns_id_url_archived_and_properties(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    payload = {
+        "id": "page-1",
+        "url": "https://notion.so/page-1",
+        "archived": False,
+        "properties": {"Nombre": {"type": "title", "title": [{"plain_text": "Mi Área"}]}},
+    }
+    monkeypatch.setattr(module.requests, "get", lambda *a, **k: fake_response(payload))
+    result = make_notion().get_page("page-1")
+
+    assert result == {
+        "id": "page-1",
+        "url": "https://notion.so/page-1",
+        "archived": False,
+        "properties": {"Nombre": {"type": "title", "title": [{"plain_text": "Mi Área"}]}},
+    }
+
+
+def test_get_page_raises_when_not_configured():
+    with pytest.raises(RuntimeError):
+        make_notion(api_key=None).get_page("page-1")
+
+
+def test_move_page_sends_new_parent_database(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+
+    def fake_patch(url, headers, json, timeout):
+        calls.append({"url": url, "json": json})
+        return fake_response({})
+
+    monkeypatch.setattr(module.requests, "patch", fake_patch)
+    result = make_notion().move_page("page-1", "db-2")
+
+    assert result == {"id": "page-1", "status": "moved", "database_id": "db-2"}
+    assert calls[0]["url"] == "https://api.notion.com/v1/pages/page-1"
+    assert calls[0]["json"] == {"parent": {"database_id": "db-2"}}
+
+
+def test_create_database_sends_parent_title_and_properties(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+
+    def fake_post(url, headers, json, timeout):
+        calls.append({"url": url, "json": json})
+        return fake_response({"id": "new-db", "url": "https://notion.so/new-db"})
+
+    monkeypatch.setattr(module.requests, "post", fake_post)
+    properties = {"Nombre": {"title": {}}, "Estado": {"select": {"options": []}}}
+    result = make_notion().create_database("parent-1", "Proyectos", properties)
+
+    assert result == {"id": "new-db", "url": "https://notion.so/new-db"}
+    assert calls[0]["url"] == "https://api.notion.com/v1/databases"
+    assert calls[0]["json"]["parent"] == {"type": "page_id", "page_id": "parent-1"}
+    assert calls[0]["json"]["title"][0]["text"]["content"] == "Proyectos"
+    assert calls[0]["json"]["properties"] == properties
+
+
+def test_update_page_cover_sends_external_cover(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+    monkeypatch.setattr(
+        module.requests, "patch", lambda url, headers, json, timeout: (calls.append({"url": url, "json": json}), fake_response({}))[1]
+    )
+    result = make_notion().update_page_cover("page-1", "https://img.example/x.png")
+
+    assert result == {"id": "page-1", "status": "updated"}
+    assert calls[0]["json"] == {"cover": {"type": "external", "external": {"url": "https://img.example/x.png"}}}
+
+
+def test_update_page_cover_removes_cover_with_none(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+    monkeypatch.setattr(
+        module.requests, "patch", lambda url, headers, json, timeout: (calls.append(json), fake_response({}))[1]
+    )
+    make_notion().update_page_cover("page-1", None)
+    assert calls[0] == {"cover": None}
+
+
+def test_update_page_icon_sends_raw_typed_icon(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+    monkeypatch.setattr(
+        module.requests, "patch", lambda url, headers, json, timeout: (calls.append(json), fake_response({}))[1]
+    )
+    icon = {"type": "emoji", "emoji": "🧠"}
+    result = make_notion().update_page_icon("page-1", icon)
+
+    assert result == {"id": "page-1", "status": "updated"}
+    assert calls[0] == {"icon": icon}
+
+
+def test_update_database_cover_and_icon_target_database_endpoint(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+    monkeypatch.setattr(
+        module.requests, "patch", lambda url, headers, json, timeout: (calls.append(url), fake_response({}))[1]
+    )
+    make_notion().update_database_cover("db-1", "https://img.example/x.png")
+    make_notion().update_database_icon("db-1", {"type": "emoji", "emoji": "📁"})
+
+    assert calls[0] == "https://api.notion.com/v1/databases/db-1"
+    assert calls[1] == "https://api.notion.com/v1/databases/db-1"
+
+
+def test_archive_page_sends_archived_true(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+    monkeypatch.setattr(
+        module.requests, "patch", lambda url, headers, json, timeout: (calls.append(json), fake_response({}))[1]
+    )
+    result = make_notion().archive_page("page-1")
+
+    assert result == {"id": "page-1", "status": "archived"}
+    assert calls[0] == {"archived": True}
+
+
+def test_restore_page_sends_archived_false(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+    monkeypatch.setattr(
+        module.requests, "patch", lambda url, headers, json, timeout: (calls.append(json), fake_response({}))[1]
+    )
+    result = make_notion().restore_page("page-1")
+
+    assert result == {"id": "page-1", "status": "restored"}
+    assert calls[0] == {"archived": False}
+
+
+def test_append_to_page_batches_over_100_blocks(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+
+    def fake_patch(url, headers, json, timeout):
+        calls.append(json)
+        return fake_response({})
+
+    monkeypatch.setattr(module.requests, "patch", fake_patch)
+    content = "\n\n".join(f"párrafo {i}" for i in range(150))
+    result = make_notion().append_to_page("page-1", content)
+
+    assert result == {"status": "appended", "page_id": "page-1"}
+    assert len(calls) == 2
+    assert len(calls[0]["children"]) == 100
+    assert len(calls[1]["children"]) == 50
+
+
+def test_create_page_batches_extra_blocks_via_append(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    post_calls = []
+    patch_calls = []
+
+    def fake_post(url, headers, json, timeout):
+        post_calls.append(json)
+        return fake_response({"id": "new-page", "url": "https://notion.so/new-page"})
+
+    def fake_patch(url, headers, json, timeout):
+        patch_calls.append(json)
+        return fake_response({})
+
+    monkeypatch.setattr(module.requests, "post", fake_post)
+    monkeypatch.setattr(module.requests, "patch", fake_patch)
+    content = "\n\n".join(f"párrafo {i}" for i in range(120))
+    result = make_notion().create_page("parent-1", "Doc largo", content)
+
+    assert result == {"id": "new-page", "url": "https://notion.so/new-page"}
+    assert len(post_calls[0]["children"]) == 100
+    assert len(patch_calls) == 1
+    assert len(patch_calls[0]["children"]) == 20
+
+
+def test_append_to_page_retries_on_transient_error_then_succeeds(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    responses = [fake_response({}, status_code=503), fake_response({})]
+
+    def fake_patch(url, headers, json, timeout):
+        return responses.pop(0)
+
+    monkeypatch.setattr(module.requests, "patch", fake_patch)
+    monkeypatch.setattr(module.time, "sleep", lambda *_: None)
+    result = make_notion().append_to_page("page-1", "contenido")
+
+    assert result == {"status": "appended", "page_id": "page-1"}
+    assert responses == []
+
+
+def test_append_to_page_gives_up_after_max_attempts(monkeypatch):
+    from snarf.capabilities import notion as module
+
+    calls = []
+
+    def always_rate_limited(url, headers, json, timeout):
+        calls.append(1)
+        return fake_response({}, status_code=429)
+
+    monkeypatch.setattr(module.requests, "patch", always_rate_limited)
+    monkeypatch.setattr(module.time, "sleep", lambda *_: None)
+
+    with pytest.raises(RuntimeError):
+        make_notion().append_to_page("page-1", "contenido")
+
+    assert len(calls) == module.NOTION_MAX_ATTEMPTS
 
 
 def test_format_properties_text_handles_common_property_types():

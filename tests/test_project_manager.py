@@ -42,12 +42,23 @@ class FakeIndexer:
         return [{"id": "chunk-1", "text": "resultado"}]
 
 
-def make_manager(tmp_path, monkeypatch, drive=None, llm=None, indexer=None):
-    from snarf.specialists import project_manager as module
+class FakeSecondBrain:
+    def __init__(self, connected=True, created_page_id="notion-page-1"):
+        self._connected = connected
+        self._created_page_id = created_page_id
+        self.create_project_row_calls = []
 
-    monkeypatch.setattr(module, "PROJECTS_DIR", tmp_path / "projects")
+    def create_project_row(self, name):
+        self.create_project_row_calls.append(name)
+        return self._created_page_id if self._connected else None
+
+
+def make_manager(tmp_path, monkeypatch, drive=None, llm=None, indexer=None, second_brain=None):
     resolved_llm = llm or FakeLLM()
-    return ProjectManager(drive or FakeDrive(), indexer or FakeIndexer(), lambda: resolved_llm, "fundador")
+    return ProjectManager(
+        drive or FakeDrive(), indexer or FakeIndexer(), lambda: resolved_llm, "fundador",
+        projects_dir=tmp_path / "projects", second_brain=second_brain,
+    )
 
 
 def test_create_resolves_root_folder_once_across_multiple_creations(tmp_path, monkeypatch):
@@ -113,17 +124,105 @@ def test_get_returns_none_for_a_missing_project(tmp_path, monkeypatch):
     assert manager.get("no-existe") is None
 
 
-def test_get_normalizes_a_corrupted_partial_record(tmp_path, monkeypatch):
-    from snarf.specialists import project_manager as module
+def test_create_without_second_brain_leaves_notion_link_empty(tmp_path, monkeypatch):
+    manager = make_manager(tmp_path, monkeypatch)
+    record = manager.create("Proyecto")
+    assert record["notion_project_page_id"] is None
 
+
+def test_create_with_second_brain_connected_creates_notion_row_and_saves_link(tmp_path, monkeypatch):
+    second_brain = FakeSecondBrain(connected=True, created_page_id="notion-page-1")
+    manager = make_manager(tmp_path, monkeypatch, second_brain=second_brain)
+    record = manager.create("Proyecto con Notion")
+
+    assert second_brain.create_project_row_calls == ["Proyecto con Notion"]
+    assert record["notion_project_page_id"] == "notion-page-1"
+    assert manager.get(record["id"])["notion_project_page_id"] == "notion-page-1"
+
+
+def test_create_with_second_brain_not_connected_leaves_notion_link_empty(tmp_path, monkeypatch):
+    second_brain = FakeSecondBrain(connected=False)
+    manager = make_manager(tmp_path, monkeypatch, second_brain=second_brain)
+    record = manager.create("Proyecto sin conectar")
+    assert record["notion_project_page_id"] is None
+
+
+def test_set_notion_link_updates_existing_project(tmp_path, monkeypatch):
+    manager = make_manager(tmp_path, monkeypatch)
+    record = manager.create("Proyecto")
+    updated = manager.set_notion_link(record["id"], "notion-page-2")
+    assert updated["notion_project_page_id"] == "notion-page-2"
+    assert manager.get(record["id"])["notion_project_page_id"] == "notion-page-2"
+
+
+def test_find_by_notion_page_id_returns_none_when_no_projects_exist(tmp_path, monkeypatch):
+    manager = make_manager(tmp_path, monkeypatch)
+    assert manager.find_by_notion_page_id("notion-page-1") is None
+
+
+def test_find_by_notion_page_id_finds_the_linked_project(tmp_path, monkeypatch):
+    manager = make_manager(tmp_path, monkeypatch)
+    manager.create("Sin vincular")
+    linked = manager.create("Vinculado")
+    manager.set_notion_link(linked["id"], "notion-page-1")
+
+    found = manager.find_by_notion_page_id("notion-page-1")
+    assert found["id"] == linked["id"]
+    assert manager.find_by_notion_page_id("notion-page-inexistente") is None
+
+
+def test_set_notion_link_returns_none_for_missing_project(tmp_path, monkeypatch):
+    manager = make_manager(tmp_path, monkeypatch)
+    assert manager.set_notion_link("no-existe", "notion-page-1") is None
+
+
+def test_projects_dir_is_namespaced_per_user_id(tmp_path):
+    # ADR 0183: dos ProjectManager de dos user_id distintos, cada uno con su
+    # propio projects_dir, nunca deben ver ni pisar los proyectos del otro —
+    # mismo criterio de aislamiento ya exigido a SecondBrainManager (ADR 0182).
+    manager_a = ProjectManager(
+        FakeDrive(), FakeIndexer(), lambda: FakeLLM(), "fundador", projects_dir=tmp_path / "fundador" / "projects"
+    )
+    manager_b = ProjectManager(
+        FakeDrive(), FakeIndexer(), lambda: FakeLLM(), "otro-usuario", projects_dir=tmp_path / "otro-usuario" / "projects"
+    )
+    project_a = manager_a.create("Proyecto de Fundador")
+    project_b = manager_b.create("Proyecto de Otro")
+
+    assert manager_a.list_projects() == [
+        {
+            "id": project_a["id"],
+            "name": "Proyecto de Fundador",
+            "task_count": 0,
+            "note_count": 0,
+            "created_at": project_a["created_at"],
+        }
+    ]
+    assert manager_b.list_projects() == [
+        {
+            "id": project_b["id"],
+            "name": "Proyecto de Otro",
+            "task_count": 0,
+            "note_count": 0,
+            "created_at": project_b["created_at"],
+        }
+    ]
+    assert manager_a.get(project_b["id"]) is None
+    assert manager_b.get(project_a["id"]) is None
+    assert (tmp_path / "fundador" / "projects" / f"{project_a['id']}.json").exists()
+    assert (tmp_path / "otro-usuario" / "projects" / f"{project_b['id']}.json").exists()
+
+
+def test_get_normalizes_a_corrupted_partial_record(tmp_path, monkeypatch):
     projects_dir = tmp_path / "projects"
-    monkeypatch.setattr(module, "PROJECTS_DIR", projects_dir)
     projects_dir.mkdir(parents=True)
     (projects_dir / "broken-1.json").write_text(
         '{"name": "Roto", "tasks": [{"id": "t1"}, "no-es-un-dict"], "subfolders": {"X": 5}}',
         encoding="utf-8",
     )
-    manager = ProjectManager(FakeDrive(), FakeIndexer(), lambda: FakeLLM(), "fundador")
+    manager = ProjectManager(
+        FakeDrive(), FakeIndexer(), lambda: FakeLLM(), "fundador", projects_dir=projects_dir
+    )
     record = manager.get("broken-1")
     assert record["name"] == "Roto"
     assert record["tasks"] == [{"id": "t1", "text": "", "done": False}]
@@ -196,15 +295,14 @@ def test_set_prompt_truncates_to_the_max_length(tmp_path, monkeypatch):
 def test_get_truncates_an_overlong_prompt_found_on_disk(tmp_path, monkeypatch):
     # Defensa contra el disco, no solo contra la API: un archivo tocado a
     # mano o escrito por una versión vieja no debe poder colarse más largo.
-    from snarf.specialists import project_manager as module
-
     projects_dir = tmp_path / "projects"
-    monkeypatch.setattr(module, "PROJECTS_DIR", projects_dir)
     projects_dir.mkdir(parents=True)
     projects_dir.joinpath("p1.json").write_text(
         '{"name": "P", "prompt": "' + ("y" * (PROJECT_PROMPT_MAX_LENGTH + 200)) + '"}', encoding="utf-8"
     )
-    manager = ProjectManager(FakeDrive(), FakeIndexer(), lambda: FakeLLM(), "fundador")
+    manager = ProjectManager(
+        FakeDrive(), FakeIndexer(), lambda: FakeLLM(), "fundador", projects_dir=projects_dir
+    )
     assert len(manager.get("p1")["prompt"]) == PROJECT_PROMPT_MAX_LENGTH
 
 

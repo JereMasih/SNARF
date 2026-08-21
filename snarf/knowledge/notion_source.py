@@ -32,6 +32,11 @@ class NotionSource(KnowledgeSource):
 
     def iter_items(self) -> Iterator[KnowledgeItem]:
         self._row_properties = {}
+        # Gap real de /search (ADR 0193): una database incrustada dentro de
+        # una página (child_database) nunca aparece en iter_all_databases()
+        # — se acumulan sus ids acá para no procesarla dos veces si además
+        # apareciera suelta en el barrido de abajo.
+        seen_database_ids: set[str] = set()
         for page in self._notion.iter_all_pages():
             yield KnowledgeItem(
                 id=page["id"],
@@ -45,20 +50,31 @@ class NotionSource(KnowledgeSource):
                 # mismo mecanismo real (ver knowledge_search(source=...)).
                 extra_metadata={"location": "notion", "notion_url": page.get("url") or ""},
             )
+            for child_db in self._notion.find_child_databases(page["id"]):
+                if child_db["id"] in seen_database_ids:
+                    continue
+                seen_database_ids.add(child_db["id"])
+                yield from self._iter_database_rows_as_items(child_db["id"])
         for database in self._notion.iter_all_databases():
-            for row in self._notion.iter_database_rows(database["id"]):
-                self._row_properties[row["id"]] = row["properties"]
-                yield KnowledgeItem(
-                    id=row["id"],
-                    name=_row_title(row["properties"], row["id"]),
-                    mime_type="notion/database_row",
-                    modified_marker=row.get("last_edited_time") or "",
-                    extra_metadata={
-                        "location": "notion",
-                        "notion_url": row.get("url") or "",
-                        "notion_database_id": database["id"],
-                    },
-                )
+            if database["id"] in seen_database_ids:
+                continue
+            seen_database_ids.add(database["id"])
+            yield from self._iter_database_rows_as_items(database["id"])
+
+    def _iter_database_rows_as_items(self, database_id: str) -> Iterator[KnowledgeItem]:
+        for row in self._notion.iter_database_rows(database_id):
+            self._row_properties[row["id"]] = row["properties"]
+            yield KnowledgeItem(
+                id=row["id"],
+                name=_row_title(row["properties"], row["id"]),
+                mime_type="notion/database_row",
+                modified_marker=row.get("last_edited_time") or "",
+                extra_metadata={
+                    "location": "notion",
+                    "notion_url": row.get("url") or "",
+                    "notion_database_id": database_id,
+                },
+            )
 
     def read_item(self, item: KnowledgeItem) -> str:
         body = self._notion.read_page_text(item.id)

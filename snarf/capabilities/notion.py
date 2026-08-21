@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Iterator
 
 import requests
@@ -11,8 +12,31 @@ API_BASE = "https://api.notion.com/v1"
 # silencio. Actualizar a propósito, no por accidente.
 NOTION_VERSION = "2022-06-28"
 
+# Límite real de la API de Notion: como mucho 100 bloques `children` por
+# request de creación/append — sin trocear, un documento largo generado de
+# una sola vez falla a mitad de camino (ver ADR 0180, prerrequisito de la
+# escritura confiable de documentos del roadmap Second Brain).
+MAX_CHILDREN_PER_REQUEST = 100
 
-def _extract_title(result: dict) -> str:
+# Mismo criterio de 3 intentos con pausa corta que
+# `google_retry.retry_with_fresh_client` (ADR 0041), adaptado acá a un
+# cliente HTTP sin estado: no hay ningún "service" cacheado que resetear,
+# solo reintentar la misma llamada ante un 429 (rate limit) o 5xx
+# transitorio de Notion.
+NOTION_MAX_ATTEMPTS = 3
+NOTION_RETRY_DELAY_SECONDS = 0.4
+
+
+def _is_transient_error(response) -> bool:
+    return response.status_code == 429 or response.status_code >= 500
+
+
+def _chunked(items: list, size: int) -> Iterator[list]:
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
+
+
+def extract_title(result: dict) -> str:
     for prop in result.get("properties", {}).values():
         if prop.get("type") == "title":
             return "".join(t.get("plain_text", "") for t in prop.get("title", []))
@@ -103,16 +127,30 @@ def _paragraph_blocks(text: str) -> list[dict]:
 class Notion(Capability):
     name = "notion"
 
-    def __init__(self):
+    def __init__(self, notion_auth=None):
         self._api_key = os.environ.get("NOTION_API_KEY")
+        # notion_auth: NotionAuth opcional (ADR 0186) — mismo patrón de
+        # inyección que GoogleDrive(google_auth). Si el usuario ya conectó
+        # su propio Notion vía OAuth, su token real tiene prioridad; si no
+        # (o no se inyectó ningún NotionAuth, ej. tests viejos), cae de
+        # vuelta al NOTION_API_KEY global — DEFAULT_USER_ID sigue
+        # funcionando exactamente igual que antes de este ADR.
+        self._notion_auth = notion_auth
+
+    def _resolve_token(self) -> str | None:
+        if self._notion_auth is not None:
+            token = self._notion_auth.access_token()
+            if token:
+                return token
+        return self._api_key
 
     @property
     def available(self) -> bool:
-        return bool(self._api_key)
+        return bool(self._resolve_token())
 
     def _headers(self) -> dict:
         return {
-            "Authorization": f"Bearer {self._api_key}",
+            "Authorization": f"Bearer {self._resolve_token()}",
             "Notion-Version": NOTION_VERSION,
             "Content-Type": "application/json",
         }
@@ -121,6 +159,28 @@ class Notion(Capability):
         if not self.available:
             raise RuntimeError("NOTION_API_KEY no configurada (ver .env.example).")
 
+    def _request_with_retry(self, verb: str, url: str, json_body: dict) -> requests.Response:
+        """`verb` es 'post' o 'patch' (los dos únicos usados en escritura por
+        tandas hoy — create_page/append_to_page). Reintenta hasta
+        NOTION_MAX_ATTEMPTS veces ante un 429/5xx transitorio; un error real
+        (4xx que no sea rate limit) se devuelve tal cual en el primer
+        intento, sin reintentar en vano."""
+        request_fn = getattr(requests, verb)
+        response = None
+        for attempt in range(NOTION_MAX_ATTEMPTS):
+            response = request_fn(url, headers=self._headers(), json=json_body, timeout=15)
+            if not _is_transient_error(response):
+                return response
+            if attempt < NOTION_MAX_ATTEMPTS - 1:
+                time.sleep(NOTION_RETRY_DELAY_SECONDS)
+        return response
+
+    def _append_blocks(self, page_id: str, blocks: list[dict]) -> None:
+        response = self._request_with_retry(
+            "patch", f"{API_BASE}/blocks/{page_id}/children", {"children": blocks}
+        )
+        response.raise_for_status()
+
     def search(self, query: str, page_size: int = 20) -> list[dict]:
         self._require_available()
         response = requests.post(
@@ -128,33 +188,41 @@ class Notion(Capability):
         )
         response.raise_for_status()
         return [
-            {"id": r.get("id"), "object": r.get("object"), "title": _extract_title(r), "url": r.get("url")}
+            {"id": r.get("id"), "object": r.get("object"), "title": extract_title(r), "url": r.get("url")}
             for r in response.json().get("results", [])
         ]
 
     def create_page(self, parent_page_id: str, title: str, content: str = "") -> dict:
+        """Si `content` genera más de MAX_CHILDREN_PER_REQUEST bloques, la
+        creación en sí solo manda la primera tanda (límite real de la API) y
+        el resto se agrega con `_append_blocks` en tandas siguientes — un
+        documento largo nunca falla a mitad de camino solo por exceder el
+        límite de children por request (ver ADR 0180)."""
         self._require_available()
+        blocks = _paragraph_blocks(content)
+        first_batch, rest = blocks[:MAX_CHILDREN_PER_REQUEST], blocks[MAX_CHILDREN_PER_REQUEST:]
         body: dict = {
             "parent": {"page_id": parent_page_id},
             "properties": {"title": {"title": [{"type": "text", "text": {"content": title}}]}},
         }
-        blocks = _paragraph_blocks(content)
-        if blocks:
-            body["children"] = blocks
-        response = requests.post(f"{API_BASE}/pages", headers=self._headers(), json=body, timeout=15)
+        if first_batch:
+            body["children"] = first_batch
+        response = self._request_with_retry("post", f"{API_BASE}/pages", body)
         response.raise_for_status()
         data = response.json()
-        return {"id": data.get("id"), "url": data.get("url")}
+        page_id = data.get("id")
+        for batch in _chunked(rest, MAX_CHILDREN_PER_REQUEST):
+            self._append_blocks(page_id, batch)
+        return {"id": page_id, "url": data.get("url")}
 
     def append_to_page(self, page_id: str, content: str) -> dict:
+        """Trocea en tandas de MAX_CHILDREN_PER_REQUEST bloques, cada una con
+        reintento propio ante un 429/5xx transitorio — mismo motivo que
+        `create_page`."""
         self._require_available()
-        response = requests.patch(
-            f"{API_BASE}/blocks/{page_id}/children",
-            headers=self._headers(),
-            json={"children": _paragraph_blocks(content)},
-            timeout=15,
-        )
-        response.raise_for_status()
+        blocks = _paragraph_blocks(content)
+        for batch in (list(_chunked(blocks, MAX_CHILDREN_PER_REQUEST)) or [[]]):
+            self._append_blocks(page_id, batch)
         return {"status": "appended", "page_id": page_id}
 
     def _iter_page_blocks(self, block_id: str, _seen: set[str] | None = None) -> Iterator[dict]:
@@ -342,6 +410,149 @@ class Notion(Capability):
         data = response.json()
         return {"id": data.get("id"), "url": data.get("url")}
 
+    def find_child_databases(self, page_id: str, _seen: set[str] | None = None) -> list[dict]:
+        """Recorre recursivamente los bloques reales de una página buscando
+        databases incrustadas (`child_database`) — `/search` de Notion no
+        las lista (gap real, ver ADR 0193), así que sin esto quedan
+        invisibles para `iter_all_databases`/el indexado semántico. Mismo
+        mecanismo de recorrido que `_iter_page_blocks` (recursión sobre
+        `has_children`), pero acá interesa el bloque `child_database` en sí
+        (id + título), no su texto — a diferencia de una database real
+        consultable con `query_database`, no tiene sentido "recursar
+        adentro" de una database incrustada como si fuera un bloque más."""
+        self._require_available()
+        if _seen is None:
+            _seen = set()
+        if page_id in _seen:
+            return []
+        _seen.add(page_id)
+        found: list[dict] = []
+        response = requests.get(
+            f"{API_BASE}/blocks/{page_id}/children", headers=self._headers(), params={"page_size": 100}, timeout=15
+        )
+        response.raise_for_status()
+        for block in response.json().get("results", []):
+            if block.get("type") == "child_database":
+                found.append({"id": block["id"], "title": block.get("child_database", {}).get("title", "")})
+            elif block.get("has_children"):
+                found.extend(self.find_child_databases(block["id"], _seen))
+        return found
+
+    def get_page(self, page_id: str) -> dict:
+        """Página real completa a nivel de metadata — properties tipadas tal
+        cual las devuelve Notion, más el estado de archivado — no de
+        contenido/bloques (ver read_page_text/list_blocks para eso). Trae
+        UN registro puntual (ej. una fila de Área o de Proyecto del Second
+        Brain) sin tener que recorrer toda la database con query_database."""
+        self._require_available()
+        response = requests.get(f"{API_BASE}/pages/{page_id}", headers=self._headers(), timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        return {
+            "id": data.get("id"),
+            "url": data.get("url"),
+            "archived": data.get("archived", False),
+            "properties": data.get("properties", {}),
+        }
+
+    def create_database(self, parent_page_id: str, title: str, properties: dict) -> dict:
+        """Crea una database NUEVA (no una fila) bajo una página padre — a
+        diferencia de `create_database_item` (crea un registro dentro de una
+        database YA existente). `properties` va tal cual llega, ya en la
+        forma tipada que exige la API de Notion para el schema
+        (ej. {'Nombre': {'title': {}}, 'Estado': {'select': {'options': [...]}}}).
+        Necesario para que el onboarding del Second Brain (ver
+        ROADMAP_SECOND_BRAIN_NOTION.md, Fase A4) pueda construir las
+        databases Área/Proyecto/Recursos/Archivo cuando el usuario no las
+        tiene todavía."""
+        self._require_available()
+        body = {
+            "parent": {"type": "page_id", "page_id": parent_page_id},
+            "title": [{"type": "text", "text": {"content": title}}],
+            "properties": properties,
+        }
+        response = requests.post(f"{API_BASE}/databases", headers=self._headers(), json=body, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        return {"id": data.get("id"), "url": data.get("url")}
+
+    def move_page(self, page_id: str, new_parent_database_id: str) -> dict:
+        """Mueve una página existente a otra database, cambiando su
+        `parent`. Notion descarta en silencio cualquier property que no
+        exista (por nombre y tipo) en la database destino — el fundador
+        pierde esos valores sin ningún aviso de la API; quien llame a esto
+        debe advertirlo antes de pedir confirmación (ver ADR 0180)."""
+        self._require_available()
+        response = requests.patch(
+            f"{API_BASE}/pages/{page_id}",
+            headers=self._headers(),
+            json={"parent": {"database_id": new_parent_database_id}},
+            timeout=15,
+        )
+        response.raise_for_status()
+        return {"id": page_id, "status": "moved", "database_id": new_parent_database_id}
+
+    def update_page_cover(self, page_id: str, cover_url: str | None) -> dict:
+        """Cambia (o quita, con `cover_url=None`) la portada de una página —
+        la API de Notion solo acepta covers externos (una URL), nunca subir
+        un archivo directo por esta vía."""
+        self._require_available()
+        cover = {"type": "external", "external": {"url": cover_url}} if cover_url else None
+        response = requests.patch(
+            f"{API_BASE}/pages/{page_id}", headers=self._headers(), json={"cover": cover}, timeout=15
+        )
+        response.raise_for_status()
+        return {"id": page_id, "status": "updated"}
+
+    def update_page_icon(self, page_id: str, icon: dict | None) -> dict:
+        """Cambia (o quita, con `icon=None`) el ícono de una página. `icon`
+        va tal cual en la forma tipada real de Notion — emoji
+        (`{'type': 'emoji', 'emoji': '🎯'}`) o externo
+        (`{'type': 'external', 'external': {'url': ...}}`)."""
+        self._require_available()
+        response = requests.patch(
+            f"{API_BASE}/pages/{page_id}", headers=self._headers(), json={"icon": icon}, timeout=15
+        )
+        response.raise_for_status()
+        return {"id": page_id, "status": "updated"}
+
+    def update_database_cover(self, database_id: str, cover_url: str | None) -> dict:
+        """Igual que `update_page_cover` pero para una database entera."""
+        self._require_available()
+        cover = {"type": "external", "external": {"url": cover_url}} if cover_url else None
+        response = requests.patch(
+            f"{API_BASE}/databases/{database_id}", headers=self._headers(), json={"cover": cover}, timeout=15
+        )
+        response.raise_for_status()
+        return {"id": database_id, "status": "updated"}
+
+    def update_database_icon(self, database_id: str, icon: dict | None) -> dict:
+        """Igual que `update_page_icon` pero para una database entera."""
+        self._require_available()
+        response = requests.patch(
+            f"{API_BASE}/databases/{database_id}", headers=self._headers(), json={"icon": icon}, timeout=15
+        )
+        response.raise_for_status()
+        return {"id": database_id, "status": "updated"}
+
+    def archive_page(self, page_id: str) -> dict:
+        """Envía una página a la papelera de Notion — recuperable ahí,
+        mismo criterio de reversibilidad que `delete_block`/
+        `drive_delete_file`."""
+        return self._set_page_archived(page_id, True)
+
+    def restore_page(self, page_id: str) -> dict:
+        """Restaura una página archivada previamente con `archive_page`."""
+        return self._set_page_archived(page_id, False)
+
+    def _set_page_archived(self, page_id: str, archived: bool) -> dict:
+        self._require_available()
+        response = requests.patch(
+            f"{API_BASE}/pages/{page_id}", headers=self._headers(), json={"archived": archived}, timeout=15
+        )
+        response.raise_for_status()
+        return {"id": page_id, "status": "archived" if archived else "restored"}
+
     def _iter_search_results(self, object_type: str, page_size: int = 100) -> Iterator[dict]:
         self._require_available()
         cursor: str | None = None
@@ -365,7 +576,7 @@ class Notion(Capability):
         for result in self._iter_search_results("page"):
             yield {
                 "id": result.get("id"),
-                "title": _extract_title(result),
+                "title": extract_title(result),
                 "url": result.get("url"),
                 "last_edited_time": result.get("last_edited_time"),
             }

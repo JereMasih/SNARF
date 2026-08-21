@@ -25,6 +25,7 @@ from snarf.capabilities.google_gmail import GoogleGmail
 from snarf.capabilities.google_youtube import GoogleYouTube
 from snarf.capabilities.local_file_store import LocalFileStore
 from snarf.capabilities.notion import Notion
+from snarf.capabilities.notion_auth import NotionAuth
 from snarf.capabilities.pdf_extractor import PdfExtractor
 from snarf.capabilities.pptx_extractor import PptxExtractor
 from snarf.capabilities.voyage_embeddings import VoyageEmbeddings
@@ -60,10 +61,13 @@ from snarf.runtime import (
 )
 from snarf.executive.roles import ROLE_CONFIGS as EXECUTIVE_ROLE_CONFIGS
 from snarf.executive.specialist import ExecutiveBoardSpecialist
+from snarf.executive.team import DEFAULT_MAX_ROUNDS, TeamSession
 from snarf.specialists.gmail_digest import SYSTEM_PROMPT as GMAIL_DIGEST_SYSTEM_PROMPT, GmailDigestSpecialist
 from snarf.specialists.bug_reports import STATUSES as BUG_REPORT_STATUSES
 from snarf.specialists.bug_reports import TRIAGE_SYSTEM_PROMPT, BugReports
+from snarf.specialists.second_brain import SecondBrainManager
 from snarf.specialists.project_manager import (
+    PROJECTS_DIR,
     SUBFOLDER_SUGGESTION_SYSTEM_PROMPT,
     SUMMARY_SYSTEM_PROMPT as PROJECT_SUMMARY_SYSTEM_PROMPT,
     ProjectManager,
@@ -87,6 +91,9 @@ from snarf.specialists.finance.books_categorize import (
     BooksCategorizeSpecialist,
 )
 from snarf.specialists.finance.monthly_pnl import MonthlyPnLSpecialist
+from snarf.specialists.document_writer import DocumentWriter
+from snarf.specialists.finance_supervisor import FinanceSupervisor
+from snarf.specialists.founder_mood import FounderMood
 from snarf.specialists.research.mode import COMPETITOR_WATCH_CONFIG, DEEP_RESEARCH_CONFIG, TREND_SCAN_CONFIG
 from snarf.specialists.research.specialist import ResearchSpecialist
 from snarf.specialists.skill_factory import SkillFactorySpecialist
@@ -161,6 +168,18 @@ HIGH_IMPACT_TOOLS = frozenset({
     "notion_update_block",
     "notion_delete_block",
     "notion_update_table_cell",
+    # Gaps de capability cerrados en ADR 0180 (Second Brain de Notion,
+    # ROADMAP_SECOND_BRAIN_NOTION.md Fase A1): mover una página pierde en
+    # silencio las properties que no matchean en la database destino, crear
+    # una database y archivar tocan la estructura real del workspace del
+    # fundador — mismo criterio que drive_delete_file/project_delete.
+    "notion_move_page",
+    "notion_create_database",
+    "notion_archive_page",
+    # Onboarding del Second Brain (ADR 0190): crea una página raíz + 4
+    # databases reales en el workspace del fundador — mismo criterio que
+    # notion_create_database, siempre confirmed.
+    "second_brain_onboarding_auto_build",
 })
 BULK_READ_GATED_TOOLS = frozenset({
     "drive_list_files",
@@ -409,7 +428,41 @@ SYSTEM_PREFIX = (
     "como ya confirmado por una edición anterior en la misma nota). "
     "notion_index_start/notion_index_status vectorizan ese Notion (páginas y filas de databases) "
     "al dominio 'personal' de la Knowledge Layer, mismo criterio que drive_index_start — usalos "
-    "solo cuando el fundador lo pida explícitamente.\n\n"
+    "solo cuando el fundador lo pida explícitamente. "
+    "Gaps de estructura (ADR 0180): notion_create_database crea una database NUEVA bajo una página "
+    "(distinto de notion_create_database_item, que crea un registro dentro de una ya existente); "
+    "notion_move_page cambia una página de database — SIEMPRE avisá antes qué properties se van a "
+    "perder si no matchean en la destino, Notion las descarta en silencio; notion_archive_page/"
+    "notion_restore_page mandan una página a la papelera y la recuperan de ahí. "
+    "notion_move_page/notion_create_database/notion_archive_page son de alto impacto (confirmed "
+    "obligatorio siempre). notion_update_page_cover/notion_update_page_icon (y sus equivalentes de "
+    "database) cambian portada/ícono, reversibles, sin confirmed.\n\n"
+    "Second Brain (ver ROADMAP_SECOND_BRAIN_NOTION.md, ADR 0179/0182): si el fundador ya organiza su "
+    "Notion con la jerarquía Área→Proyecto→Recursos/Archivo (método PARA), second_brain_status te dice "
+    "si está conectado (databases reales ya mapeadas) — si no lo está, decilo explícito, no inventes "
+    "una jerarquía que no existe. second_brain_list_areas/second_brain_get_area leen las Áreas reales; "
+    "second_brain_list_projects (con o sin area_id)/second_brain_get_project leen los Proyectos; "
+    "second_brain_list_resources/second_brain_list_archive leen lo asociado a un Proyecto puntual. "
+    "second_brain_get_area_home trae el panorama agregado de un Área (Proyectos+Recursos+Archivo) más "
+    "un análisis generado por LLM — usa el cacheado si existe; second_brain_area_report_refresh lo "
+    "regenera a pedido explícito. second_brain_link_project vincula un Proyecto de Snarf ya existente a "
+    "una página real de Notion (valida que exista antes de guardar). Todas de solo lectura o reversibles, "
+    "reflejan Notion en vivo — nunca hay un segundo lugar de verdad acá.\n\n"
+    "Onboarding del Second Brain (ADR 0190): si second_brain_status dice que no está conectado y el "
+    "fundador (o un usuario nuevo) quiere empezar a usarlo, primero EXPLICÁ qué es la jerarquía Área→"
+    "Proyecto→Recursos→Archivo (método PARA) y por qué — nunca construyas nada en silencio. Después "
+    "preguntá: ¿prefiere que Snarf le arme la estructura desde cero (second_brain_onboarding_auto_build, "
+    "requiere que antes comparta una página de su Notion con la integración y te pase su id — alto "
+    "impacto, confirmed obligatorio), o ya tiene sus propias databases y prefiere mapearlas "
+    "(second_brain_onboarding_suggest_mapping propone un mapeo por nombre, "
+    "second_brain_onboarding_apply_mapping lo guarda recién cuando el fundador lo confirme)?\n\n"
+    "Supervisores periódicos (ADR 0197): finance_supervisor_get_snapshot trae el último P&L real + "
+    "interpretación del fundador — None si nunca configuró una Sheet (avisale que necesita "
+    "finance_supervisor_set_sheet(file_id) primero, nunca inventes un estado financiero sin eso). "
+    "founder_mood_get_snapshot trae señales de ánimo/estado interpretadas de la memoria episódica "
+    "reciente, cada una con su base real (hecho/inferencia/hipótesis) — nunca la presentes como más "
+    "certera de lo que esa etiqueta indica, y nunca la uses para diagnosticar ni dar consejos "
+    "psicológicos, es solo contexto adicional para vos.\n\n"
     "Reportes de bugs (bug_report_create/bug_report_list/bug_report_get/bug_report_update_status): el "
     "fundador reporta un problema normalmente desde un botón dedicado de la interfaz, no en el chat — "
     "pero si te pregunta por un bug reportado (en ESTA conversación o en cualquier otra), usá "
@@ -425,6 +478,27 @@ SYSTEM_PREFIX = (
     "de cada rol trae su propia basis (hecho/inferencia/hipótesis/estimación/opinión) — nunca "
     "muestres ese detalle crudo salvo pedido explícito, sintetizá vos las posturas en una "
     "respuesta coherente, marcando con claridad si hay desacuerdo real entre roles.\n\n"
+    "executive_team_run convoca un EQUIPO (distinto del board, ver arriba) para producir y aprobar "
+    "internamente un plan/borrador real — usala solo cuando el fundador pida explícitamente que un "
+    "equipo produzca/itere algo, nunca por tu cuenta. Si el objetivo es planear un documento largo "
+    "para escribir a Notion (ver document_write_start más abajo, ADR 0199), pedile en el objective "
+    "que el equipo entregue un PLAN de secciones (una línea por sección, título y brief corto) — "
+    "nunca el documento entero redactado, eso lo hace document_write_start sección por sección "
+    "después, con su propio contexto acotado. Si hay una Sheet financiera configurada o señales de "
+    "ánimo recientes relevantes al objetivo, sumá finance_supervisor_get_snapshot/"
+    "founder_mood_get_snapshot como contexto real dentro del objective (ej. una restricción real de "
+    "presupuesto) — nunca inventes esos datos si no están disponibles.\n\n"
+    "document_write_start/document_write_continue/document_write_status (ADR 0199): para un "
+    "documento LARGO hacia una página de Notion ya existente, dividido en secciones — nunca le "
+    "pidas al LLM que redacte el documento entero en un solo mensaje tuyo, eso es exactamente lo "
+    "que este mecanismo evita. document_write_start necesita el page_id real (conseguilo con "
+    "notion_search o del proyecto vinculado, nunca lo inventes) y el plan de secciones (a mano, o "
+    "el que aprobó executive_team_run). Escribe y verifica la primera sección en la misma llamada; "
+    "para el resto, llamá document_write_continue repetidamente con el mismo write_id hasta que "
+    "completed sea true — nunca le digas al fundador que el documento está listo si sections_stuck "
+    "no viene vacío, mostrale cuáles quedaron atascadas tal cual. El progreso queda guardado: si la "
+    "conversación se corta a mitad, una próxima conversación puede retomarla con document_write_status/"
+    "document_write_continue sobre el mismo write_id.\n\n"
     "skill_factory_build/skill_factory_activate (ver ADR 0095/0102): cuando el fundador pida "
     "construir una skill nueva, VOS conversás en tu propia voz para juntar la especificación "
     "(rama, nombre, qué tiene que hacer, qué Capacidades ya existentes puede reusar) — nunca "
@@ -1237,6 +1311,99 @@ TOOLS = [
         },
     },
     {
+        "name": "executive_team_run",
+        "description": (
+            "Convoca un EQUIPO de roles de la Inteligencia Ejecutiva (ADR 0198, distinto de "
+            "executive_board_consult) para producir y aprobar internamente un artefacto real — un "
+            "borrador de plan/campaña/documento, no solo opiniones. A diferencia del board (una sola "
+            "ronda, nunca decide), el equipo itera: genera un borrador, cada rol lo critica con su "
+            "propio criterio marcando objeciones BLOQUEANTE/SUGERENCIA/SIN OBJECIÓN, y si hay alguna "
+            "bloqueante se revisa el borrador y se repite hasta max_rounds. El resultado indica "
+            "approved_by_exhaustion=true si se aprobó por agotar las rondas sin resolver todas las "
+            "objeciones — decíselo así de honesto al fundador, nunca como consenso real si no lo fue. "
+            "El equipo NUNCA ejecuta ninguna tool mutante por su cuenta — el borrador vuelve a vos, y "
+            "si el fundador quiere usarlo para algo real (ej. escribirlo a Notion), eso pasa por las "
+            "tools normales con su propio gate. Nunca la llames por tu cuenta: solo cuando el fundador "
+            "pida explícitamente que un equipo produzca/itere un plan o documento."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "objective": {"type": "string"},
+                "roles": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["cto", "coo", "research", "ceo", "cfo", "cmo", "creative"],
+                    },
+                },
+                "max_rounds": {"type": "integer"},
+            },
+            "required": ["objective", "roles"],
+        },
+    },
+    {
+        "name": "document_write_start",
+        "description": (
+            "Arranca la escritura confiable de un documento LARGO hacia una página de Notion ya "
+            "existente (ADR 0199) — dividido en secciones, cada una generada y escrita por separado "
+            "(nunca todo el documento en un solo prompt/llamada, evita el límite de tokens del modelo). "
+            "Escribe y verifica (releyendo la página) la primera sección en esta misma llamada; para "
+            "las siguientes hay que llamar document_write_continue repetidamente con el write_id que "
+            "devuelve, una vez por sección, hasta que 'completed' sea true. El progreso queda persistido "
+            "en disco — sobrevive un corte de sesión o un reinicio del server, se puede seguir después "
+            "con document_write_continue/document_write_status sobre el mismo write_id. Usala solo "
+            "cuando el fundador pida escribir un documento real y largo a una página de Notion "
+            "concreta que ya exista (page_id) — nunca inventes el page_id, conseguilo antes con "
+            "notion_search o del proyecto vinculado."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "page_id": {"type": "string"},
+                "title": {"type": "string"},
+                "objective": {"type": "string", "description": "Objetivo real del documento, da contexto a cada sección."},
+                "sections": {
+                    "type": "array",
+                    "description": "Plan de secciones ya definido (ej. por executive_team_run) — una entrada por sección.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "brief": {"type": "string"},
+                        },
+                        "required": ["title"],
+                    },
+                },
+            },
+            "required": ["page_id", "title", "sections"],
+        },
+    },
+    {
+        "name": "document_write_continue",
+        "description": (
+            "Avanza UNA sección más de una escritura de documento ya arrancada con document_write_start "
+            "(mismo write_id). Llamala repetidamente hasta que la respuesta diga completed=true. Si una "
+            "sección queda en sections_stuck, algo falló de forma persistente (generación, escritura, o "
+            "verificación) tras varios reintentos — decíselo explícito al fundador, nunca digas que el "
+            "documento está listo si sections_stuck no está vacío."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"write_id": {"type": "string"}},
+            "required": ["write_id"],
+        },
+    },
+    {
+        "name": "document_write_status",
+        "description": "Progreso real de una escritura de documento (arrancada con document_write_start), sin avanzar ningún paso — de solo lectura.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"write_id": {"type": "string"}},
+            "required": ["write_id"],
+        },
+    },
+    {
         "name": "skill_factory_build",
         "description": (
             "ALTO IMPACTO. Construye una skill nueva de verdad, con el modelo local del fundador como "
@@ -1817,6 +1984,115 @@ TOOLS = [
         },
     },
     {
+        "name": "notion_move_page",
+        "description": (
+            "Mueve una página existente de Notion a OTRA database, cambiando su parent. Notion "
+            "descarta en silencio (sin avisar) cualquier property de la página que no exista, por "
+            "nombre y tipo, en la database destino — llamá antes a notion_get_database de la "
+            "database destino y avisá al fundador qué properties se van a perder, si alguna, antes "
+            "de pedir confirmación. Herramienta de alto impacto: protocolo de confirmed obligatorio "
+            "SIEMPRE, cada vez."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "page_id": {"type": "string"},
+                "new_parent_database_id": {"type": "string"},
+                "confirmed": {"type": "boolean"},
+            },
+            "required": ["page_id", "new_parent_database_id"],
+        },
+    },
+    {
+        "name": "notion_create_database",
+        "description": (
+            "Crea una database NUEVA de Notion (no un registro) bajo una página padre — a diferencia "
+            "de notion_create_database_item, que crea un registro dentro de una database YA "
+            "existente. `properties` va en la forma tipada exacta que exige la API de Notion para "
+            "definir el schema (ej. {'Nombre': {'title': {}}, 'Estado': {'select': {'options': "
+            "[{'name': 'Por hacer'}]}}}). Herramienta de alto impacto: protocolo de confirmed "
+            "obligatorio SIEMPRE, cada vez — crea estructura real y permanente en el workspace del "
+            "fundador."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "parent_page_id": {"type": "string"},
+                "title": {"type": "string"},
+                "properties": {"type": "object"},
+                "confirmed": {"type": "boolean"},
+            },
+            "required": ["parent_page_id", "title", "properties"],
+        },
+    },
+    {
+        "name": "notion_update_page_cover",
+        "description": (
+            "Cambia (o quita, con cover_url=null) la portada de una página de Notion. Solo acepta "
+            "una URL de imagen externa — no se puede subir un archivo directo por esta vía. "
+            "Reversible desde Notion — no lleva protocolo de confirmed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"page_id": {"type": "string"}, "cover_url": {"type": ["string", "null"]}},
+            "required": ["page_id", "cover_url"],
+        },
+    },
+    {
+        "name": "notion_update_page_icon",
+        "description": (
+            "Cambia (o quita, con icon=null) el ícono de una página de Notion. `icon` va en la forma "
+            "tipada real de Notion: emoji ({'type': 'emoji', 'emoji': '🎯'}) o externo "
+            "({'type': 'external', 'external': {'url': '...'}}). Reversible desde Notion — no lleva "
+            "protocolo de confirmed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"page_id": {"type": "string"}, "icon": {"type": ["object", "null"]}},
+            "required": ["page_id", "icon"],
+        },
+    },
+    {
+        "name": "notion_update_database_cover",
+        "description": "Igual que notion_update_page_cover pero para una database entera.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"database_id": {"type": "string"}, "cover_url": {"type": ["string", "null"]}},
+            "required": ["database_id", "cover_url"],
+        },
+    },
+    {
+        "name": "notion_update_database_icon",
+        "description": "Igual que notion_update_page_icon pero para una database entera.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"database_id": {"type": "string"}, "icon": {"type": ["object", "null"]}},
+            "required": ["database_id", "icon"],
+        },
+    },
+    {
+        "name": "notion_archive_page",
+        "description": (
+            "Envía una página de Notion a la papelera (recuperable ahí con notion_restore_page, "
+            "mismo criterio de reversibilidad que drive_delete_file). Herramienta de alto impacto: "
+            "protocolo de confirmed obligatorio SIEMPRE, cada vez."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"page_id": {"type": "string"}, "confirmed": {"type": "boolean"}},
+            "required": ["page_id"],
+        },
+    },
+    {
+        "name": "notion_restore_page",
+        "description": "Restaura una página de Notion archivada previamente con notion_archive_page. Reversible desde Notion — no lleva protocolo de confirmed.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"page_id": {"type": "string"}},
+            "required": ["page_id"],
+        },
+    },
+    {
         "name": "notion_index_start",
         "description": (
             "Arranca (o reanuda) en segundo plano la vectorización semántica del Notion del fundador "
@@ -1829,6 +2105,193 @@ TOOLS = [
     {
         "name": "notion_index_status",
         "description": "Progreso de la indexación de Notion en curso (o de la última corrida): procesados, indexados, saltados, errores.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "second_brain_status",
+        "description": (
+            "Estado del Second Brain de Notion del fundador (ver ADR 0179/0182): si ya tiene mapeadas "
+            "las databases reales de Área/Proyecto/Recursos/Archivo (is_connected) y cuáles son. Si "
+            "no está conectado todavía, decilo explícito — no inventes una jerarquía que no existe."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "second_brain_list_areas",
+        "description": "Lista las Áreas reales del Second Brain (nivel superior de la jerarquía Área→Proyecto→Recursos/Archivo) — vacío si el Second Brain todavía no está conectado (ver second_brain_status).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "second_brain_get_area",
+        "description": "Trae una Área puntual del Second Brain por su id de página de Notion.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"area_id": {"type": "string"}},
+            "required": ["area_id"],
+        },
+    },
+    {
+        "name": "second_brain_list_projects",
+        "description": (
+            "Lista los Proyectos reales del Second Brain — sin area_id, todos; con area_id, solo los "
+            "de esa Área (requiere que el fundador ya haya mapeado qué property de la database de "
+            "Proyectos relaciona con Área, si no, la tool devuelve un error explícito)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"area_id": {"type": "string"}},
+        },
+    },
+    {
+        "name": "second_brain_get_project",
+        "description": "Trae un Proyecto puntual del Second Brain por su id de página de Notion.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}},
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "second_brain_list_resources",
+        "description": "Lista los Recursos reales del Second Brain asociados a un Proyecto puntual.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}},
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "second_brain_list_archive",
+        "description": "Lista lo archivado del Second Brain asociado a un Proyecto puntual.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"project_id": {"type": "string"}},
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "second_brain_get_area_home",
+        "description": (
+            "Panorama agregado real de un Área: sus Proyectos, Recursos y Archivo (de TODOS sus "
+            "Proyectos juntos), más un análisis/reporte generado por LLM sobre datos reales — nunca "
+            "inventa proyectos ni actividad. Si Recursos/Archivo todavía no están mapeados en el "
+            "Second Brain, lo dice explícito (resources_mapped/archive_mapped=false) en vez de mostrar "
+            "cero como si fuera un dato real. Usa el reporte cacheado si ya existe uno; para forzar uno "
+            "nuevo usá second_brain_area_report_refresh."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"area_id": {"type": "string"}},
+            "required": ["area_id"],
+        },
+    },
+    {
+        "name": "second_brain_area_report_refresh",
+        "description": "Regenera el análisis/reporte de un Área desde cero (ignora el cacheado) — usalo cuando el fundador pida explícitamente actualizarlo.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"area_id": {"type": "string"}},
+            "required": ["area_id"],
+        },
+    },
+    {
+        "name": "second_brain_onboarding_auto_build",
+        "description": (
+            "Onboarding del Second Brain (ADR 0190): crea desde cero, bajo una página real ya "
+            "compartida con la integración (parent_page_id), la página raíz 'Snarf Second Brain' + 4 "
+            "databases reales (Áreas/Proyectos/Recursos/Archivo, método PARA) con relaciones entre "
+            "ellas, y completa el mapeo. Usalo solo cuando el fundador confirme explícitamente que "
+            "quiere que Snarf construya la estructura por él — antes, explicale qué es cada nivel "
+            "(Área/Proyecto/Recursos/Archivo) y por qué, no lo crees en silencio. Herramienta de alto "
+            "impacto: confirmed obligatorio siempre."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "parent_page_id": {"type": "string"},
+                "confirmed": {"type": "boolean"},
+            },
+            "required": ["parent_page_id"],
+        },
+    },
+    {
+        "name": "second_brain_onboarding_suggest_mapping",
+        "description": (
+            "Onboarding del Second Brain: busca databases YA existentes en el workspace del fundador "
+            "que se parezcan por nombre a Área/Proyecto/Recursos/Archivo y propone un mapeo — nunca lo "
+            "guarda por su cuenta. Usala cuando el fundador diga que ya tiene su propia estructura "
+            "armada y prefiere mapearla en vez de que Snarf cree una nueva."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "second_brain_onboarding_apply_mapping",
+        "description": (
+            "Guarda el mapeo real de databases del Second Brain — usala después de que el fundador "
+            "confirme (a partir de second_brain_onboarding_suggest_mapping, o dictándolo directo) qué "
+            "database real corresponde a cada rol. Reversible (se puede volver a mapear después), no "
+            "lleva confirmed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "areas": {"type": "string"},
+                "proyectos": {"type": "string"},
+                "recursos": {"type": "string"},
+                "archivo": {"type": "string"},
+                "property_map": {"type": "object"},
+            },
+        },
+    },
+    {
+        "name": "second_brain_link_project",
+        "description": (
+            "Vincula un Proyecto de Snarf ya existente a una página real de Notion (típicamente una "
+            "fila de la database de Proyectos mapeada) — a partir de acá, ese Proyecto tiene su "
+            "'hermano' real en Notion. Valida que la página exista antes de guardar el vínculo (nunca "
+            "guarda un id inventado). Reversible desde el propio proyecto — no lleva confirmed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "notion_page_id": {"type": "string"},
+            },
+            "required": ["project_id", "notion_page_id"],
+        },
+    },
+    {
+        "name": "finance_supervisor_get_snapshot",
+        "description": (
+            "Último snapshot real del supervisor financiero periódico (ADR 0197): P&L determinístico "
+            "(ingresos/gastos por categoría/neto) + una interpretación breve generada sobre esos datos "
+            "reales. None si el usuario todavía no configuró ninguna Google Sheet real "
+            "(finance_supervisor_set_sheet) o si el loop periódico todavía no corrió una vez."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "finance_supervisor_set_sheet",
+        "description": (
+            "Configura qué Google Sheet real (file_id) es la planilla de finanzas de este usuario, "
+            "para que el supervisor financiero periódico sepa de dónde leer — sin esto, nunca genera "
+            "ningún snapshot. Reversible, no lleva confirmed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"file_id": {"type": "string"}},
+            "required": ["file_id"],
+        },
+    },
+    {
+        "name": "founder_mood_get_snapshot",
+        "description": (
+            "Último snapshot real del supervisor de ánimo/estado del fundador (ADR 0197, slot "
+            "FOUNDER_MODEL) — señales interpretadas de la memoria episódica reciente, cada una con su "
+            "etiqueta de base real (hecho/inferencia/hipótesis). None si el loop periódico todavía no "
+            "corrió una vez. Nunca lo presentes como un dato más certero de lo que la etiqueta de base "
+            "real indica."
+        ),
         "input_schema": {"type": "object", "properties": {}},
     },
     {
@@ -1913,6 +2376,18 @@ def profile_identity_instruction(name: str | None) -> str:
 # mientras siga en la ventana de las últimas 10 entradas (ver ADR de esta
 # ronda: una sola llamada re-cacheó 523.869 tokens por esto).
 HISTORY_REPLAY_MAX_CHARS = 8000
+
+# Retrieval proactivo de Notion (ADR 0192): TTL corto del cache en memoria
+# de _proactive_notion_context — alcanza para no repetir el pipeline de
+# embeddings+Chroma si el fundador manda varios mensajes seguidos sobre lo
+# mismo, sin quedar tan viejo como para mostrar algo desactualizado si
+# cambia de tema.
+NOTION_RETRIEVAL_CACHE_TTL_SECONDS = 120
+# top_k chico a propósito: esto se suma al system prompt de CADA turno de
+# una conversación de proyecto vinculado a Notion, no es una búsqueda a
+# pedido — un resumen corto y relevante pesa mucho menos en tokens que una
+# lista larga de resultados.
+NOTION_RETRIEVAL_TOP_K = 3
 
 # Ver _summarize_history_entry — tope duro sobre el tamaño de lo que se le
 # manda al rol history_compaction, independiente del umbral de arriba (que
@@ -2016,13 +2491,29 @@ class Orchestrator:
         # llamada nueva al LLM en cada turno mientras siga dentro de la
         # ventana de las últimas 10 entradas.
         self._history_summary_cache: dict[str, str] = {}
+        # Retrieval proactivo de Notion (ADR 0192) — cache en memoria de
+        # (query normalizada) -> (timestamp, resultado), TTL corto. Evita
+        # repetir el pipeline de embeddings+Chroma en cada turno si el
+        # fundador escribe varios mensajes seguidos sobre lo mismo.
+        self._notion_retrieval_cache: dict[str, tuple[float, str | None]] = {}
 
         google_auth = GoogleAuth(user_id)
         self._drive = GoogleDrive(google_auth)
         self._gmail = GoogleGmail(google_auth)
         self._calendar = GoogleCalendar(google_auth)
         self._youtube = GoogleYouTube(google_auth)
-        self._notion = Notion()
+        # notion_auth (ADR 0186): NotionAuth resuelve el token real de este
+        # user_id si ya conectó su propio Notion vía OAuth — si no,
+        # Notion._resolve_token() cae de vuelta al NOTION_API_KEY global
+        # (mismo comportamiento de siempre para el fundador mientras no
+        # exista todavía la integración pública registrada en Notion).
+        self._notion = Notion(notion_auth=NotionAuth(user_id))
+        # Mismo criterio que project_summary (GmailDigestSpecialist/
+        # ProjectManager, ADR 0026): tarea acotada, modelo barato por
+        # default, elegible aparte desde Configuración sin tocar código.
+        self._second_brain = SecondBrainManager(
+            self._notion, user_id, lambda: llm_routing.build_resilient_llm("second_brain_report")
+        )
         # Categorizar correos es una tarea acotada y mecánica, no necesita el
         # mismo modelo (más caro) que usa Snarf para conversar — un modelo
         # más chico y barato alcanza, y este Especialista puede elegir su
@@ -2078,6 +2569,24 @@ class Orchestrator:
             lambda: prompt_registry.get_active_text("books_categorize", BOOKS_CATEGORIZE_SYSTEM_PROMPT),
         )
         self._monthly_pnl = MonthlyPnLSpecialist()
+        # Supervisores periódicos (ADR 0197, Track D del roadmap Second
+        # Brain) — compone los Specialists de Finance ya reales de arriba,
+        # nunca un cálculo/categoría nueva.
+        self._finance_supervisor = FinanceSupervisor(
+            self._books_categorize,
+            self._monthly_pnl,
+            user_id,
+            lambda: llm_routing.build_resilient_llm("finance_supervisor"),
+        )
+        self._founder_mood = FounderMood(
+            self._memory, user_id, lambda: llm_routing.build_resilient_llm("founder_mood_supervisor")
+        )
+        # Escritura confiable de documentos largos (ADR 0199, Fase D4) —
+        # compone la Capacidad Notion ya real de arriba, mismo criterio de
+        # modelo barato por default para una tarea acotada por sección.
+        self._document_writer = DocumentWriter(
+            self._notion, lambda: llm_routing.build_resilient_llm("document_writer_section"), user_id
+        )
         # Fase I, rama Community — vendor decidido (Discord), lazy-client
         # desde env vars (DISCORD_BOT_TOKEN/DISCORD_GUILD_ID/
         # DISCORD_CHANNEL_ID). Sin credencial real, available es False y
@@ -2194,6 +2703,10 @@ class Orchestrator:
         }
         # Mismo criterio que GmailDigestSpecialist: modelo barato para una
         # tarea acotada (sugerir 2-4 nombres de subcarpeta por proyecto).
+        # projects_dir namespaced por user_id (ADR 0183, mismo patrón que
+        # EpisodicMemory arriba, ADR 0137) — DEFAULT_USER_ID sigue en
+        # PROJECTS_DIR a propósito (compatibilidad con datos reales ya en
+        # disco), cualquier otro user_id recibe su propia carpeta.
         self._projects = ProjectManager(
             self._drive,
             self._drive_indexer,
@@ -2203,6 +2716,8 @@ class Orchestrator:
                 "project_manager_subfolder_suggestion", SUBFOLDER_SUGGESTION_SYSTEM_PROMPT
             ),
             lambda: prompt_registry.get_active_text("project_manager_summary", PROJECT_SUMMARY_SYSTEM_PROMPT),
+            projects_dir=PROJECTS_DIR if user_id == DEFAULT_USER_ID else MEMORY_DATA_DIR / user_id / "projects",
+            second_brain=self._second_brain,
         )
         self._bug_reports = BugReports(lambda: self._memory, user_id)
         # Fase I, rama Agency — único código genuinamente nuevo (el resto
@@ -2222,6 +2737,14 @@ class Orchestrator:
         # fallback automático entre proveedores que el resto del wiring real.
         self._executive_board = ExecutiveBoardSpecialist(
             llm_factory_for_role=lambda role: llm_routing.build_resilient_llm(f"executive_{role}"), user_id=user_id
+        )
+        # Mecanismo de "equipo" multi-agente (ADR 0198) — reusa el mismo
+        # factory de LLM por rol que el board de arriba para las críticas
+        # (consult_role), más un rol de ruteo nuevo dedicado para redactar/
+        # revisar el borrador en sí.
+        self._executive_team = TeamSession(
+            draft_llm_factory=lambda: llm_routing.build_resilient_llm("executive_team_writer"),
+            role_llm_factory_for_role=lambda role: llm_routing.build_resilient_llm(f"executive_{role}"),
         )
         # Skill Factory (Fase H, ver ADR 0095/0102/0130): Snarf construyendo y
         # activando una skill nueva de verdad, con el modelo local del
@@ -2333,6 +2856,14 @@ class Orchestrator:
             ),
             "os_audit": lambda i: os_audit.run_audit(),
             "executive_board_consult": lambda i: self._executive_board.consult(i["question"], i.get("roles")),
+            "executive_team_run": lambda i: self._executive_team.run(
+                i["objective"], i["roles"], i.get("max_rounds", DEFAULT_MAX_ROUNDS)
+            ),
+            "document_write_start": lambda i: self._document_writer.start(
+                i["page_id"], i["title"], i["sections"], i.get("objective", "")
+            ),
+            "document_write_continue": lambda i: self._document_writer.continue_write(i["write_id"]),
+            "document_write_status": lambda i: self._document_writer.status(i["write_id"]),
             "skill_factory_build": self._tool_skill_factory_build,
             "skill_factory_activate": self._tool_skill_factory_activate,
             "skill_factory_status": lambda i: self._skill_factory.status(i["proposal_id"]),
@@ -2394,6 +2925,37 @@ class Orchestrator:
             ),
             "notion_index_start": lambda i: self._notion_indexer.start(),
             "notion_index_status": lambda i: self._notion_indexer.status(),
+            "notion_move_page": self._tool_notion_move_page,
+            "notion_create_database": self._tool_notion_create_database,
+            "notion_update_page_cover": lambda i: self._notion.update_page_cover(i["page_id"], i.get("cover_url")),
+            "notion_update_page_icon": lambda i: self._notion.update_page_icon(i["page_id"], i.get("icon")),
+            "notion_update_database_cover": lambda i: self._notion.update_database_cover(
+                i["database_id"], i.get("cover_url")
+            ),
+            "notion_update_database_icon": lambda i: self._notion.update_database_icon(
+                i["database_id"], i.get("icon")
+            ),
+            "notion_archive_page": self._tool_notion_archive_page,
+            "notion_restore_page": lambda i: self._notion.restore_page(i["page_id"]),
+            "second_brain_status": lambda i: {
+                "connected": self._second_brain.is_connected(),
+                "database_map": self._second_brain.get_database_map(),
+            },
+            "second_brain_list_areas": lambda i: self._second_brain.list_areas(),
+            "second_brain_get_area": lambda i: self._second_brain.get_area(i["area_id"]),
+            "second_brain_list_projects": lambda i: self._second_brain.list_projects(i.get("area_id")),
+            "second_brain_get_project": lambda i: self._second_brain.get_project(i["project_id"]),
+            "second_brain_list_resources": lambda i: self._second_brain.list_resources(i["project_id"]),
+            "second_brain_list_archive": lambda i: self._second_brain.list_archive(i["project_id"]),
+            "second_brain_link_project": self._tool_second_brain_link_project,
+            "second_brain_onboarding_auto_build": self._tool_second_brain_onboarding_auto_build,
+            "second_brain_onboarding_suggest_mapping": lambda i: self._second_brain.suggest_mapping(),
+            "second_brain_onboarding_apply_mapping": lambda i: self._second_brain.save_database_map(i),
+            "finance_supervisor_get_snapshot": lambda i: self._finance_supervisor.get_snapshot(),
+            "finance_supervisor_set_sheet": lambda i: self._finance_supervisor.set_sheet_file_id(i["file_id"]),
+            "founder_mood_get_snapshot": lambda i: self._founder_mood.get_snapshot(),
+            "second_brain_get_area_home": lambda i: self._second_brain.cached_area_report(i["area_id"]),
+            "second_brain_area_report_refresh": lambda i: self._second_brain.generate_area_report(i["area_id"]),
         }
 
     @property
@@ -2459,6 +3021,22 @@ class Orchestrator:
     @property
     def projects(self) -> ProjectManager:
         return self._projects
+
+    @property
+    def second_brain(self) -> SecondBrainManager:
+        return self._second_brain
+
+    @property
+    def finance_supervisor(self) -> FinanceSupervisor:
+        return self._finance_supervisor
+
+    @property
+    def founder_mood(self) -> FounderMood:
+        return self._founder_mood
+
+    @property
+    def document_writer(self) -> DocumentWriter:
+        return self._document_writer
 
     @property
     def bug_reports(self) -> BugReports:
@@ -2759,6 +3337,39 @@ class Orchestrator:
             return self._pending(preview)
         return self._notion.delete_block(i["block_id"])
 
+    def _tool_notion_move_page(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            preview = {
+                "page_id": i.get("page_id"),
+                "new_parent_database_id": i.get("new_parent_database_id"),
+            }
+            # Aviso real de qué properties existen en la database destino —
+            # Notion descarta en silencio cualquiera de la página que no
+            # matchee ahí; best-effort, nunca bloquea el preview si falla.
+            try:
+                dest_schema = self._notion.get_database(i["new_parent_database_id"])["properties"]
+                preview["destination_properties"] = list(dest_schema.keys())
+            except Exception:
+                pass
+            return self._pending(preview)
+        return self._notion.move_page(i["page_id"], i["new_parent_database_id"])
+
+    def _tool_notion_create_database(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending(
+                {
+                    "parent_page_id": i.get("parent_page_id"),
+                    "title": i.get("title"),
+                    "properties": i.get("properties"),
+                }
+            )
+        return self._notion.create_database(i["parent_page_id"], i["title"], i["properties"])
+
+    def _tool_notion_archive_page(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending({"page_id": i.get("page_id")})
+        return self._notion.archive_page(i["page_id"])
+
     def _tool_project_delete(self, i: dict) -> dict:
         # A propósito solo borra el registro local de Snarf — ProjectManager.
         # delete() NUNCA toca la carpeta/archivos reales de Drive, para no
@@ -2766,6 +3377,29 @@ class Orchestrator:
         if not i.get("confirmed"):
             return self._pending({"project_id": i.get("project_id")})
         return self._projects.delete(i["project_id"])
+
+    def _tool_second_brain_link_project(self, i: dict) -> dict:
+        # Reusa get_project (ya valida existencia real + no-archivada) en vez
+        # de un método de validación aparte — mismo dato, un solo camino.
+        notion_page = self._second_brain.get_project(i["notion_page_id"])
+        if notion_page is None:
+            return {
+                "status": "error",
+                "message": "No se encontró esa página en Notion (o está archivada) — verificá el id.",
+            }
+        record = self._projects.set_notion_link(i["project_id"], i["notion_page_id"])
+        if record is None:
+            return {"status": "error", "message": f"No existe el proyecto {i['project_id']} en Snarf."}
+        return {
+            "status": "linked",
+            "project_id": record["id"],
+            "notion_project_page_id": record["notion_project_page_id"],
+        }
+
+    def _tool_second_brain_onboarding_auto_build(self, i: dict) -> dict:
+        if not i.get("confirmed"):
+            return self._pending({"parent_page_id": i.get("parent_page_id")})
+        return self._second_brain.auto_build_workspace(i["parent_page_id"])
 
     def _tool_personality_set_sarcasm(self, i: dict) -> dict:
         # Cambio de configuración explícito y deliberado (el fundador lo pidió
@@ -2787,12 +3421,15 @@ class Orchestrator:
         if not handler:
             activity_log.record(name, "unknown_tool", detalle=detail.extract(name, "unknown_tool", tool_input, None))
             return {"error": f"herramienta desconocida: {name}"}
-        if name == "executive_board_consult":
+        if name in ("executive_board_consult", "executive_team_run"):
             # Fase 22 (ADR 0165): marca que este turno consultó a la Junta
             # Directiva ANTES de que se decida el área — nunca decide el
             # área en sí (eso sigue siendo el lookup determinístico de
             # areas.area_for_tool más abajo), solo queda como contexto
             # auditable en el span de Project Manager de una tool posterior.
+            # executive_team_run (ADR 0198) se suma acá mismo: un equipo
+            # también es una consulta real a roles de la Inteligencia
+            # Ejecutiva, mismo criterio de auditoría.
             context.set_board_consulted(True)
         area_id = areas.area_for_tool(name)
         if area_id is None:
@@ -2880,6 +3517,32 @@ class Orchestrator:
         summary = self._summarize_history_entry(text)
         self._history_summary_cache[cache_key] = summary
         return summary
+
+    def _proactive_notion_context(self, query: str) -> str | None:
+        """Retrieval proactivo (ADR 0192): resumen corto de lo más relevante
+        ya indexado de Notion para lo que el fundador acaba de escribir —
+        sin que tenga que pedirlo con knowledge_search. Ajuste honesto al
+        diseño original del roadmap: NO filtra por project_id (los ítems
+        indexados de Notion no llevan esa etiqueta — solo `location`/
+        `notion_url`, ver NotionSource, ADR 0173 — filtrar por un campo que
+        no existe devolvería siempre vacío) — busca sobre TODO lo indexado
+        de Notion, acotado por relevancia semántica real. Nunca rompe el
+        turno: cualquier fallo (Notion no indexado, error de embeddings)
+        degrada a None en silencio."""
+        manifest = self._notion_indexer.manifest_summary()
+        if not manifest.get("indexed"):
+            return None
+        cache_key = query.strip().lower()
+        cached = self._notion_retrieval_cache.get(cache_key)
+        if cached and time.time() - cached[0] < NOTION_RETRIEVAL_CACHE_TTL_SECONDS:
+            return cached[1]
+        try:
+            results = self._notion_indexer.search(query, top_k=NOTION_RETRIEVAL_TOP_K)
+            context = "\n---\n".join(r["text"] for r in results if r.get("text")) or None
+        except Exception:
+            context = None
+        self._notion_retrieval_cache[cache_key] = (time.time(), context)
+        return context
 
     def _summarize_history_entry(self, text: str) -> str:
         # Tope duro ANTES de intentar compactar vía LLM: una entrada extrema
@@ -3004,6 +3667,18 @@ class Orchestrator:
                                 f"\n\nEstás trabajando dentro del proyecto '{project['name']}'. "
                                 f"Instrucciones propias de este proyecto:\n{project['prompt']}\n"
                             )
+                        # Retrieval proactivo de Notion (ADR 0192) — solo si
+                        # el proyecto ya tiene Second Brain vinculado, nunca
+                        # gasta el pipeline de embeddings en proyectos sin
+                        # Notion.
+                        if project and project.get("notion_project_page_id"):
+                            notion_context = self._proactive_notion_context(user_input)
+                            if notion_context:
+                                system += (
+                                    "\n\nEsto está indexado de tu Notion y podría ser relevante para lo "
+                                    "que acabás de escribir — usalo si aplica, nunca lo repitas literal "
+                                    f"sin necesidad:\n{notion_context}\n"
+                                )
                     messages = []
                     for entry in self._memory.recent(10, conversation_id=conversation_id):
                         messages.append({"role": "user", "content": self._capped_for_replay(entry["input"])})

@@ -2,6 +2,283 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-21] Integración capstone: Second Brain y confiabilidad del Orchestrator (ADR 0200)
+
+- **Cierra Track D completo (D1-D5) y el plan de 22 fases de `ROADMAP_SECOND_BRAIN_NOTION.md`.** Sin
+  componentes nuevos grandes, según diseño: D3 (equipo) y D4 (escritura confiable) ya componen a través
+  del propio loop de herramientas del Orchestrator, sin wiring de código nuevo entre ellas.
+- Guía nueva en el system prompt (`SYSTEM_PREFIX`): `executive_team_run` para planear un documento pide un
+  PLAN de secciones (no el documento redactado entero, evita reintroducir el límite de tokens que D4
+  existe para resolver), sumando snapshots de los supervisores (D2) como contexto real cuando aplica.
+  `document_write_start/continue/status` explica el flujo completo, nunca declarar "listo" con
+  `sections_stuck` no vacío.
+- Gap real encontrado al integrar: `TeamSession.run()` devuelve texto libre, `document_write_start` espera
+  secciones estructuradas — decisión explícita de NO construir un parser de código nuevo (frágil, sin
+  necesidad real), el propio Orchestrator (LLM) hace ese puente como ya hace con cualquier otra cadena de
+  tools.
+- Test de integración real (`tests/test_document_capstone_integration.py`): el plan de secciones de un
+  equipo (fakeado) alimenta directo una escritura de documento verificada de punta a punta.
+- Sigue pendiente Track E (widgets Jarvis, ADR 0194-0196), bloqueado desde su primera tarea real. Bloqueo
+  de fondo sin resolver en todo el plan: falta el registro manual del fundador de la integración pública
+  de Snarf en Notion antes de cualquier verificación en vivo.
+- 1681/1681 tests (1679 previos + 2 nuevos). Ver ADR 0200.
+
+## [2026-08-21] Escritura confiable de documentos largos (ADR 0199)
+
+- `DocumentWriter` (nuevo, `snarf/specialists/document_writer.py`): escribe un documento largo a una
+  página de Notion sección por sección, resolviendo los 3 cortes que motivaron Track D — límite de tokens
+  (cada sección es una llamada de LLM con contexto acotado, nunca el documento entero), caída de
+  proceso/RAM (estado persistido en disco tras cada paso, reanudable desde una instancia/proceso
+  completamente nueva), fallas de API (cada sección se verifica releyendo la página real antes de avanzar,
+  con reintento acotado).
+- Decisión clave: si el `append_to_page` real ya sucedió pero la verificación falla, nunca se reintenta el
+  append (duplicaría contenido real) — queda `unverified`, declarado explícito, nunca presentado como
+  "listo". `failed` es el estado cuando nunca se logró ni generar ni escribir nada real.
+- Desviación honesta del plan original: no se construyó la generalización "por destino" pedida — hoy solo
+  escribe a Notion, diferido hasta que exista un segundo destino real.
+- 3 tools nuevas (`document_write_start/continue/status`), ninguna gateada (usa `notion_append_to_page`,
+  ya no gateado por ser aditivo). Nodo del cerebro propio, rol de ruteo nuevo barato por default.
+- 1679/1679 tests (1665 previos + 14 nuevos en `tests/test_document_writer.py`). Ver ADR 0199.
+
+## [2026-08-21] Mecanismo de equipo multi-agente (ADR 0198)
+
+- `TeamSession` (nuevo, `snarf/executive/team.py`): extiende el Executive Board a iteración real con crítica
+  cruzada — reusa `consult_role` para la crítica de cada rol convocado (7 roles existentes), un rol de
+  ruteo nuevo y dedicado (`executive_team_writer`, barato por default) redacta/revisa el borrador. Tope
+  real de rondas (`max_rounds`, nunca infinito), aprueba apenas no hay objeciones bloqueantes, o declara
+  explícito "aprobado por agotamiento" si se acaban las rondas sin consenso real — nunca lo presenta como
+  consenso logrado.
+- Nunca ejecuta ninguna tool mutante: el borrador vuelve como texto a quien llamó, igual que cualquier
+  Especialista — escribir algo real con ese borrador pasa por las tools mutantes normales.
+- Tool nueva `executive_team_run`, nodo del cerebro propio (`specialist_executive_team`, distinto del board
+  por ser un mecanismo diferente por naturaleza), excluida de `MCP_EXPOSED_TOOLS` por diseño del propio
+  allowlist (mismo criterio que `executive_board_consult`, evita convocatoria recursiva). No requiere
+  confirmación de Art. VII (nueva fila en `POLICY_HIGH_IMPACT_ACTIONS.md`).
+- 1665/1665 tests (1652 previos + 13 nuevos en `tests/test_executive_team.py`). Ver ADR 0198.
+
+## [2026-08-20] Supervisores periódicos: financiero y de ánimo (ADR 0197)
+
+- `FinanceSupervisor` (nuevo): compone `BooksCategorizeSpecialist`/`MonthlyPnLSpecialist` ya reales,
+  interpretación corta por LLM sobre el P&L determinístico. Gap real encontrado: no había ningún concepto
+  de "la" Sheet de finanzas del fundador guardado — se agregó `set_sheet_file_id()` explícito, nunca
+  asumido.
+- `FounderMood` (nuevo, activa el slot `FOUNDER_MODEL`): única fuente honesta es la memoria episódica
+  reciente, misma disciplina de `basis` que la Inteligencia Ejecutiva — sin mensajes reales, dice "sin
+  señales claras" en vez de forzar una lectura.
+- 2 loops periódicos nuevos en `app.py` (diario para finanzas, cada 6h para ánimo — cadencias default
+  propias, sin confirmar con el fundador). 3 tools conversacionales nuevas, 2 nodos del cerebro, 2 roles
+  de ruteo nuevos.
+- Primer trabajo real de Track D (confiabilidad del Orchestrator) — nada de esto existía antes.
+- 1652/1652 tests (un flake preexistente sin relación, ya descartado). Ver ADR 0197.
+
+## [2026-08-20] Onboarding: auto-build y mapeo del Second Brain (ADR 0190)
+
+- `SecondBrainManager.auto_build_workspace()`: crea página raíz + 4 databases reales con relaciones
+  reales entre ellas (ids nunca inventados), completa el mapeo. `suggest_mapping()`: matchea databases
+  existentes por keyword real (ajuste al plan original: sin LLM/embeddings, más barato y predecible).
+- 3 tools nuevas (`second_brain_onboarding_auto_build/suggest_mapping/apply_mapping`), la primera de alto
+  impacto. Guía nueva en el prompt: explicar PARA antes de construir/mapear, nunca en silencio.
+- Sin UI de onboarding todavía — investigado: ni el flujo de Google tiene una pantalla dedicada hoy, se
+  construye cuando B1 esté verificable en vivo.
+- **Track A completo de código** (A1-A7) — solo queda el bloqueo real de verificación en vivo (paso
+  manual del fundador en Notion), no código faltante.
+- 1637/1637 tests. No verificado contra la API real de Notion (mismo bloqueo que B1). Ver ADR 0190.
+
+## [2026-08-20] Gap de child_database en el indexado (ADR 0193)
+
+- `Notion.find_child_databases(page_id)` nuevo: recorre recursivamente los bloques reales de una página
+  buscando databases incrustadas — `/search` de Notion no las lista, quedaban invisibles para el indexado
+  semántico sin ningún aviso.
+- `NotionSource.iter_items()` extendido para procesarlas igual que cualquier database suelta, sin
+  duplicar si aparece por los dos caminos.
+- **Track A queda cerrado** (A1/A2/A3/A5/A6/A7 — A4 pendiente, bloqueada para verificación en vivo).
+- 1631/1631 tests. Ver ADR 0193.
+
+## [2026-08-20] Retrieval proactivo de Notion (ADR 0192)
+
+- `Orchestrator._proactive_notion_context()`: en una conversación de un Proyecto vinculado a Notion con
+  contenido real ya indexado, suma automáticamente al system prompt de cada turno los fragmentos más
+  relevantes a lo que el fundador acaba de escribir — sin que tenga que pedirlo. Cacheado 120s por
+  consulta, degrada a `None` en cualquier fallo.
+- Ajuste honesto al plan original: NO filtra por `project_id` — los ítems indexados de Notion no llevan
+  esa etiqueta (solo `location`/`notion_url`), filtrar por una key inexistente hubiera devuelto siempre
+  vacío en silencio. Busca sobre todo lo indexado de Notion, acotado por relevancia semántica real.
+- 1625/1625 tests. Ver ADR 0192.
+
+## [2026-08-20] Home de proyecto enriquecido, cierre de Track C (ADR 0191)
+
+- `PUT /projects/{id}/notion-link` (valida la página real antes de guardar) y
+  `GET /projects/{id}/notion-resources` (`mapped: false` honesto cuando no se puede saber, nunca una
+  lista vacía sin explicar) nuevos.
+- `renderProjectHome`: link "ver en Notion ↗" o botón "vincular a Notion" según corresponda, sección de
+  Recursos de Notion cuando el proyecto está vinculado. Notas reales ya se mostraban desde ADR 0047, sin
+  cambios.
+- Badge de "conocimiento indexado: N ítems" diferido — requiere un método de conteo filtrado en el vector
+  store que no existe todavía, documentado como pendiente real.
+- **Track C queda cerrado** (C1-C5) — verificado con Playwright real en mobile y desktop sobre proyectos
+  reales del fundador, confirmado que ningún dato real quedó mutado (llamadas sensibles interceptadas
+  client-side). Cero errores de consola.
+- 1620/1620 tests. Ver ADR 0191.
+
+## [2026-08-20] Home de Área en la UI (ADR 0189)
+
+- `GET /second-brain/areas/{id}` y `POST /second-brain/areas/{id}/report/refresh` nuevos —
+  `renderAreaHome`, mismo esqueleto visual que el home de Proyecto, mayormente de solo lectura (las Áreas
+  se gestionan en Notion). Stats de Recursos/Archivo muestran "—" honesto (no un cero fabricado) cuando
+  no están mapeados.
+- `enterArea()` ahora carga la lista Y el home juntos (mismo patrón dual que `enterProject()`).
+  `exitArea()` gana `clearChat()` — hallazgo real: sin esto, el home de la Área anterior quedaba colgado
+  en pantalla.
+- **Primer ejercicio de punta a punta del camino "Second Brain conectado"**: verificado con Playwright
+  real interceptando las 4 llamadas HTTP con datos de prueba (`page.route`), navegación completa
+  Áreas→Proyecto de un Área→home, cero errores de consola, captura real guardada como evidencia.
+- 1614/1614 tests. Ver ADR 0189.
+
+## [2026-08-20] Second Brain: skeleton de carga real entre niveles (ADR 0188)
+
+- `showProjectPanelLoading()` nuevo: muestra "cargando…" al cambiar de nivel (Área↔Proyecto↔
+  conversaciones) solo cuando no hay nada cacheado todavía para el destino — antes la lista vieja quedaba
+  visible hasta que el fetch nuevo resolvía, confuso en vivo.
+- Reparentado a desktop confirmado sin cambios de código nuevos — ya heredaba el mecanismo genérico de
+  ADR 0035 (verificado durante C2).
+- Sin transiciones CSS de expand/collapse a propósito — pulido visual diferido, sin bloquear nada.
+- Verificado con Playwright real: skeleton visible a los 50ms del click, navegación completa sin errores
+  de consola. 1610/1610 tests (fase 100% frontend). Ver ADR 0188.
+
+## [2026-08-20] Tab "Second Brain" con jerarquía Área→Proyecto (ADR 0187)
+
+- Tab "Proyectos" renombrado a "Second Brain", con ícono nuevo "2 + cerebrito" (SVG monolínea, mismo
+  lenguaje visual del resto del sistema de íconos).
+- Drilldown real de hasta 3 niveles: Áreas (si el Second Brain está conectado) → Proyectos de esa Área →
+  conversaciones — con degradación elegante: si no está conectado (el estado real hoy), muestra
+  exactamente la lista plana de Proyectos de siempre, sin perder nada.
+- Endpoints REST nuevos `GET /second-brain/status`/`areas`/`areas/{id}/projects` (el último marca
+  `snarf_project_id` cuando un Proyecto de Notion ya tiene su hermano vinculado en Snarf). Nuevo
+  `ProjectManager.find_by_notion_page_id()`, `orchestrator.second_brain` propiedad pública.
+- Breadcrumb real: `enterProject()` no limpia el Área activa, así "← volver" desde una conversación cae
+  en la lista de Proyectos de esa Área, no siempre al nivel superior.
+- Verificado con Playwright real (mobile y desktop, contra un server de prueba) — cero errores de
+  consola, cae correctamente en la lista real de proyectos del fundador (Second Brain no conectado
+  todavía). El camino "conectado" (Áreas reales) no se pudo probar en vivo — verificado por tests con
+  mocks.
+- 1610/1610 tests. Ver ADR 0187.
+
+## [2026-08-20] OAuth de Notion por usuario (ADR 0186)
+
+- `snarf/capabilities/notion_auth.py` (nuevo): flujo OAuth real de Notion (sin SDK propio para Python —
+  intercambio directo con Basic Auth). Notion no expira tokens ni da refresh_token, a diferencia de
+  Google. Tokens namespaced en `credentials/notion_tokens/<user_id>.json`.
+- `Notion` gana `notion_auth` opcional (mismo patrón que `GoogleDrive(google_auth)`) — prioriza el token
+  OAuth real del usuario, cae de vuelta a `NOTION_API_KEY` global si no conectó. Endpoints
+  `GET /auth/notion/start`/`GET /auth/notion/callback` (mismo patrón que Google).
+- Prerequisito manual real del fundador (registrar integración pública en Notion) — documentado, no
+  automatizable. Sin botón "Conectar Notion" en la UI todavía: investigado, el equivalente de Google
+  tampoco tiene uno — se construye recién en el onboarding real (Fase A4).
+- 1604/1604 tests. Ver ADR 0186.
+
+## [2026-08-20] Home de Área: rollup + análisis/reporte (ADR 0185)
+
+- `SecondBrainManager.get_area_home(area_id)`: Área + Proyectos + Recursos/Archivo agregados de TODOS
+  esos Proyectos. `resources_mapped`/`archive_mapped` distinguen "cero real" de "no se puede saber,
+  falta mapear" — nunca un cero fabricado.
+- `generate_area_report`/`cached_area_report` (mismo patrón que el resumen de Proyecto, ADR 0047):
+  análisis por LLM sobre datos reales únicamente, cacheado por Área. Nuevo rol de ruteo
+  `second_brain_report` (barato por default).
+- Ajuste honesto al alcance original: el rollup cubre Proyectos+Recursos+Archivo, no "notas/tareas" —
+  esas no tienen database mapeada todavía en el modelo de A2, inventar el mapeo hubiera violado el
+  Principio VI.
+- Split de nodo del cerebro: `specialist_second_brain` ya estaba en 7 tools — nuevo
+  `specialist_second_brain_reports` para las 2 tools de reporte, mismo criterio que el split de
+  Proyectos (ADR 0054).
+- 1587/1587 tests. Ver ADR 0185.
+
+## [2026-08-20] Espejo Proyecto Snarf ↔ Proyecto Notion (ADR 0184)
+
+- Campo nuevo `notion_project_page_id` en el registro de Proyecto de Snarf. `ProjectManager.create()`
+  crea la fila real en la database de Proyectos de Notion (resolviendo el nombre real de la property de
+  título, nunca asumido) cuando hay Second Brain conectado — nunca bloquea la creación del Proyecto si
+  falla.
+- Tool nueva `second_brain_link_project(project_id, notion_page_id)`: vincula un Proyecto ya existente,
+  validando que la página real exista antes de guardar. Reversible, sin `confirmed`.
+- El link "Ver en Notion" en el home de proyecto (UI) se difiere a propósito a Fase C4, junto con la
+  pasada de Playwright de cierre de Track C — el backend ya está completo.
+- 1579/1579 tests. Ver ADR 0184.
+
+## [2026-08-20] Namespacing real de PROJECTS_DIR por usuario (ADR 0183)
+
+- `ProjectManager` gana `projects_dir` (mismo patrón que ADR 0137 ya aplicó a `EpisodicMemory`) —
+  `DEFAULT_USER_ID` sigue en `data/projects/`, cualquier otro usuario a `data/users/<user_id>/projects/`.
+  Bug real corregido: antes usaba siempre la constante de módulo fija sin importar qué `user_id` se le
+  pasara al constructor.
+- Corrección honesta al plan original: `data/conversation_projects.json` YA estaba namespaced desde ADR
+  0137 — la exploración previa que armó el roadmap se equivocó en ese punto, esta fase quedó reducida
+  solo a `PROJECTS_DIR`.
+- De paso, corregidos 3 tests que monkeypencheaban la constante de módulo esperando que un
+  `ProjectManager` sin `projects_dir=` explícito la recogiera — dejó de funcionar porque el default de un
+  parámetro se fija al definir la función, no en cada llamada.
+- 1570/1570 tests. Ver ADR 0183.
+
+## [2026-08-20] Modelo Área/Proyecto/Recursos/Archivo: SecondBrainManager (ADR 0182)
+
+- `snarf/specialists/second_brain.py` (nuevo): `SecondBrainManager` lee Áreas/Proyectos/Recursos/Archivo
+  EN VIVO desde Notion (nunca duplica contenido en un JSON propio — Notion sigue siendo la única fuente
+  de verdad). Solo persiste el mapeo de qué database real corresponde a cada rol
+  (`data/second_brain/<user_id>/database_map.json`), namespaced por usuario desde el día uno.
+- Sin `property_map` completo, filtrar por Área/Proyecto levanta un `ValueError` explícito — nunca un
+  filtro adivinado ni una lista vacía sin explicación.
+- `Notion.get_page(page_id)` nuevo (capability) para traer un registro puntual sin recorrer toda una
+  database. `_extract_title` pasa a ser pública (`extract_title`), reusable desde `second_brain.py`.
+- 7 tools nuevas de solo lectura en el Orchestrator (`second_brain_status/list_areas/get_area/
+  list_projects/get_project/list_resources/list_archive`), nodo nuevo `specialist_second_brain` en el
+  cerebro.
+- 1569/1569 tests. Ver ADR 0182.
+
+## [2026-08-20] Second Brain: decisión de UX del árbol de drilldown Área→Proyecto (ADR 0181)
+
+- Documental (Fase C1 del roadmap Second Brain): progressive disclosure de un nivel a la vez, in-place,
+  reemplazando la lista anterior — mismo patrón que `enterProject()` ya usa para Proyectos, extendido un
+  nivel más (Área) por encima. Migaja de pan de 2 niveles, carga lazy estricta por nivel, un solo
+  componente reparentado entre mobile/desktop. Se descartó explícitamente un árbol multi-expandido.
+  Detalle completo en `ROADMAP_SECOND_BRAIN_NOTION.md`, sección Fase C1.
+- Sin código nuevo. 1549/1549 tests (sin cambio). Ver ADR 0181.
+
+## [2026-08-20] Notion: mover página, crear database, cover/icon, archivar (ADR 0180)
+
+- `snarf/capabilities/notion.py` suma 8 métodos: `move_page`, `create_database`, `update_page_cover`/
+  `update_page_icon` (y equivalentes de database), `archive_page`/`restore_page`. `move_page` documenta
+  que Notion descarta en silencio properties que no matchean en la database destino.
+- `create_page`/`append_to_page` ahora troceran en tandas de ≤100 bloques (límite real de la API) con
+  reintento ante un 429/5xx transitorio — prerrequisito de la escritura confiable de documentos largos
+  (Track D del roadmap).
+- 8 tools nuevas en el Orchestrator; `notion_move_page`/`notion_create_database`/`notion_archive_page`
+  son de alto impacto (confirmed obligatorio siempre). Nueva tabla en `POLICY_HIGH_IMPACT_ACTIONS.md`.
+- Hallazgo real de hermeticidad de tests, corregido en el mismo cambio: `NOTION_API_KEY` era la única
+  credencial de vendor que `tests/conftest.py` no limpiaba — al correr la suite completa podía quedar
+  disponible una llamada HTTP real a Notion dentro de un preview de alto impacto no mockeado.
+- 1549/1549 tests. Ver ADR 0180.
+
+## [2026-08-20] Arranca el plan Second Brain (Notion) + confiabilidad del Orchestrator: evolución del mapa (ADR 0179)
+
+- Nuevo plan grande de 5 tracks / 22 fases, acordado con el fundador: Notion como "second brain" completo
+  (CRUD, indexado proactivo, jerarquía Área→Proyecto→Recursos/Archivo espejada en Snarf, onboarding
+  multi-usuario, widgets estilo Jarvis en el HUD) más confiabilidad del Orchestrator (supervisores
+  periódicos, equipo multi-agente con iteración/aprobación interna, escritura confiable de documentos
+  largos). Vive en `ROADMAP_SECOND_BRAIN_NOTION.md` (nuevo, en el repo, no solo en `~/.claude/plans/`),
+  indexado desde `CLAUDE.md`.
+- Esta primera fase es puramente documental, siguiendo la Regla de crecimiento de `MASTER_MAP.md`: ningún
+  concepto nuevo (jerarquía de Notion, supervisor, equipo de agentes) se escribe en código antes de que su
+  lugar exista en el mapa.
+- `MASTER_MAP.md` (dominio Knowledge): describe el Second Brain de Notion como jerarquía dentro del
+  namespace ya indexado (`personal`/`notion`, ADR 0173) y documenta con claridad la colisión de nombre
+  "Área" — reusada a propósito para dos conceptos sin relación (`snarf/runtime/areas.py`, ruteo interno,
+  ADR 0165, vs. la nueva jerarquía de Notion visible al fundador) — decisión explícita del fundador, no se
+  renombra nada existente.
+- `COGNITION.md`: activa el slot reservado `FOUNDER_MODEL` (supervisor de ánimo planificado, misma
+  disciplina de `basis`/honestidad que la Inteligencia Ejecutiva) y agrega la sección "Equipos de agentes"
+  (extensión planificada del board de 7 roles — iteración con crítica cruzada, aprobación interna, puede
+  producir un artefacto real, reusa la primitiva de stages ya real de `snarf/executive/`).
+- Ningún código nuevo en esta fase — solo documentación. Ver ADR 0179.
+
 ## [2026-08-19] Protocolo de reporte de bugs con contexto real, y baja de conversación continua (ADR 0178)
 
 - Botón de reporte de bugs (🐞) nuevo en tres lugares: chat-dock desktop, barra superior de la vista

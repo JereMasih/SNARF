@@ -35,7 +35,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from snarf.capabilities import google_auth
+from snarf.capabilities import google_auth, notion_auth
 from snarf.capabilities.elevenlabs_tts import ElevenLabsTTS
 from snarf.capabilities.google_auth import TOKENS_DIR as GOOGLE_TOKENS_DIR
 from snarf.core.orchestrator import (
@@ -286,6 +286,32 @@ async def _periodic_bug_triage_loop():
             )
 
 
+# Supervisores periódicos (ADR 0197, Track D del roadmap Second Brain) —
+# mismo criterio de loop de fondo que _periodic_bug_triage_loop, nunca
+# disparados por el poll del navegador. Cadencias default (pregunta abierta
+# #8 del roadmap, sin confirmar todavía con el fundador): financiero una
+# vez por día (la señal real no cambia más rápido que eso — el fundador
+# actualiza su Sheet a su propio ritmo); ánimo cada 6 horas (más frecuente
+# a propósito, la memoria episódica reciente sí puede cambiar varias veces
+# en un día real de conversación).
+FINANCE_SUPERVISOR_INTERVAL_SECONDS = 24 * 60 * 60
+FOUNDER_MOOD_INTERVAL_SECONDS = 6 * 60 * 60
+
+
+async def _periodic_finance_supervision_loop():
+    while True:
+        await asyncio.sleep(FINANCE_SUPERVISOR_INTERVAL_SECONDS)
+        # refresh() ya degrada solo a None sin ninguna Sheet configurada —
+        # nunca levanta, nunca ejecuta ninguna acción mutante.
+        orchestrator.finance_supervisor.refresh()
+
+
+async def _periodic_founder_mood_loop():
+    while True:
+        await asyncio.sleep(FOUNDER_MOOD_INTERVAL_SECONDS)
+        orchestrator.founder_mood.refresh()
+
+
 @app.on_event("startup")
 async def warmup():
     orchestrator.warmup()
@@ -313,6 +339,8 @@ async def warmup():
         asyncio.create_task(_periodic_audio_purge_loop())
         asyncio.create_task(_periodic_dashboard_curation_loop())
         asyncio.create_task(_periodic_bug_triage_loop())
+        asyncio.create_task(_periodic_finance_supervision_loop())
+        asyncio.create_task(_periodic_founder_mood_loop())
 
 
 @app.on_event("shutdown")
@@ -401,6 +429,10 @@ class ProjectPromptRequest(BaseModel):
 
 class ProjectTextRequest(BaseModel):
     text: str
+
+
+class ProjectNotionLinkRequest(BaseModel):
+    notion_page_id: str
 
 
 class BugReportCreateRequest(BaseModel):
@@ -602,6 +634,74 @@ def google_oauth_callback(
         response.set_cookie(
             SESSION_COOKIE_NAME, token, max_age=SESSION_MAX_AGE_SECONDS, httponly=True, samesite="lax", secure=True
         )
+    return response
+
+
+NOTION_OAUTH_STATE_COOKIE = "snarf_notion_oauth_state"
+NOTION_OAUTH_STATE_MAX_AGE_SECONDS = 600
+
+
+def _notion_redirect_uri(request: Request) -> str:
+    return f"{str(request.base_url).rstrip('/')}/auth/notion/callback"
+
+
+@app.get("/auth/notion/start")
+def notion_connect(request: Request, user_id: str = Depends(require_user)):
+    """Conecta el Notion real de un usuario YA logueado (ADR 0186) — mismo
+    patrón que GET /google/connect. Requiere que la integración de Snarf
+    esté registrada como pública en el panel de developers de Notion
+    (NOTION_OAUTH_CLIENT_ID/NOTION_OAUTH_CLIENT_SECRET configurados) — paso
+    manual real del fundador, no automatizable desde acá."""
+    if not notion_auth.client_credentials_available():
+        raise HTTPException(503, "Notion OAuth no está configurado en este servidor todavía.")
+    secret = os.environ.get("SESSION_SECRET")
+    if not secret:
+        raise HTTPException(503, "SESSION_SECRET no configurada en el servidor")
+    nonce = secrets.token_urlsafe(24)
+    authorization_url = notion_auth.build_authorization_url(_notion_redirect_uri(request), nonce)
+    signed_state = create_session_token(secret, f"connect:{user_id}:{nonce}")
+    response = RedirectResponse(authorization_url)
+    response.set_cookie(
+        NOTION_OAUTH_STATE_COOKIE, signed_state, max_age=NOTION_OAUTH_STATE_MAX_AGE_SECONDS,
+        httponly=True, samesite="lax", secure=True,
+    )
+    return response
+
+
+@app.get("/auth/notion/callback")
+def notion_oauth_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    snarf_notion_oauth_state: str | None = Cookie(default=None),
+):
+    if error:
+        return RedirectResponse(f"/?notion_error={error}")
+    secret = os.environ.get("SESSION_SECRET")
+    if not secret:
+        raise HTTPException(503, "SESSION_SECRET no configurada en el servidor")
+    if not code or not state or not snarf_notion_oauth_state:
+        raise HTTPException(400, "callback de Notion incompleto")
+    verified = verify_session_token(secret, snarf_notion_oauth_state)
+    if not verified:
+        raise HTTPException(400, "estado de conexión con Notion inválido o expirado")
+    parts = verified.split(":")
+    if len(parts) != 3 or parts[0] != "connect" or parts[-1] != state:
+        # Mismo criterio real de CSRF que google_oauth_callback: el nonce
+        # firmado tiene que coincidir con el `state` que devuelve Notion.
+        raise HTTPException(400, "estado de conexión con Notion inválido (posible CSRF)")
+    target_user_id = parts[1]
+
+    try:
+        token_data = notion_auth.exchange_code(_notion_redirect_uri(request), code)
+    except Exception as exc:
+        raise HTTPException(502, f"no se pudo completar la conexión con Notion: {exc}")
+
+    notion_auth.save_token(target_user_id, token_data)
+
+    response = RedirectResponse("/")
+    response.delete_cookie(NOTION_OAUTH_STATE_COOKIE)
     return response
 
 
@@ -1857,6 +1957,98 @@ def get_project(project_id: str, user_id: str = Depends(require_user)):
     project["pending_task_count"] = sum(1 for t in project["tasks"] if not t["done"])
     project["conversations"] = orch.memory.list_conversations(project_id=project_id)
     return project
+
+
+@app.get("/second-brain/status")
+def second_brain_status(user_id: str = Depends(require_user)):
+    orch = get_orchestrator(user_id)
+    return {"connected": orch.second_brain.is_connected()}
+
+
+@app.get("/second-brain/areas")
+def second_brain_list_areas(user_id: str = Depends(require_user)):
+    orch = get_orchestrator(user_id)
+    return orch.second_brain.list_areas()
+
+
+@app.get("/second-brain/areas/{area_id}/projects")
+def second_brain_area_projects(area_id: str, user_id: str = Depends(require_user)):
+    """Proyectos reales de Notion de esta Área, cada uno con
+    `snarf_project_id` (el Proyecto de Snarf vinculado, si ya existe uno —
+    ver ADR 0187) para que la UI pueda entrar directo a sus conversaciones/
+    home reusando enterProject(), o mostrar un link a Notion si todavía no
+    hay vínculo."""
+    orch = get_orchestrator(user_id)
+    try:
+        rows = orch.second_brain.list_projects(area_id=area_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    _mark_linked_projects(orch, rows)
+    return rows
+
+
+def _mark_linked_projects(orch, rows: list) -> None:
+    for row in rows:
+        linked = orch.projects.find_by_notion_page_id(row["id"])
+        row["snarf_project_id"] = linked["id"] if linked else None
+
+
+@app.get("/second-brain/areas/{area_id}")
+def second_brain_area_home(area_id: str, user_id: str = Depends(require_user)):
+    """Home real de un Área (ADR 0189): rollup de Proyectos/Recursos/
+    Archivo + el análisis cacheado (se genera solo si nunca se generó
+    todavía, mismo criterio que GET /projects/{id} con cached_summary)."""
+    orch = get_orchestrator(user_id)
+    home = orch.second_brain.cached_area_report(area_id)
+    if home is None:
+        raise HTTPException(404, "Área no encontrada")
+    _mark_linked_projects(orch, home["projects"])
+    return home
+
+
+@app.post("/second-brain/areas/{area_id}/report/refresh")
+def second_brain_area_report_refresh(area_id: str, user_id: str = Depends(require_user)):
+    orch = get_orchestrator(user_id)
+    home = orch.second_brain.generate_area_report(area_id)
+    if home is None:
+        raise HTTPException(404, "Área no encontrada")
+    _mark_linked_projects(orch, home["projects"])
+    return home
+
+
+@app.put("/projects/{project_id}/notion-link")
+def link_project_to_notion(project_id: str, payload: ProjectNotionLinkRequest, user_id: str = Depends(require_user)):
+    """Vincula un Proyecto de Snarf ya existente a una página real de Notion
+    (ADR 0191, mismo criterio que la tool second_brain_link_project) —
+    valida que la página exista antes de guardar el vínculo."""
+    orch = get_orchestrator(user_id)
+    notion_page = orch.second_brain.get_project(payload.notion_page_id)
+    if notion_page is None:
+        raise HTTPException(404, "No se encontró esa página en Notion (o está archivada)")
+    project = orch.projects.set_notion_link(project_id, payload.notion_page_id)
+    if project is None:
+        raise HTTPException(404, "proyecto no encontrado")
+    return project
+
+
+@app.get("/projects/{project_id}/notion-resources")
+def project_notion_resources(project_id: str, user_id: str = Depends(require_user)):
+    """Recursos reales de Notion de este Proyecto (ADR 0191) — vacío con
+    `mapped: false` si el Proyecto no está vinculado o la relación
+    Recursos↔Proyecto todavía no está mapeada en el Second Brain (nunca un
+    error crudo ni una lista vacía sin explicar por qué)."""
+    orch = get_orchestrator(user_id)
+    project = orch.projects.get(project_id)
+    if project is None:
+        raise HTTPException(404, "proyecto no encontrado")
+    notion_page_id = project.get("notion_project_page_id")
+    if not notion_page_id:
+        return {"resources": [], "mapped": False}
+    try:
+        resources = orch.second_brain.list_resources(notion_page_id)
+        return {"resources": resources, "mapped": True}
+    except ValueError:
+        return {"resources": [], "mapped": False}
 
 
 @app.get("/projects/{project_id}/conversations")

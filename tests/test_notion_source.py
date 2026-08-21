@@ -2,11 +2,12 @@ from snarf.knowledge.notion_source import NotionSource
 
 
 class FakeNotion:
-    def __init__(self, pages=None, databases=None, rows_by_database=None, bodies=None):
+    def __init__(self, pages=None, databases=None, rows_by_database=None, bodies=None, child_databases_by_page=None):
         self._pages = pages or []
         self._databases = databases or []
         self._rows_by_database = rows_by_database or {}
         self._bodies = bodies or {}
+        self._child_databases_by_page = child_databases_by_page or {}
 
     def iter_all_pages(self):
         yield from self._pages
@@ -19,6 +20,9 @@ class FakeNotion:
 
     def read_page_text(self, page_id):
         return self._bodies.get(page_id, "")
+
+    def find_child_databases(self, page_id):
+        return self._child_databases_by_page.get(page_id, [])
 
 
 def test_domain_is_personal_same_as_drive():
@@ -110,6 +114,51 @@ def test_read_item_for_a_database_row_combines_properties_and_body():
     assert "Título: Comprar café" in text
     assert "Estado: Pendiente" in text
     assert "notas adicionales en el cuerpo" in text
+
+
+def test_iter_items_indexes_a_child_database_not_listed_by_search():
+    # Gap real de /search (ADR 0193): esta database SOLO aparece vía
+    # find_child_databases (page-1) — nunca en iter_all_databases (vacío acá
+    # a propósito, simulando que /search no la lista).
+    notion = FakeNotion(
+        pages=[{"id": "page-1", "title": "Mi página", "url": "u", "last_edited_time": "t1"}],
+        child_databases_by_page={"page-1": [{"id": "db-embebida", "title": "Recursos"}]},
+        rows_by_database={
+            "db-embebida": [
+                {
+                    "id": "row-1",
+                    "url": "u1",
+                    "last_edited_time": "t1",
+                    "properties": {"Nombre": {"type": "title", "title": [{"plain_text": "Imagen de referencia"}]}},
+                }
+            ]
+        },
+    )
+    items = list(NotionSource(notion).iter_items())
+
+    ids = {item.id for item in items}
+    assert "page-1" in ids
+    assert "row-1" in ids
+    row_item = next(item for item in items if item.id == "row-1")
+    assert row_item.name == "Imagen de referencia"
+    assert row_item.extra_metadata["notion_database_id"] == "db-embebida"
+
+
+def test_iter_items_never_processes_the_same_database_twice():
+    # Si la misma database aparece embebida en una página Y suelta en
+    # iter_all_databases (search sí la lista, por ejemplo), sus filas no se
+    # deben duplicar en el índice.
+    notion = FakeNotion(
+        pages=[{"id": "page-1", "title": "Mi página", "url": "u", "last_edited_time": "t1"}],
+        child_databases_by_page={"page-1": [{"id": "db-1", "title": "Recursos"}]},
+        databases=[{"id": "db-1", "title": "Recursos", "url": "u", "last_edited_time": "t0"}],
+        rows_by_database={
+            "db-1": [{"id": "row-1", "url": "u1", "last_edited_time": "t1", "properties": {}}]
+        },
+    )
+    items = list(NotionSource(notion).iter_items())
+    row_items = [item for item in items if item.id == "row-1"]
+    assert len(row_items) == 1
 
 
 def test_row_properties_cache_resets_on_each_new_iter_items_call():

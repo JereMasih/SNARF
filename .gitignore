@@ -38,6 +38,11 @@ data/n8n_pending_changes.json
 data/blog_posts.jsonl
 data/leads.jsonl
 data/blog_assets/
+data/bug_reports/
+data/second_brain/
+data/finance_supervisor/
+data/founder_mood/
+data/document_writes/
 data_backups/
 credentials/
 server.log

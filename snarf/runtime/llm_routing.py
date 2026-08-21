@@ -94,6 +94,26 @@ ROLES = (
     # esta ronda) — tarea acotada, mismo criterio que project_summary/
     # dashboard_curator: modelo barato por default, elegible aparte.
     "bug_triage",
+    # Reporte de análisis real de un Área del Second Brain de Notion (ADR
+    # 0185, ROADMAP_SECOND_BRAIN_NOTION.md) — mismo criterio que
+    # project_summary: tarea acotada, modelo barato por default.
+    "second_brain_report",
+    # Supervisores periódicos (ADR 0197, Track D del roadmap Second Brain)
+    # — mismo criterio: tarea acotada, modelo barato por default, elegible
+    # aparte desde Configuración.
+    "finance_supervisor",
+    "founder_mood_supervisor",
+    # Mecanismo de "equipo" multi-agente (ADR 0198, extensión de la
+    # Inteligencia Ejecutiva) — el único rol de ruteo NUEVO que necesita:
+    # la crítica de cada rol convocado ya reusa executive_<rol> existente
+    # (ver consult_role), esto es solo para generar/revisar el borrador en
+    # sí, tarea acotada, modelo barato por default.
+    "executive_team_writer",
+    # Escritura confiable de documentos largos (ADR 0199, Fase D4 del
+    # roadmap Second Brain) — genera el contenido de UNA sección por
+    # llamada (nunca el documento entero), mismo criterio de tarea acotada
+    # y modelo barato por default.
+    "document_writer_section",
 )
 
 # Definida acá arriba (no junto a MLX_LOCAL_FAST_BASE_URL más abajo, donde
@@ -140,6 +160,11 @@ DEFAULT_ROUTING = {
     "skill_factory_writer": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
     "vision_demo": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
     "bug_triage": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
+    "second_brain_report": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
+    "finance_supervisor": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
+    "founder_mood_supervisor": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
+    "executive_team_writer": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
+    "document_writer_section": {"provider": "mlx_local_fast", "model": MLX_LOCAL_FAST_MODEL},
 }
 
 # Cada proveedor mapea a una de las 3 Capacidades reales. xai/groq_llama

@@ -986,6 +986,7 @@
     padding: 0.4rem 0.3rem; border-radius: 8px; cursor: pointer;
   }
   .sidebar-tab.active { background: rgba(79,216,232,0.12); color: var(--text); border-color: var(--glow); }
+  .sidebar-tab-second-brain svg { vertical-align: -2px; margin-right: 2px; }
   .sidebar-tab-panel { display: none; flex-direction: column; flex: 1 1 auto; min-height: 0; }
   .sidebar-tab-panel.active { display: flex; }
 
@@ -2049,7 +2050,7 @@
   <div class="sidebar" id="sidebar">
     <div class="sidebar-tabs">
       <button class="sidebar-tab active" data-tab="conversations">Conversaciones</button>
-      <button class="sidebar-tab" data-tab="projects">Proyectos</button>
+      <button class="sidebar-tab sidebar-tab-second-brain" data-tab="projects"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><text x="1.5" y="14.5" font-size="10" font-weight="700" stroke="none" fill="currentColor" font-family="inherit">2</text><circle cx="14.5" cy="6" r="2.1"/><circle cx="11.5" cy="13" r="1.5"/><circle cx="17.5" cy="13" r="1.5"/><path d="M14.5 8.1v1.3M12.7 11.7l1.1-1.6M16.3 11.7l-1.1-1.6"/></svg> Second Brain</button>
       <button class="sidebar-tab" data-tab="bug_reports">Mis reportes</button>
     </div>
     <div class="sidebar-tab-panel active" data-tab-panel="conversations">
@@ -2299,7 +2300,7 @@
   <div id="dashHistoryParked" hidden>
     <div class="sidebar-tabs">
       <button class="sidebar-tab active" data-tab="conversations">Conversaciones</button>
-      <button class="sidebar-tab" data-tab="projects">Proyectos</button>
+      <button class="sidebar-tab sidebar-tab-second-brain" data-tab="projects"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><text x="1.5" y="14.5" font-size="10" font-weight="700" stroke="none" fill="currentColor" font-family="inherit">2</text><circle cx="14.5" cy="6" r="2.1"/><circle cx="11.5" cy="13" r="1.5"/><circle cx="17.5" cy="13" r="1.5"/><path d="M14.5 8.1v1.3M12.7 11.7l1.1-1.6M16.3 11.7l-1.1-1.6"/></svg> Second Brain</button>
       <button class="sidebar-tab" data-tab="bug_reports">Mis reportes</button>
     </div>
     <div class="sidebar-tab-panel active" data-tab-panel="conversations">
@@ -2476,6 +2477,10 @@ const ICONS = {
   copy: '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="7.5" width="9" height="10" rx="1.3"/><path d="M13 7.5V5.5A1.5 1.5 0 0 0 11.5 4h-7A1.5 1.5 0 0 0 3 5.5v9A1.5 1.5 0 0 0 4.5 16H6"/></svg>',
   check: '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5l3.5 3.5L16 5"/></svg>',
   reply: '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5 3 10l5 5"/><path d="M3 10h8a5 5 0 0 1 5 5v1"/></svg>',
+  // "2" + un cerebrito (Second Brain, ver ADR 0187) — mismo lenguaje
+  // monolínea que el resto de ICONS, reusable donde haga falta anclar
+  // visualmente el concepto (ej. futuro home de Área, Fase C5).
+  secondBrain: '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><text x="1.5" y="14.5" font-size="10" font-weight="700" stroke="none" fill="currentColor" font-family="inherit">2</text><circle cx="14.5" cy="6" r="2.1"/><circle cx="11.5" cy="13" r="1.5"/><circle cx="17.5" cy="13" r="1.5"/><path d="M14.5 8.1v1.3M12.7 11.7l1.1-1.6M16.3 11.7l-1.1-1.6"/></svg>',
 };
 
 const orbWrap = document.getElementById("orbWrap");
@@ -3339,8 +3344,9 @@ function renderConvListInto(container, convs) {
     main.addEventListener("click", () => {
       // Esta lista es siempre de conversaciones SIN proyecto (GET
       // /conversations pide unassigned_only=true) — entrar acá nunca deja
-      // currentProjectId de una visita anterior colgado.
+      // currentProjectId ni currentAreaId de una visita anterior colgado.
       currentProjectId = null;
+      currentAreaId = null;
       loadConversation(c.conversation_id);
     });
     row.appendChild(main);
@@ -3605,6 +3611,7 @@ function startNewConversation() {
   clearRetry();
   conversationId = crypto.randomUUID();
   currentProjectId = null;
+  currentAreaId = null;
   pendingProjectHomeId = null;
   clearChat();
   resetConversationPagination();
@@ -3630,6 +3637,19 @@ const PROJECT_PROMPT_MAX_LENGTH = 8000;
 
 let currentProjectId = null;
 let currentProjectName = null; // para la etiqueta de #projectContextBar; se fija cada vez que renderProjectHome recibe un proyecto real
+// Second Brain (ADR 0187): Área actualmente abierta en el drilldown de la
+// pestaña "Second Brain" — null en el nivel superior. A diferencia de
+// currentProjectId, entrar a un Proyecto (enterProject) NO limpia esto: si
+// se entró desde dentro de un Área, currentAreaId sigue seteado mientras se
+// mira ese Proyecto, así "← volver" desde las conversaciones cae de vuelta
+// en la lista de Proyectos de ESA Área (breadcrumb real de 3 niveles), no
+// siempre al nivel superior.
+let currentAreaId = null;
+let currentAreaName = null;
+// Cache en memoria de is_connected() del Second Brain — se resuelve una
+// sola vez por sesión (cambia solo tras el onboarding real, no vale la pena
+// re-consultarlo en cada refreshProjectList). null = todavía no se consultó.
+let secondBrainConnectedCache = null;
 // Seteado al entrar a un proyecto sin haber elegido/creado ninguna
 // conversación todavía — si el usuario tipea directo (sin usar el botón "+
 // nueva conversación de este proyecto"), sendText() genera y asigna la
@@ -3642,28 +3662,30 @@ let pendingProjectHomeId = null;
 // al entrar a uno), con "← todos los proyectos" arriba del título y el botón
 // de "nuevo" debajo — afuera de `.conv-list`, así no se reconstruye ni se
 // pierde al hacer scroll de la lista.
-function renderProjectPanelHeaderInto(header, { title, showBack, newLabel, onNew }) {
+function renderProjectPanelHeaderInto(header, { title, backLabel, onBack, newLabel, onNew }) {
   header.innerHTML = "";
-  if (showBack) {
+  if (onBack) {
     const back = document.createElement("button");
     back.className = "project-back-btn";
-    back.innerHTML = `${ICONS.arrowLeft} todos los proyectos`;
-    back.addEventListener("click", () => exitProject());
+    back.innerHTML = `${ICONS.arrowLeft} ${escapeHtml(backLabel)}`;
+    back.addEventListener("click", onBack);
     header.appendChild(back);
   }
   const titleEl = document.createElement("div");
   titleEl.className = "project-panel-title";
   titleEl.textContent = title;
   header.appendChild(titleEl);
-  const newBtn = document.createElement("button");
-  newBtn.className = "new-conv-btn";
-  newBtn.textContent = newLabel;
-  newBtn.addEventListener("click", onNew);
-  header.appendChild(newBtn);
+  if (newLabel && onNew) {
+    const newBtn = document.createElement("button");
+    newBtn.className = "new-conv-btn";
+    newBtn.textContent = newLabel;
+    newBtn.addEventListener("click", onNew);
+    header.appendChild(newBtn);
+  }
 }
 
 function renderProjectListInto(container, header, projects) {
-  renderProjectPanelHeaderInto(header, { title: "Proyectos", showBack: false, newLabel: "+ nuevo proyecto", onNew: createProject });
+  renderProjectPanelHeaderInto(header, { title: "Proyectos", onBack: null, newLabel: "+ nuevo proyecto", onNew: createProject });
   container.innerHTML = "";
   if (!projects.length) {
     container.innerHTML = '<div class="conv-empty">sin proyectos todavía</div>';
@@ -3678,12 +3700,100 @@ function renderProjectListInto(container, header, projects) {
   });
 }
 
+// Second Brain (ADR 0187), nivel superior cuando está conectado: Áreas
+// reales de Notion en vez de la lista plana de Proyectos de arriba — sin
+// "+ nuevo" (las Áreas se gestionan en Notion, nunca se crean desde acá,
+// ver ADR 0182/0184).
+function renderAreaListInto(container, header, areas) {
+  renderProjectPanelHeaderInto(header, { title: "Áreas" });
+  container.innerHTML = "";
+  if (!areas.length) {
+    container.innerHTML = '<div class="conv-empty">sin Áreas todavía en tu Second Brain</div>';
+    return;
+  }
+  areas.forEach((a) => {
+    const div = document.createElement("div");
+    div.className = "conv-item";
+    div.innerHTML = escapeHtml(a.name);
+    div.addEventListener("click", () => enterArea(a.id, a.name));
+    container.appendChild(div);
+  });
+}
+
+// Second Brain (ADR 0187), nivel 2: Proyectos reales de Notion de un Área
+// puntual. Cada fila ya trae snarf_project_id (ver GET /second-brain/areas/
+// {id}/projects) si ese Proyecto de Notion ya tiene su "hermano" vinculado
+// en Snarf — clickearla entra directo a sus conversaciones (enterProject,
+// sin cambios). Si todavía no hay vínculo, abre la página real de Notion en
+// una pestaña nueva en vez de fingir que hay algo que mostrar acá adentro.
+function renderAreaProjectsInto(container, header, projects) {
+  renderProjectPanelHeaderInto(header, {
+    title: currentAreaName || "Área",
+    backLabel: "Áreas",
+    onBack: exitArea,
+  });
+  container.innerHTML = "";
+  if (!projects.length) {
+    container.innerHTML = '<div class="conv-empty">sin proyectos todavía en esta Área</div>';
+    return;
+  }
+  projects.forEach((p) => {
+    const div = document.createElement("div");
+    div.className = "conv-item";
+    const linkedLabel = p.snarf_project_id ? "" : '<span class="conv-date">ver en Notion ↗</span>';
+    div.innerHTML = `${escapeHtml(p.name)}${linkedLabel}`;
+    div.addEventListener("click", () => {
+      if (p.snarf_project_id) enterProject(p.snarf_project_id);
+      else window.open(p.url, "_blank", "noopener");
+    });
+    container.appendChild(div);
+  });
+}
+
+// Skeleton mínimo real (ADR 0188): sin esto, cambiar de nivel sin nada en
+// cache dejaba la lista VIEJA visible hasta que el fetch nuevo resolviera —
+// confuso (parece que el click no hizo nada, o peor, que esos son los
+// ítems del nivel nuevo). Solo se muestra si no hay nada cacheado todavía
+// para el nivel destino — con cache, sigue el patrón stale-while-revalidate
+// de siempre (instantáneo, sin parpadeo).
+function showProjectPanelLoading() {
+  [projectList, dashProjectList].forEach((list) => {
+    if (list && list.isConnected) list.innerHTML = '<div class="conv-empty">cargando…</div>';
+  });
+}
+
+async function enterArea(id, name) {
+  currentAreaId = id;
+  currentAreaName = name || null;
+  if (!readCache(`second_brain_area_projects:${id}`)) showProjectPanelLoading();
+  // Mismo patrón que enterProject: la lista de la barra lateral (Proyectos
+  // de esta Área) y el "home" del área (chatInner) se cargan juntos, un
+  // solo gesto real (ver ADR 0189).
+  await Promise.all([refreshProjectList(), showAreaHome(id)]);
+}
+
+function exitArea() {
+  currentAreaId = null;
+  currentAreaName = null;
+  const topCacheKey = secondBrainConnectedCache ? "second_brain_areas" : "projects";
+  if (!readCache(topCacheKey)) showProjectPanelLoading();
+  // Mismo criterio que exitProject: no dejar el home del Área anterior
+  // colgado en pantalla mientras la barra lateral ya muestra otro nivel.
+  clearChat();
+  refreshProjectList();
+}
+
 function renderProjectConversationsInto(container, header, conversations) {
   conversations.forEach((c) => conversationTitleCache.set(c.conversation_id, c.title || null));
   updateChatTitleDisplays();
   renderProjectPanelHeaderInto(header, {
     title: currentProjectName || "Proyecto",
-    showBack: true,
+    // Migaja de pan real de 3 niveles (ADR 0187/0181): si se entró desde
+    // dentro de un Área, "← volver" dice el nombre real de esa Área y cae
+    // ahí (currentAreaId sigue seteado, ver enterProject); si no, cae al
+    // nivel superior de siempre.
+    backLabel: currentAreaId ? (currentAreaName || "el Área") : "todos los proyectos",
+    onBack: exitProject,
     newLabel: "+ nueva conversación",
     onNew: () => startNewProjectConversation(currentProjectId),
   });
@@ -3727,28 +3837,56 @@ async function refreshProjectList() {
   ].filter(([list]) => list && list.isConnected);
   const targets = pairs.map(([list]) => list);
   if (!targets.length) return;
-  const cacheKey = currentProjectId ? `project_conversations:${currentProjectId}` : "projects";
-  const render = currentProjectId
-    ? (data) => pairs.forEach(([list, header]) => renderProjectConversationsInto(list, header, data))
-    : (data) => pairs.forEach(([list, header]) => renderProjectListInto(list, header, data));
+  // Second Brain (ADR 0187): 3 niveles reales según el estado actual —
+  // conversaciones de un Proyecto, Proyectos de un Área, o el nivel
+  // superior (Áreas si el Second Brain está conectado, si no la lista plana
+  // de Proyectos de siempre — comportamiento sin cambios mientras no exista
+  // todavía el onboarding de Fase A4, el caso real hoy).
+  let cacheKey, render, fetchFn;
+  if (currentProjectId) {
+    cacheKey = `project_conversations:${currentProjectId}`;
+    render = (data) => pairs.forEach(([list, header]) => renderProjectConversationsInto(list, header, data));
+    fetchFn = async () => {
+      const res = await apiFetch(`/projects/${currentProjectId}/conversations`);
+      if (!res.ok) throw new Error("proyecto no encontrado");
+      return res.json();
+    };
+  } else if (currentAreaId) {
+    cacheKey = `second_brain_area_projects:${currentAreaId}`;
+    render = (data) => pairs.forEach(([list, header]) => renderAreaProjectsInto(list, header, data));
+    fetchFn = async () => {
+      const res = await apiFetch(`/second-brain/areas/${currentAreaId}/projects`);
+      if (!res.ok) throw new Error("no se pudo cargar el Área");
+      return res.json();
+    };
+  } else {
+    if (secondBrainConnectedCache === null) {
+      try {
+        const statusRes = await apiFetch("/second-brain/status");
+        secondBrainConnectedCache = statusRes.ok ? (await statusRes.json()).connected : false;
+      } catch (e) {
+        secondBrainConnectedCache = false;
+      }
+    }
+    if (secondBrainConnectedCache) {
+      cacheKey = "second_brain_areas";
+      render = (data) => pairs.forEach(([list, header]) => renderAreaListInto(list, header, data));
+      fetchFn = async () => (await apiFetch("/second-brain/areas")).json();
+    } else {
+      cacheKey = "projects";
+      render = (data) => pairs.forEach(([list, header]) => renderProjectListInto(list, header, data));
+      fetchFn = async () => (await apiFetch("/projects")).json();
+    }
+  }
   const cached = readCache(cacheKey);
   if (cached) render(cached.data);
   if (cached && Date.now() - cached.ts < PROJECT_LIST_FRESH_MS) return;
   try {
-    if (currentProjectId) {
-      const res = await apiFetch(`/projects/${currentProjectId}/conversations`);
-      if (!res.ok) throw new Error("proyecto no encontrado");
-      const conversations = await res.json();
-      // Mismo criterio que refreshConvLists: no reconstruir si no cambió
-      // nada, para no perder un click en curso sobre un ítem de la lista.
-      if (!cached || JSON.stringify(conversations) !== JSON.stringify(cached.data)) render(conversations);
-      writeCache(cacheKey, conversations);
-    } else {
-      const res = await apiFetch("/projects");
-      const projects = await res.json();
-      if (!cached || JSON.stringify(projects) !== JSON.stringify(cached.data)) render(projects);
-      writeCache(cacheKey, projects);
-    }
+    const data = await fetchFn();
+    // Mismo criterio que refreshConvLists: no reconstruir si no cambió
+    // nada, para no perder un click en curso sobre un ítem de la lista.
+    if (!cached || JSON.stringify(data) !== JSON.stringify(cached.data)) render(data);
+    writeCache(cacheKey, data);
   } catch (e) {
     if (!cached) targets.forEach((t) => { t.innerHTML = '<div class="conv-empty">error cargando proyectos</div>'; });
   }
@@ -3822,14 +3960,26 @@ function renderProjectHomeNotes(notes) {
     : '<div class="project-empty">sin notas todavía</div>';
 }
 
+// Link real a Notion desde un page_id — mismo formato que
+// _notion_page_link en snarf/telemetry/detail.py (sin guiones).
+function notionPageUrl(pageId) {
+  return `https://www.notion.so/${String(pageId).replace(/-/g, "")}`;
+}
+
 function renderProjectHome(project) {
   currentProjectName = project.name;
+  // Espejo Snarf↔Notion (ADR 0184/0191): link real si ya está vinculado,
+  // botón para vincular uno existente si no — nunca los dos a la vez.
+  const notionAction = project.notion_project_page_id
+    ? `<a href="${notionPageUrl(project.notion_project_page_id)}" target="_blank" rel="noopener">ver en Notion ↗</a>`
+    : `<button class="dash-mini-btn" id="projectHomeLinkNotionBtn">vincular a Notion</button>`;
   chatInner.innerHTML = `
     <div class="project-home">
       <div class="project-home-head">
         <h2>${escapeHtml(project.name)}</h2>
         <div class="project-home-actions">
           <a href="https://drive.google.com/drive/folders/${encodeURIComponent(project.drive_folder_id || "")}" target="_blank" rel="noopener">abrir carpeta en Drive ↗</a>
+          ${notionAction}
         </div>
       </div>
       <div class="project-home-stats">
@@ -3855,6 +4005,11 @@ function renderProjectHome(project) {
         <div class="project-section-head"><h4>Tareas</h4><button class="dash-mini-btn" id="projectHomeAddTaskBtn">+ tarea</button></div>
         <div id="projectHomeTaskList"></div>
       </div>
+      ${
+        project.notion_project_page_id
+          ? '<div class="project-section"><div class="project-section-head"><h4>Recursos (Notion)</h4></div><div id="projectHomeResourceList" class="project-empty">cargando…</div></div>'
+          : ""
+      }
       <div class="project-section">
         <div class="project-section-head"><h4>Notas</h4><button class="dash-mini-btn" id="projectHomeAddNoteBtn">+ nota</button></div>
         <div id="projectHomeNoteList"></div>
@@ -3920,6 +4075,46 @@ function renderProjectHome(project) {
     if (res.ok) refreshProjectHome(project.id);
   });
   document.getElementById("projectHomeNewConvBtn").addEventListener("click", () => startNewProjectConversation(project.id));
+
+  const linkBtn = document.getElementById("projectHomeLinkNotionBtn");
+  if (linkBtn) {
+    linkBtn.addEventListener("click", async () => {
+      const raw = prompt("Pegá el id (o el link) de la página de Notion de este proyecto:");
+      if (!raw || !raw.trim()) return;
+      // Acepta tanto un id crudo como un link completo de Notion — el id
+      // real es siempre los últimos 32 caracteres hex del path.
+      const match = raw.trim().match(/([0-9a-fA-F]{32})(?:[?#]|$)/) || raw.trim().match(/([0-9a-fA-F-]{36})(?:[?#]|$)/);
+      const notionPageId = match ? match[1] : raw.trim();
+      const res = await apiFetch(`/projects/${project.id}/notion-link`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notion_page_id: notionPageId }),
+      });
+      if (res.ok) refreshProjectHome(project.id);
+      else alert("No se pudo vincular — verificá el id/link de la página de Notion.");
+    });
+  }
+
+  // Recursos de Notion: fetch aparte (no viene en GET /projects/{id}, evita
+  // pegarle a Notion en cada apertura del home si el proyecto no está
+  // vinculado) — solo se dispara si la sección existe (project vinculado).
+  const resourceListEl = document.getElementById("projectHomeResourceList");
+  if (resourceListEl) {
+    apiFetch(`/projects/${project.id}/notion-resources`)
+      .then((res) => (res.ok ? res.json() : { resources: [], mapped: false }))
+      .then(({ resources, mapped }) => {
+        if (!resourceListEl.isConnected) return; // el home ya cambió mientras esto resolvía
+        if (!mapped) {
+          resourceListEl.textContent = "sin mapear todavía en el Second Brain";
+        } else if (!resources.length) {
+          resourceListEl.textContent = "sin recursos todavía";
+        } else {
+          resourceListEl.className = "";
+          resourceListEl.innerHTML = resources
+            .map((r) => `<div class="project-item-row"><a href="${escapeHtml(r.url)}" target="_blank" rel="noopener">${escapeHtml(r.name)} ↗</a></div>`)
+            .join("");
+        }
+      })
+      .catch(() => { if (resourceListEl.isConnected) resourceListEl.textContent = "error cargando recursos"; });
+  }
 }
 
 async function refreshProjectHome(projectId) {
@@ -3938,6 +4133,70 @@ async function showProjectHome(id) {
     renderProjectHome(await res.json());
   } catch (e) {
     chatInner.innerHTML = `<div class="conv-empty">no se pudo abrir el proyecto: ${escapeHtml(e.message || String(e))}</div>`;
+  }
+}
+
+// Home de un Área del Second Brain (ADR 0189) — mismo esqueleto visual que
+// renderProjectHome (misma clase .project-home, mismo lenguaje de
+// secciones), pero de solo lectura salvo el botón de actualizar el
+// análisis: las Áreas se gestionan en Notion, nunca desde acá (ver A2/A3).
+function renderAreaHome(home) {
+  currentAreaName = home.area.name;
+  const resourceCount = home.resources_mapped ? String(home.resources.length) : "—";
+  const archiveCount = home.archive_mapped ? String(home.archive.length) : "—";
+  chatInner.innerHTML = `
+    <div class="project-home">
+      <div class="project-home-head">
+        <h2>${ICONS.secondBrain} ${escapeHtml(home.area.name)}</h2>
+        <div class="project-home-actions">
+          <a href="${escapeHtml(home.area.url || "")}" target="_blank" rel="noopener">ver en Notion ↗</a>
+        </div>
+      </div>
+      <div class="project-home-stats">
+        <div class="project-stat"><strong>${home.projects.length}</strong><span>proyecto(s)</span></div>
+        <div class="project-stat"><strong>${resourceCount}</strong><span>recurso(s)</span></div>
+        <div class="project-stat"><strong>${archiveCount}</strong><span>archivado(s)</span></div>
+      </div>
+      <div class="project-section">
+        <div class="project-section-head"><h4>Análisis</h4><button class="dash-mini-btn" id="areaHomeReportRefreshBtn">actualizar</button></div>
+        <p class="project-home-summary">${escapeHtml(home.report || 'todavía sin análisis — usá "actualizar".')}</p>
+      </div>
+      <div class="project-section">
+        <div class="project-section-head"><h4>Proyectos</h4></div>
+        <div id="areaHomeProjectList"></div>
+      </div>
+    </div>
+  `;
+  const projectListEl = document.getElementById("areaHomeProjectList");
+  projectListEl.innerHTML = home.projects.length
+    ? home.projects
+        .map(
+          (p) => `
+      <div class="project-item-row" data-project-id="${escapeHtml(p.id)}" data-snarf-project-id="${escapeHtml(p.snarf_project_id || "")}" data-url="${escapeHtml(p.url || "")}">
+        <span class="task-text">${escapeHtml(p.name)}</span>
+      </div>`
+        )
+        .join("")
+    : '<div class="project-empty">sin proyectos todavía en esta Área</div>';
+  projectListEl.addEventListener("click", (e) => {
+    const row = e.target.closest("[data-project-id]");
+    if (!row) return;
+    if (row.dataset.snarfProjectId) enterProject(row.dataset.snarfProjectId);
+    else if (row.dataset.url) window.open(row.dataset.url, "_blank", "noopener");
+  });
+  document.getElementById("areaHomeReportRefreshBtn").addEventListener("click", async () => {
+    const res = await apiFetch(`/second-brain/areas/${home.area.id}/report/refresh`, { method: "POST" });
+    if (res.ok) renderAreaHome(await res.json());
+  });
+}
+
+async function showAreaHome(id) {
+  try {
+    const res = await apiFetch(`/second-brain/areas/${id}`);
+    if (!res.ok) throw new Error("no encontrada");
+    renderAreaHome(await res.json());
+  } catch (e) {
+    chatInner.innerHTML = `<div class="conv-empty">no se pudo abrir el Área: ${escapeHtml(e.message || String(e))}</div>`;
   }
 }
 
@@ -3971,6 +4230,7 @@ async function enterProject(id) {
   // refreshProjectList (el header del panel de Proyectos lo necesita), y
   // acá se lo pasa directo a renderProjectHome en vez de duplicar la
   // llamada de red.
+  if (!readCache(`project_conversations:${id}`)) showProjectPanelLoading();
   try {
     const res = await apiFetch(`/projects/${id}`);
     if (!res.ok) throw new Error("no encontrado");
@@ -3996,6 +4256,10 @@ function exitProject() {
   clearChat();
   resetConversationPagination();
   setState("idle", idleLabel());
+  const backCacheKey = currentAreaId
+    ? `second_brain_area_projects:${currentAreaId}`
+    : (secondBrainConnectedCache ? "second_brain_areas" : "projects");
+  if (!readCache(backCacheKey)) showProjectPanelLoading();
   refreshProjectList();
   refreshConvLists();
   updateProjectHomeBtnVisibility();

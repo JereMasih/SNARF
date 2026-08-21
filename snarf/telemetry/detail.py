@@ -330,6 +330,29 @@ def _executive_board_consult(i, r):
     return None
 
 
+# --- specialist_executive_team -----------------------------------------
+
+
+def _executive_team_run(i, r):
+    roles = _input_get(i, "roles")
+    if isinstance(roles, list) and roles:
+        return _truncate(f"equipo ({', '.join(roles)}): {_input_get(i, 'objective')}")
+    return _truncate(str(_input_get(i, "objective")))
+
+
+# --- specialist_document_writer -----------------------------------------
+
+
+def _document_write_start(i, r):
+    return _truncate(f"'{_input_get(i, 'title')}': {len(_input_get(i, 'sections') or [])} secciones")
+
+
+def _document_write_progress(i, r):
+    if isinstance(r, dict) and "sections_verified" in r:
+        return _truncate(f"{r['sections_verified']}/{r['sections_total']} secciones verificadas")
+    return None
+
+
 # --- specialist_skill_factory -----------------------------------------
 
 
@@ -496,6 +519,15 @@ def _notion_update_table_cell(i, r):
     return _from_input_id("block_id", f"editando columna {column} de:")(i, r)
 
 
+# --- second_brain --------------------------------------------------------
+
+
+def _second_brain_status(i, r):
+    if isinstance(r, dict):
+        return "conectado" if r.get("connected") else "no conectado todavía"
+    return None
+
+
 DETAIL_EXTRACTORS = {
     # utility
     "get_current_datetime": _get_current_datetime,
@@ -579,6 +611,7 @@ DETAIL_EXTRACTORS = {
     "project_delete": _project_delete,
     "project_set_prompt": _project_set_prompt,
     "project_search": _from_input("query", prefix="buscando en el proyecto:"),
+    "second_brain_link_project": _from_input_id("project_id", "vinculando a Notion:"),
     # specialist_projects_tasks
     "project_add_task": _from_input("text", prefix="agregando tarea:"),
     "project_complete_task": _project_complete_task,
@@ -618,8 +651,37 @@ DETAIL_EXTRACTORS = {
     "notion_update_block": _notion_update_block,
     "notion_update_table_cell": _notion_update_table_cell,
     "notion_delete_block": _notion_delete_block,
+    "notion_move_page": _from_input_id("page_id", "moviendo página:"),
+    "notion_create_database": _from_input("title", prefix="creando database:"),
+    "notion_update_page_cover": _from_input_id("page_id", "cambiando portada de:"),
+    "notion_update_page_icon": _from_input_id("page_id", "cambiando ícono de:"),
+    "notion_update_database_cover": _from_input_id("database_id", "cambiando portada de:"),
+    "notion_update_database_icon": _from_input_id("database_id", "cambiando ícono de:"),
+    "notion_archive_page": _from_input_id("page_id", "archivando página:"),
+    "notion_restore_page": _from_input_id("page_id", "restaurando página:"),
+    "second_brain_status": _second_brain_status,
+    "second_brain_list_areas": _list_count("Áreas"),
+    "second_brain_get_area": _from_input_id("area_id", "área:"),
+    "second_brain_list_projects": _from_input_id("area_id", "proyectos del área:"),
+    "second_brain_get_project": _from_input_id("project_id", "proyecto:"),
+    "second_brain_list_resources": _from_input_id("project_id", "recursos de:"),
+    "second_brain_list_archive": _from_input_id("project_id", "archivo de:"),
+    "second_brain_get_area_home": _from_input_id("area_id", "panorama del área:"),
+    "second_brain_area_report_refresh": _from_input_id("area_id", "actualizando reporte de:"),
+    "second_brain_onboarding_auto_build": lambda i, r: None,
+    "second_brain_onboarding_suggest_mapping": lambda i, r: None,
+    "second_brain_onboarding_apply_mapping": lambda i, r: None,
+    "finance_supervisor_get_snapshot": lambda i, r: None,
+    "finance_supervisor_set_sheet": _from_input_id("file_id", "planilla configurada:"),
+    "founder_mood_get_snapshot": lambda i, r: None,
     # specialist_executive_board
     "executive_board_consult": _executive_board_consult,
+    # specialist_executive_team
+    "executive_team_run": _executive_team_run,
+    # specialist_document_writer
+    "document_write_start": _document_write_start,
+    "document_write_continue": _document_write_progress,
+    "document_write_status": _document_write_progress,
     # specialist_skill_factory
     "skill_factory_build": _skill_factory_build,
     "skill_factory_activate": _skill_factory_activate,

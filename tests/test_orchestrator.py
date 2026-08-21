@@ -495,6 +495,83 @@ def test_handle_injects_project_prompt_as_additional_system_context(orchestrator
     assert "sos el asistente de este proyecto" in captured["system"]
 
 
+def test_handle_injects_proactive_notion_context_when_project_linked_and_indexed(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    captured = {}
+
+    def fake_generate(system, messages, tools=None, tool_handler=None):
+        captured["system"] = system
+        return LLMResponse(text="respuesta", speech="respuesta")
+
+    monkeypatch.setattr(orchestrator._llm, "generate", fake_generate)
+    monkeypatch.setattr(
+        orchestrator._projects, "get",
+        lambda pid: {"id": pid, "name": "Newsletter", "prompt": "", "notion_project_page_id": "notion-page-1"},
+    )
+    monkeypatch.setattr(orchestrator._notion_indexer, "manifest_summary", lambda: {"indexed": 5})
+    monkeypatch.setattr(
+        orchestrator._notion_indexer, "search",
+        lambda query, top_k=3: [{"text": "contenido real indexado de Notion"}],
+    )
+    orchestrator._memory.assign_conversation("c1", "proj-1")
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    assert "contenido real indexado de Notion" in captured["system"]
+
+
+def test_handle_skips_notion_retrieval_when_nothing_indexed_yet(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    monkeypatch.setattr(orchestrator._llm, "generate", lambda **kwargs: LLMResponse(text="r", speech="r"))
+    monkeypatch.setattr(
+        orchestrator._projects, "get",
+        lambda pid: {"id": pid, "name": "Newsletter", "prompt": "", "notion_project_page_id": "notion-page-1"},
+    )
+    monkeypatch.setattr(orchestrator._notion_indexer, "manifest_summary", lambda: {"indexed": 0})
+    search_calls = []
+    monkeypatch.setattr(orchestrator._notion_indexer, "search", lambda query, top_k=3: search_calls.append(query))
+    orchestrator._memory.assign_conversation("c1", "proj-1")
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    assert search_calls == []
+
+
+def test_handle_skips_notion_retrieval_when_project_not_linked_to_notion(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._llm, "_client", object())
+    monkeypatch.setattr(orchestrator._llm, "generate", lambda **kwargs: LLMResponse(text="r", speech="r"))
+    monkeypatch.setattr(
+        orchestrator._projects, "get",
+        lambda pid: {"id": pid, "name": "Newsletter", "prompt": "", "notion_project_page_id": None},
+    )
+    search_calls = []
+    monkeypatch.setattr(orchestrator._notion_indexer, "search", lambda query, top_k=3: search_calls.append(query))
+    orchestrator._memory.assign_conversation("c1", "proj-1")
+    orchestrator.handle("text", "hola", conversation_id="c1")
+    assert search_calls == []
+
+
+def test_proactive_notion_context_caches_within_ttl(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._notion_indexer, "manifest_summary", lambda: {"indexed": 3})
+    search_calls = []
+
+    def fake_search(query, top_k=3):
+        search_calls.append(query)
+        return [{"text": "resultado real"}]
+
+    monkeypatch.setattr(orchestrator._notion_indexer, "search", fake_search)
+    first = orchestrator._proactive_notion_context("misma consulta")
+    second = orchestrator._proactive_notion_context("misma consulta")
+    assert first == second == "resultado real"
+    assert len(search_calls) == 1
+
+
+def test_proactive_notion_context_degrades_to_none_on_search_error(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._notion_indexer, "manifest_summary", lambda: {"indexed": 3})
+
+    def raise_error(query, top_k=3):
+        raise RuntimeError("fallo de red simulado")
+
+    monkeypatch.setattr(orchestrator._notion_indexer, "search", raise_error)
+    assert orchestrator._proactive_notion_context("consulta") is None
+
+
 def test_handle_with_a_missing_project_degrades_gracefully(orchestrator, monkeypatch):
     monkeypatch.setattr(orchestrator._llm, "_client", object())
     monkeypatch.setattr(orchestrator._llm, "generate", lambda **kwargs: LLMResponse(text="respuesta", speech="respuesta"))
@@ -966,6 +1043,20 @@ HIGH_IMPACT_TOOLS = [
     ("notion_update_block", "_notion", "update_block", {"block_id": "b-1", "block_type": "paragraph", "content": "texto nuevo"}),
     ("notion_update_table_cell", "_notion", "update_table_cell", {"block_id": "b-1", "column_index": 0, "content": "celda nueva"}),
     ("notion_delete_block", "_notion", "delete_block", {"block_id": "b-1"}),
+    ("notion_move_page", "_notion", "move_page", {"page_id": "p-1", "new_parent_database_id": "db-2"}),
+    (
+        "notion_create_database",
+        "_notion",
+        "create_database",
+        {"parent_page_id": "p-1", "title": "Proyectos", "properties": {"Nombre": {"title": {}}}},
+    ),
+    ("notion_archive_page", "_notion", "archive_page", {"page_id": "p-1"}),
+    (
+        "second_brain_onboarding_auto_build",
+        "_second_brain",
+        "auto_build_workspace",
+        {"parent_page_id": "parent-page-1"},
+    ),
 ]
 
 
