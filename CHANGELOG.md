@@ -2,6 +2,22 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-21] Fixes de UI: ícono de Second Brain y "Mis reportes" dentro del modal de reporte (ADR 0201)
+
+- Feedback directo del fundador probando la UI: el ícono "2 + cerebrito" del tab Second Brain no
+  renderizaba bien — se saca, queda solo el texto "Second Brain" (ambas instancias del DOM).
+- "Mis reportes" deja de ser un tab de la barra lateral y se muda dentro del modal del botón 🐞, como
+  segunda sub-pestaña junto a "Nuevo reporte" (switcher propio, no reusa `.sidebar-tab` a propósito —
+  evita interferir con el switcher genérico de la barra lateral real).
+- Click-to-expand nuevo sobre cada reporte de la lista: despliega descripción/estado/categoría/
+  severidad/plan/resolución/historial real (`GET /bug_reports/{id}`, ya existía en el backend, cero
+  trabajo nuevo de API) — antes clickear un reporte no hacía nada.
+- Aclaración de paso, no un bug: "Áreas" no aparece en Second Brain porque el fundador todavía no hizo el
+  onboarding (`database_map.json` no existe) — no depende del registro OAuth público de Notion, eso es
+  para multi-usuario, no para su propio uso vía `NOTION_API_KEY`.
+- Verificado con Playwright real (mobile+desktop, cero errores de consola) contra un server de prueba.
+  1681/1681 tests (sin cambios de backend). Ver ADR 0201.
+
 ## [2026-08-21] Integración capstone: Second Brain y confiabilidad del Orchestrator (ADR 0200)
 
 - **Cierra Track D completo (D1-D5) y el plan de 22 fases de `ROADMAP_SECOND_BRAIN_NOTION.md`.** Sin

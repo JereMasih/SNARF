@@ -247,6 +247,37 @@
     border-radius: 8px; color: var(--text); padding: 0.6rem; font: inherit; line-height: 1.4;
   }
   .bug-report-modal-actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.6rem; margin-top: 0.8rem; }
+  /* Sub-pestañas "Nuevo reporte"/"Mis reportes" dentro del modal del botón
+     🐞 (ver comentario junto al HTML) — deliberadamente NO reusan la clase
+     .sidebar-tab: ese switcher genérico (más abajo en el JS) busca su scope
+     con .closest("#sidebar, #dashHistoryParked") y cae a `document` si no
+     lo encuentra, lo que apagaría los paneles activos de la barra lateral
+     real si un botón con esa clase viviera dentro de este modal. */
+  .bug-report-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.8rem; }
+  .bug-report-modal-tabs { display: flex; gap: 0.4rem; flex: 1 1 auto; }
+  .bug-report-modal-tab {
+    flex: 1 1 auto; background: none; border: 1px solid rgba(79,216,232,0.25);
+    color: var(--text-dim); font-family: inherit; font-size: 0.72rem;
+    padding: 0.4rem 0.3rem; border-radius: 8px; cursor: pointer;
+  }
+  .bug-report-modal-tab.active { background: rgba(79,216,232,0.12); color: var(--text); border-color: var(--glow); }
+  .bug-report-modal-panel { display: none; }
+  .bug-report-modal-panel.active { display: block; }
+  .bug-report-modal-panel[data-brpanel="list"] { max-height: 60vh; overflow-y: auto; }
+  .bug-report-detail-back {
+    background: none; border: none; color: var(--glow); font: inherit; font-size: 0.75rem;
+    cursor: pointer; padding: 0.2rem 0; margin-bottom: 0.5rem;
+  }
+  .bug-report-detail-body { font-size: 0.78rem; line-height: 1.5; color: var(--text-dim); }
+  .bug-report-detail-body h4 { margin: 0.9rem 0 0.3rem; color: var(--text); font-size: 0.75rem; font-weight: 600; }
+  .bug-report-detail-body h4:first-child { margin-top: 0; }
+  .bug-report-detail-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.3rem 0; }
+  .bug-report-detail-badge {
+    font-size: 0.65rem; padding: 0.15rem 0.5rem; border-radius: 999px;
+    border: 1px solid rgba(79,216,232,0.3); color: var(--text-dim);
+  }
+  .bug-report-detail-history-item { margin-bottom: 0.3rem; }
+  .bug-report-detail-history-item .conv-date { opacity: 0.7; font-size: 0.65rem; }
   .new-conv-btn {
     margin: 0 14px 14px;
     padding: 0.6rem 0.8rem;
@@ -986,7 +1017,6 @@
     padding: 0.4rem 0.3rem; border-radius: 8px; cursor: pointer;
   }
   .sidebar-tab.active { background: rgba(79,216,232,0.12); color: var(--text); border-color: var(--glow); }
-  .sidebar-tab-second-brain svg { vertical-align: -2px; margin-right: 2px; }
   .sidebar-tab-panel { display: none; flex-direction: column; flex: 1 1 auto; min-height: 0; }
   .sidebar-tab-panel.active { display: flex; }
 
@@ -2039,19 +2069,32 @@
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
   <div class="bug-report-overlay" id="bugReportOverlay">
     <div class="bug-report-modal">
-      <h3>Reportar un problema</h3>
-      <textarea id="bugReportText" placeholder="¿Qué pasó? Contanos con el detalle que quieras — la conversación actual queda guardada como contexto, no hace falta que la repitas."></textarea>
-      <div class="bug-report-modal-actions">
-        <button class="chat-dock-icon-btn" id="bugReportCancelBtn" title="cancelar">✕</button>
-        <button class="new-conv-btn" id="bugReportSubmitBtn">Enviar reporte</button>
+      <div class="bug-report-modal-header">
+        <div class="bug-report-modal-tabs">
+          <button class="bug-report-modal-tab active" data-brtab="new">Nuevo reporte</button>
+          <button class="bug-report-modal-tab" data-brtab="list">Mis reportes</button>
+        </div>
+        <button class="chat-dock-icon-btn" id="bugReportCancelBtn" title="cerrar">✕</button>
+      </div>
+      <div class="bug-report-modal-panel active" data-brpanel="new">
+        <textarea id="bugReportText" placeholder="¿Qué pasó? Contanos con el detalle que quieras — la conversación actual queda guardada como contexto, no hace falta que la repitas."></textarea>
+        <div class="bug-report-modal-actions">
+          <button class="new-conv-btn" id="bugReportSubmitBtn">Enviar reporte</button>
+        </div>
+      </div>
+      <div class="bug-report-modal-panel" data-brpanel="list">
+        <div class="conv-list" id="bugReportList"></div>
+        <div class="bug-report-detail" id="bugReportDetail" hidden>
+          <button class="bug-report-detail-back" id="bugReportDetailBack">← volver</button>
+          <div class="bug-report-detail-body" id="bugReportDetailBody"></div>
+        </div>
       </div>
     </div>
   </div>
   <div class="sidebar" id="sidebar">
     <div class="sidebar-tabs">
       <button class="sidebar-tab active" data-tab="conversations">Conversaciones</button>
-      <button class="sidebar-tab sidebar-tab-second-brain" data-tab="projects"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><text x="1.5" y="14.5" font-size="10" font-weight="700" stroke="none" fill="currentColor" font-family="inherit">2</text><circle cx="14.5" cy="6" r="2.1"/><circle cx="11.5" cy="13" r="1.5"/><circle cx="17.5" cy="13" r="1.5"/><path d="M14.5 8.1v1.3M12.7 11.7l1.1-1.6M16.3 11.7l-1.1-1.6"/></svg> Second Brain</button>
-      <button class="sidebar-tab" data-tab="bug_reports">Mis reportes</button>
+      <button class="sidebar-tab sidebar-tab-second-brain" data-tab="projects">Second Brain</button>
     </div>
     <div class="sidebar-tab-panel active" data-tab-panel="conversations">
       <button class="new-conv-btn" id="newConvBtn">+ nueva conversación</button>
@@ -2061,9 +2104,6 @@
     <div class="sidebar-tab-panel" data-tab-panel="projects">
       <div class="project-panel-header" id="projectPanelHeader"></div>
       <div class="conv-list" id="projectList"></div>
-    </div>
-    <div class="sidebar-tab-panel" data-tab-panel="bug_reports">
-      <div class="conv-list" id="bugReportList"></div>
     </div>
     <div class="user-menu" id="userMenu">
       <button class="user-menu-btn" id="userMenuBtn">
@@ -2300,8 +2340,7 @@
   <div id="dashHistoryParked" hidden>
     <div class="sidebar-tabs">
       <button class="sidebar-tab active" data-tab="conversations">Conversaciones</button>
-      <button class="sidebar-tab sidebar-tab-second-brain" data-tab="projects"><svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><text x="1.5" y="14.5" font-size="10" font-weight="700" stroke="none" fill="currentColor" font-family="inherit">2</text><circle cx="14.5" cy="6" r="2.1"/><circle cx="11.5" cy="13" r="1.5"/><circle cx="17.5" cy="13" r="1.5"/><path d="M14.5 8.1v1.3M12.7 11.7l1.1-1.6M16.3 11.7l-1.1-1.6"/></svg> Second Brain</button>
-      <button class="sidebar-tab" data-tab="bug_reports">Mis reportes</button>
+      <button class="sidebar-tab sidebar-tab-second-brain" data-tab="projects">Second Brain</button>
     </div>
     <div class="sidebar-tab-panel active" data-tab-panel="conversations">
       <button class="new-conv-btn" id="dashNewConvBtn">+ nueva conversación</button>
@@ -2311,9 +2350,6 @@
     <div class="sidebar-tab-panel" data-tab-panel="projects">
       <div class="project-panel-header" id="dashProjectPanelHeader"></div>
       <div class="conv-list" id="dashProjectList"></div>
-    </div>
-    <div class="sidebar-tab-panel" data-tab-panel="bug_reports">
-      <div class="conv-list" id="dashBugReportList"></div>
     </div>
   </div>
 
@@ -2505,7 +2541,9 @@ const dashProjectList = document.getElementById("dashProjectList");
 const projectPanelHeader = document.getElementById("projectPanelHeader");
 const dashProjectPanelHeader = document.getElementById("dashProjectPanelHeader");
 const bugReportList = document.getElementById("bugReportList");
-const dashBugReportList = document.getElementById("dashBugReportList");
+const bugReportDetail = document.getElementById("bugReportDetail");
+const bugReportDetailBody = document.getElementById("bugReportDetailBody");
+const bugReportDetailBack = document.getElementById("bugReportDetailBack");
 const logoutBtn = document.getElementById("logoutBtn");
 const textRow = document.getElementById("textRow");
 const textInput = document.getElementById("textInput");
@@ -3909,24 +3947,84 @@ function renderBugReportListInto(container, reports) {
     const statusLabel = BUG_REPORT_STATUS_LABEL[r.status] || r.status;
     const extra = r.severity ? ` · ${r.severity}` : "";
     div.innerHTML = `${escapeHtml(r.description.slice(0, 80))}<span class="conv-date">${statusLabel}${extra} · ${relativeTime(r.created_at)}</span>`;
+    div.addEventListener("click", () => openBugReportDetail(r.id));
     container.appendChild(div);
   });
 }
 
 // Sin cache stale-while-revalidate (a diferencia de refreshProjectList) a
 // propósito — reportar un bug no es frecuente, no amerita esa complejidad
-// extra todavía. Trae fresco cada vez que se abre la pestaña.
+// extra todavía. Trae fresco cada vez que se abre la sub-pestaña "Mis
+// reportes" del modal de reporte (ver ADR de esta ronda: antes vivía como
+// pestaña propia de la barra lateral, ahora vive DENTRO del mismo modal
+// donde ya se crea un reporte nuevo).
 async function refreshBugReportList() {
-  const targets = [bugReportList, dashBugReportList].filter((t) => t && t.isConnected);
-  if (!targets.length) return;
+  if (!bugReportList) return;
   try {
     const res = await apiFetch("/bug_reports");
     const reports = await res.json();
-    targets.forEach((t) => renderBugReportListInto(t, reports));
+    renderBugReportListInto(bugReportList, reports);
   } catch (e) {
-    targets.forEach((t) => { t.innerHTML = '<div class="conv-empty">error cargando reportes</div>'; });
+    bugReportList.innerHTML = '<div class="conv-empty">error cargando reportes</div>';
   }
 }
+
+// Detalle real de un reporte puntual (clasificación/plan/historial, ver
+// GET /bug_reports/{id}) — mismo patrón de "reemplazar la lista por el
+// detalle" ya usado en enterProject()/enterArea() (ADR 0181): nunca un
+// acordeón anidado, un nivel a la vez.
+function renderBugReportDetail(report) {
+  const statusLabel = BUG_REPORT_STATUS_LABEL[report.status] || report.status;
+  const badges = [statusLabel, report.category, report.severity]
+    .filter(Boolean)
+    .map((b) => `<span class="bug-report-detail-badge">${escapeHtml(b)}</span>`)
+    .join("");
+  let html = `<h4>Descripción</h4><p>${escapeHtml(report.description)}</p>`;
+  html += `<h4>Estado</h4><div class="bug-report-detail-badges">${badges}</div>`;
+  if (report.plan) html += `<h4>Plan</h4><p>${escapeHtml(report.plan)}</p>`;
+  if (report.resolution) html += `<h4>Resolución</h4><p>${escapeHtml(report.resolution)}</p>`;
+  if (report.history && report.history.length) {
+    html += "<h4>Historial</h4>" + report.history.map((h) => (
+      `<div class="bug-report-detail-history-item">${BUG_REPORT_STATUS_LABEL[h.status] || h.status}` +
+      (h.note ? ` — ${escapeHtml(h.note)}` : "") +
+      (h.timestamp ? `<span class="conv-date">${relativeTime(h.timestamp)}</span>` : "") +
+      "</div>"
+    )).join("");
+  }
+  bugReportDetailBody.innerHTML = html;
+}
+
+async function openBugReportDetail(reportId) {
+  bugReportList.hidden = true;
+  bugReportDetail.hidden = false;
+  bugReportDetailBody.innerHTML = '<div class="conv-empty">cargando...</div>';
+  try {
+    const res = await apiFetch(`/bug_reports/${reportId}`);
+    if (!res.ok) throw new Error("no encontrado");
+    renderBugReportDetail(await res.json());
+  } catch (e) {
+    bugReportDetailBody.innerHTML = '<div class="conv-empty">error cargando el detalle</div>';
+  }
+}
+
+function closeBugReportDetail() {
+  bugReportDetail.hidden = true;
+  bugReportList.hidden = false;
+}
+bugReportDetailBack.addEventListener("click", closeBugReportDetail);
+
+// Sub-pestañas del modal de reporte ("Nuevo reporte"/"Mis reportes") —
+// switcher chico y propio, deliberadamente separado del switcher genérico
+// de .sidebar-tab (ver comentario de .bug-report-modal-tabs en el CSS).
+document.querySelectorAll(".bug-report-modal-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".bug-report-modal-tab").forEach((t) => t.classList.toggle("active", t === tab));
+    document
+      .querySelectorAll(".bug-report-modal-panel")
+      .forEach((p) => p.classList.toggle("active", p.dataset.brpanel === tab.dataset.brtab));
+    if (tab.dataset.brtab === "list") { closeBugReportDetail(); refreshBugReportList(); }
+  });
+});
 
 function renderProjectHomeTasks(tasks) {
   const list = document.getElementById("projectHomeTaskList");
@@ -4319,7 +4417,6 @@ document.querySelectorAll(".sidebar-tab").forEach((tab) => {
       .querySelectorAll(".sidebar-tab-panel")
       .forEach((p) => p.classList.toggle("active", p.dataset.tabPanel === tab.dataset.tab));
     if (tab.dataset.tab === "projects") refreshProjectList();
-    if (tab.dataset.tab === "bug_reports") refreshBugReportList();
   });
 });
 
@@ -7183,6 +7280,11 @@ function openBugReportModal() {
   bugReportOverlay.classList.add("open");
   bugReportSubmitBtn.textContent = "Enviar reporte";
   bugReportSubmitBtn.disabled = false;
+  // Siempre arranca en "Nuevo reporte" — un punto de entrada predecible,
+  // nunca recuerda en qué sub-pestaña quedó la vez anterior.
+  document.querySelectorAll(".bug-report-modal-tab").forEach((t) => t.classList.toggle("active", t.dataset.brtab === "new"));
+  document.querySelectorAll(".bug-report-modal-panel").forEach((p) => p.classList.toggle("active", p.dataset.brpanel === "new"));
+  closeBugReportDetail();
   setTimeout(() => bugReportText.focus(), 50);
 }
 
