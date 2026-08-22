@@ -2,6 +2,32 @@
 
 Registro de cambios relevantes del proyecto Snarf. Los cambios de gobernanza o arquitectura que requieren justificación quedan además documentados como ADR en `adr/`.
 
+## [2026-08-22] Adjuntar sin auto-subir + capacidad real de conversión a EPUB en el Orchestrator (ADR 0202)
+
+- Bug real reportado: adjuntar un archivo en el chat lo subía y procesaba a Drive de
+  inmediato al seleccionarlo, antes de que el usuario dijera qué hacer con él en texto o
+  audio. Ahora queda "adjunto pendiente" en un chip nuevo del composer (mismo patrón visual
+  que "respondiendo a este mensaje") hasta que el mensaje se envía de verdad — recién ahí se
+  sube, junto con la instrucción, por cualquiera de los 4 caminos de envío (texto, voz
+  manos-libres, voz con revisión, modo continuo).
+- El fundador pidió convertir un PDF a EPUB y el Orchestrator dijo (con razón, confirmado
+  en `data/episodic_memory.jsonl`) que no tenía esa capacidad — la skill `pdf-to-epub` de
+  Claude Code instalada en la misma sesión es un sistema separado que el Orchestrator no
+  puede invocar. Se porta esa misma lógica ya probada a una capacidad real
+  (`snarf/capabilities/epub_builder.py`, en memoria, sin tocar el filesystem) y una tool
+  nueva del Orchestrator (`convert_to_epub`, nodo `documents` del cerebro, sin gate de
+  confirmación — mismo criterio que `drive_create_document`, crea contenido nuevo del
+  propio fundador).
+- `Orchestrator.handle()` ahora recibe el `file_id` real de un adjunto en el mismo turno y
+  se lo pasa al modelo por contexto — antes el texto/instrucción llegaba desconectado del
+  archivo ya subido.
+- 1692/1692 tests (11 nuevos/extendidos: detección de modo dialogue/chapters/flow y EPUB
+  válido de punta a punta en `tests/test_epub_builder.py`, el tool `convert_to_epub` en
+  `tests/test_orchestrator.py`, los campos de adjunto en `/send` y `mimeType` en
+  `/files/upload` en `tests/test_app.py`). Verificado con Playwright real (puerto 8000):
+  adjuntar no dispara la subida hasta enviar, cancelar con "✕" funciona, y conversión real
+  de un PDF a EPUB de punta a punta. Ver ADR 0202.
+
 ## [2026-08-21] Fixes de UI: ícono de Second Brain y "Mis reportes" dentro del modal de reporte (ADR 0201)
 
 - Feedback directo del fundador probando la UI: el ícono "2 + cerebrito" del tab Second Brain no

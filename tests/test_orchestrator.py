@@ -1020,6 +1020,65 @@ def test_bug_report_create_captures_the_active_conversation_id_from_context(orch
     assert created["context"]["recent_turns"][0]["input"] == "hola snarf"
 
 
+# convert_to_epub (ADR 0202) toca DOS métodos de capacidad en el camino
+# feliz (read_file_bytes + upload_file, más index_file), no uno solo — no
+# entra en el harness genérico parametrizado de HIGH_IMPACT_TOOLS de abajo
+# (pensado para un único método por tool), y de hecho no requiere confirmed:
+# crea contenido NUEVO en el Drive del fundador a partir de un archivo que ya
+# le pertenece, mismo criterio sin confirmación que drive_create_document/
+# document_write_start (ver el comentario en _tool_convert_to_epub).
+def test_convert_to_epub_downloads_converts_uploads_and_indexes_without_confirmation(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._drive, "read_file_bytes", lambda file_id: b"bytes-fuente")
+    monkeypatch.setattr(
+        orchestrator._epub_builder, "convert",
+        lambda source_bytes, source_name, title, author, mode="auto", **kw: (b"bytes-epub", "dialogue"),
+    )
+    upload_calls = []
+    monkeypatch.setattr(
+        orchestrator._drive, "upload_file",
+        lambda name, content, mime_type, parent_id=None, convert_to=None: upload_calls.append(
+            (name, content, mime_type, parent_id)
+        ) or {"id": "epub-1", "name": name, "webViewLink": "http://x/epub-1"},
+    )
+    monkeypatch.setattr(orchestrator._document_publisher, "folder_id", lambda: "folder-1")
+    index_calls = []
+    monkeypatch.setattr(
+        orchestrator._drive_indexer, "index_file",
+        lambda file: index_calls.append(file) or {"status": "skipped"},
+    )
+
+    result = orchestrator._handle_tool(
+        "convert_to_epub",
+        {"file_id": "src-1", "source_name": "monologo.pdf", "title": "Monólogo Lili", "author": "Jere"},
+    )
+
+    assert result == {
+        "status": "created", "id": "epub-1", "name": "Monólogo Lili.epub",
+        "webViewLink": "http://x/epub-1", "mode_used": "dialogue",
+    }
+    assert upload_calls == [("Monólogo Lili.epub", b"bytes-epub", "application/epub+zip", "folder-1")]
+    assert len(index_calls) == 1
+
+
+def test_convert_to_epub_returns_a_clean_error_and_never_uploads_when_source_has_no_content(orchestrator, monkeypatch):
+    monkeypatch.setattr(orchestrator._drive, "read_file_bytes", lambda file_id: b"")
+
+    def _raise(*a, **kw):
+        raise ValueError("no se pudo extraer contenido del documento de entrada")
+
+    monkeypatch.setattr(orchestrator._epub_builder, "convert", _raise)
+    upload_calls = []
+    monkeypatch.setattr(orchestrator._drive, "upload_file", lambda *a, **kw: upload_calls.append(1) or {"id": "x"})
+
+    result = orchestrator._handle_tool(
+        "convert_to_epub",
+        {"file_id": "src-1", "source_name": "vacio.pdf", "title": "T", "author": "A"},
+    )
+
+    assert result == {"error": "no se pudo extraer contenido del documento de entrada"}
+    assert upload_calls == []
+
+
 # (nombre de la tool, atributo de capacidad en Orchestrator, método real, input base)
 HIGH_IMPACT_TOOLS = [
     ("gmail_send_message", "_gmail", "send_message", {"to": "a@b.com", "subject": "s", "body": "b"}),

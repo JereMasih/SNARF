@@ -67,6 +67,7 @@ VERB_BY_SKILL: dict[str, str] = {
     "drive_create_spreadsheet": "armando la planilla",
     "drive_create_presentation": "armando la presentación",
     "drive_update_document": "reescribiendo el documento",
+    "convert_to_epub": "convirtiendo a epub",
     # gmail_read
     "gmail_list_messages": "revisando la bandeja",
     "gmail_read_message": "leyendo el correo",

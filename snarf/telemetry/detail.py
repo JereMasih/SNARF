@@ -570,6 +570,7 @@ DETAIL_EXTRACTORS = {
     "drive_create_spreadsheet": _from_input("title", prefix="armando la planilla"),
     "drive_create_presentation": _from_input("title", prefix="armando la presentación"),
     "drive_update_document": _drive_update_document,
+    "convert_to_epub": _from_input("title", prefix="convirtiendo a epub:"),
     # gmail_read
     "gmail_list_messages": _list_count_with_query("mensajes"),
     "gmail_read_message": _gmail_read_message,

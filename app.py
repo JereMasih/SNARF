@@ -367,6 +367,14 @@ class SendRequest(BaseModel):
     # id real (EpisodicMemory) del turno de Snarf al que este mensaje
     # responde puntualmente — ver ADR de esta ronda.
     reply_to_id: str | None = None
+    # Adjunto pendiente (ADR 0202): el frontend recién sube el archivo a
+    # Drive en el momento del envío (no al seleccionarlo, ver el mismo ADR) —
+    # estos tres campos le dan al Orchestrator el file_id real ya en este
+    # mismo turno, para que pueda actuar sobre él (convert_to_epub,
+    # drive_read_file, etc.) según lo que el texto/audio del mensaje pida.
+    attachment_file_id: str | None = None
+    attachment_name: str | None = None
+    attachment_mime_type: str | None = None
 
 
 class SendResponse(BaseModel):
@@ -1007,6 +1015,8 @@ def send(payload: SendRequest, background_tasks: BackgroundTasks, user_id: str =
             "visual", payload.text, conversation_id=payload.conversation_id,
             input_audio_id=payload.input_audio_id, request_id=payload.request_id,
             reply_to_id=payload.reply_to_id,
+            attachment_file_id=payload.attachment_file_id, attachment_name=payload.attachment_name,
+            attachment_mime_type=payload.attachment_mime_type,
         )
     finally:
         if payload.request_id:
@@ -1100,6 +1110,7 @@ async def upload_file(file: UploadFile, project_id: str | None = Form(None), use
     response = {
         "id": created["id"],
         "name": created["name"],
+        "mimeType": created.get("mimeType"),
         "webViewLink": created.get("webViewLink"),
         "indexed": indexed,
     }

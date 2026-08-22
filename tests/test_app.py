@@ -410,6 +410,47 @@ def test_send_with_reply_to_id_persists_the_reference_and_reaches_the_llm(client
     assert entry["reply_to_id"] == "req-1"
 
 
+def test_send_with_a_pending_attachment_tells_the_model_its_real_file_id(client, monkeypatch):
+    # ADR 0202: el adjunto se sube recién al enviar (ver el bug de auto-
+    # upload corregido en la misma ronda) — estos 3 campos son cómo el
+    # frontend le pasa el file_id real al Orchestrator en el mismo turno.
+    from snarf.capabilities.anthropic_llm import LLMResponse
+
+    captured = {}
+    monkeypatch.setattr(app_module.orchestrator._llm, "_client", object())  # available=True
+    monkeypatch.setattr(
+        app_module.orchestrator._llm,
+        "generate",
+        lambda **kwargs: (captured.update(system=kwargs["system"]) or LLMResponse(text="ok", speech="")),
+    )
+    client.post(
+        "/send",
+        json={
+            "text": "convertilo a epub",
+            "conversation_id": "conv-attachment",
+            "attachment_file_id": "drive-file-1",
+            "attachment_name": "monologo.pdf",
+            "attachment_mime_type": "application/pdf",
+        },
+    )
+    assert "drive-file-1" in captured["system"]
+    assert "monologo.pdf" in captured["system"]
+
+
+def test_send_without_an_attachment_never_mentions_one_to_the_model(client, monkeypatch):
+    from snarf.capabilities.anthropic_llm import LLMResponse
+
+    captured = {}
+    monkeypatch.setattr(app_module.orchestrator._llm, "_client", object())
+    monkeypatch.setattr(
+        app_module.orchestrator._llm,
+        "generate",
+        lambda **kwargs: (captured.update(system=kwargs["system"]) or LLMResponse(text="ok", speech="")),
+    )
+    client.post("/send", json={"text": "hola", "conversation_id": "conv-no-attachment"})
+    assert "acaba de adjuntar" not in captured["system"]
+
+
 def test_send_records_a_text_input_log_entry(client):
     client.post("/send", json={"text": "hola", "conversation_id": "abc"})
     entries = input_log.recent()
@@ -1385,6 +1426,9 @@ def test_upload_file_saves_to_drive_and_indexes_it(client, connected_google_toke
     data = res.json()
     assert data["indexed"] is True
     assert data["webViewLink"] == "http://x"
+    # El frontend necesita el mimeType real acá (ADR 0202) para poder
+    # pasárselo al Orchestrator cuando el mensaje se envía de verdad.
+    assert data["mimeType"] == "text/plain"
     assert "analysis" not in data
 
 

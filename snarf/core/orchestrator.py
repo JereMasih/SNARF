@@ -18,6 +18,7 @@ from snarf.capabilities.docx_extractor import DocxExtractor
 from snarf.capabilities.document_builder import DocumentBuilder
 from snarf.capabilities.ffmpeg_audio import FfmpegAudioExtractor
 from snarf.capabilities.elevenlabs_stt import ElevenLabsSTT
+from snarf.capabilities.epub_builder import EpubBuilder
 from snarf.capabilities.google_auth import GoogleAuth
 from snarf.capabilities.google_calendar import GoogleCalendar
 from snarf.capabilities.google_drive import GoogleDrive
@@ -1545,6 +1546,38 @@ TOOLS = [
         },
     },
     {
+        "name": "convert_to_epub",
+        "description": (
+            "Convierte un documento ya subido a Drive (PDF, TXT o Markdown) en un EPUB3 válido, listo para "
+            "Kindle/Apple Books/lectores de ebooks, y lo sube de vuelta a la carpeta 'Snarf/Archivos' del "
+            "Drive del fundador. Detecta automáticamente si el documento es un guion (diálogos "
+            "'Nombre.- texto' con escenas/actos), un texto con capítulos, o texto corrido, y arma la "
+            "navegación/portada acorde — forzá 'mode' solo si la autodetección da un resultado incorrecto. "
+            "Usar cuando el fundador pida convertir un archivo a epub/ebook o 'formato para Kindle/lector'. "
+            "Pedile título y autor si no los mencionó — no asumas datos si el documento ya los trae "
+            "visibles (podés confirmarlos leyéndolo primero con drive_read_file). Solo funciona con PDFs "
+            "con texto seleccionable, no escaneados/imagen."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string", "description": "file_id de Drive del documento fuente."},
+                "source_name": {
+                    "type": "string",
+                    "description": "Nombre real del archivo fuente en Drive, con extensión (ej. 'monologo.pdf') — necesario para saber cómo leerlo.",
+                },
+                "title": {"type": "string"},
+                "author": {"type": "string"},
+                "mode": {
+                    "type": "string",
+                    "enum": ["auto", "dialogue", "chapters", "flow"],
+                    "description": "Por defecto 'auto' (autodetecta). Forzar solo si la autodetección se equivocó.",
+                },
+            },
+            "required": ["file_id", "source_name", "title", "author"],
+        },
+    },
+    {
         "name": "drive_share_file",
         "description": (
             "Da acceso real a un archivo de Drive: a una persona puntual (con email) o vía link público "
@@ -2671,6 +2704,10 @@ class Orchestrator:
             # exista un segundo usuario real, no debe poder pedirlo.
             allow_server_storage=(user_id == DEFAULT_USER_ID),
         )
+        # Conversión a EPUB3 (ADR 0202): capacidad propia del Orchestrator,
+        # no depende de ninguna skill de Claude Code — ver
+        # snarf/capabilities/epub_builder.py.
+        self._epub_builder = EpubBuilder()
         # Fase I, rama Research (ver plan de expansión): una sola clase real,
         # tres configs — comparten Capacidades reales (búsqueda web,
         # transcripciones de YouTube, publicación de documentos), solo
@@ -2877,6 +2914,7 @@ class Orchestrator:
                 i["title"], i["slides"], format=i.get("format", "pptx"), destination=i.get("destination", "drive")
             ),
             "drive_rename_file": lambda i: self._drive.rename_file(i["file_id"], i["new_name"]),
+            "convert_to_epub": self._tool_convert_to_epub,
             "drive_share_file": self._tool_drive_share_file,
             "drive_update_document": self._tool_drive_update_document,
             "project_create": lambda i: self._projects.create(i["name"]),
@@ -3270,6 +3308,31 @@ class Orchestrator:
             return self._sponsor_inbox_triage.refresh()
         return self._sponsor_inbox_triage.cached_triage() or self._sponsor_inbox_triage.refresh()
 
+    def _tool_convert_to_epub(self, i: dict) -> dict:
+        # Crea contenido NUEVO en el Drive del fundador a partir de un
+        # archivo que ya le pertenece — mismo criterio que
+        # drive_create_document/document_write_start (ninguno de esos exige
+        # confirmed), no el de drive_delete_file/drive_update_document (que
+        # tocan o borran contenido ya existente).
+        source_bytes = self._drive.read_file_bytes(i["file_id"])
+        try:
+            epub_bytes, mode_used = self._epub_builder.convert(
+                source_bytes, i["source_name"], i["title"], i["author"], mode=i.get("mode", "auto"),
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
+        created = self._drive.upload_file(
+            f"{i['title']}.epub", epub_bytes, "application/epub+zip", parent_id=self._document_publisher.folder_id(),
+        )
+        self._drive_indexer.index_file(created)
+        return {
+            "status": "created",
+            "id": created["id"],
+            "name": created["name"],
+            "webViewLink": created.get("webViewLink"),
+            "mode_used": mode_used,
+        }
+
     def _tool_drive_delete_file(self, i: dict) -> dict:
         if not i.get("confirmed"):
             return self._pending({"file_id": i.get("file_id")})
@@ -3576,6 +3639,9 @@ class Orchestrator:
         input_audio_id: str | None = None,
         request_id: str | None = None,
         reply_to_id: str | None = None,
+        attachment_file_id: str | None = None,
+        attachment_name: str | None = None,
+        attachment_mime_type: str | None = None,
     ) -> LLMResponse:
         # project_id ya no viaja como parámetro por mensaje (eso no alcanzaba:
         # una conversación recién creada sin mensajes no tenía nada que
@@ -3658,6 +3724,22 @@ class Orchestrator:
                     # profile_set_name puede guardar el nombre a mitad de conversación
                     # y tiene que reflejarse en el turno siguiente, sin reiniciar.
                     system += profile_identity_instruction(user_profile.load_profile(self._user_id)["name"])
+                    if attachment_file_id:
+                        # Adjunto pendiente (ADR 0202): el frontend recién lo
+                        # subió a Drive en este mismo envío — nunca antes,
+                        # mientras el fundador todavía estaba escribiendo. El
+                        # file_id ya es real y usable con convert_to_epub/
+                        # drive_read_file/etc., pero la ACCIÓN la decide
+                        # únicamente lo que el fundador pidió en su texto —
+                        # nunca asumir qué hacer con el archivo si no lo dijo.
+                        mime_note = f", mime_type: {attachment_mime_type}" if attachment_mime_type else ""
+                        system += (
+                            f"\n\nEl fundador acaba de adjuntar el archivo \"{attachment_name}\" "
+                            f"(file_id: {attachment_file_id}{mime_note}) a este mismo mensaje — ya está "
+                            "subido a su Drive. Hacé con él exactamente lo que te pida en su texto (por "
+                            "ejemplo convert_to_epub si pide convertirlo a ebook/epub, o drive_read_file "
+                            "si pide que lo leas/resumas)."
+                        )
                     if project_id:
                         # Si el proyecto no existe más o no tiene prompt propio, se
                         # degrada en silencio (nunca rompe el turno).

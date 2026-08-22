@@ -173,6 +173,8 @@ Desde el 2026-08-18 (ADR 0172): el home (`GET /vision`) se poda de 13 secciones 
 
 Planificado, sin construir (2026-08-20, ver ADR 0179 en adelante y `ROADMAP_SECOND_BRAIN_NOTION.md`, Track D): generalizar `DocumentBuilder`/`DocumentPublisher` (ADR 0030) hacia una escritura confiable e incremental de documentos largos, más allá de Drive — sección por sección, cada una escrita y verificada leyendo de vuelta antes de generar la siguiente, con estado persistido y reanudable en disco. Objetivo explícito del fundador: que un documento largo nunca se corte por límite de tokens del modelo, caída del proceso, o falla transitoria de la API del destino (Notion primero).
 
+Desde el 2026-08-22 (ADR 0202): nueva tool `convert_to_epub` (nodo `documents`) — convierte un PDF/TXT/Markdown ya en Drive a un EPUB3 válido (detección automática de guion/capítulos/texto corrido, `snarf/capabilities/epub_builder.py`) y lo sube de vuelta. Encontrado en la misma ronda que un archivo adjuntado en el chat se subía y procesaba a Drive de inmediato al seleccionarlo, antes de que el usuario dijera qué hacer con él — corregido: el frontend ahora lo deja "adjunto pendiente" hasta que el mensaje se envía de verdad, momento en el que su `file_id` real viaja junto al texto/audio del turno (`POST /send`, `Orchestrator.handle()`).
+
 ## Business
 
 Unidades económicas, productos, servicios y empresas.

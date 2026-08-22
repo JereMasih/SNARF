@@ -87,6 +87,7 @@ TOOL_TO_NODE: dict[str, str] = {
     "drive_create_spreadsheet": "documents",
     "drive_create_presentation": "documents",
     "drive_update_document": "documents",
+    "convert_to_epub": "documents",
     # Gmail crudo (Capacidad, no Especialista) separado por lo que un usuario
     # reconocería como acciones distintas: leer/mirar, organizar, y enviar
     # (esta última la única con efecto real hacia afuera — "canal de
